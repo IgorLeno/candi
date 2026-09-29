@@ -3,101 +3,161 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Palette "limão sobre ameixa". Light = warm paper, dark (default) = plum ink.
+ * State tokens carry the job state across every surface: `--st-*` is the fill, `--st-*-ink` the text
+ * on that fill and `--st-*-fg` the same hue as text on the page/card surfaces.
+ */
 :root {
-  --background: 241 245 249;
+  --background: 247 244 238;
   --background-secondary: 255 255 255;
-  --foreground: 15 23 42;
+  --foreground: 32 24 44;
   --card: 255 255 255;
-  --card-foreground: 15 23 42;
+  --card-foreground: 32 24 44;
   --popover: 255 255 255;
-  --popover-foreground: 15 23 42;
-  --primary: 99 102 241;
+  --popover-foreground: 32 24 44;
+  --primary: 77 124 15;
   --primary-foreground: 255 255 255;
-  --secondary: 237 242 247;
-  --secondary-foreground: 15 23 42;
-  --muted: 236 241 247;
-  --muted-foreground: 71 85 105;
-  --accent: 139 92 246;
+  --secondary: 238 233 243;
+  --secondary-foreground: 32 24 44;
+  --muted: 240 236 232;
+  --muted-foreground: 98 90 112;
+  --accent: 217 72 15;
   --accent-foreground: 255 255 255;
-  --accent-muted: 139 92 246 / 0.1;
-  --destructive: 239 68 68;
+  --accent-muted: 217 72 15 / 0.1;
+  --destructive: 190 18 60;
   --destructive-foreground: 255 255 255;
-  --border: 203 213 225;
-  --input: 226 232 240;
-  --ring: 99 102 241 / 0.4;
-  --chart-1: 99 102 241;
-  --chart-2: 139 92 246;
-  --chart-3: 59 130 246;
-  --chart-4: 16 185 129;
-  --chart-5: 245 158 11;
-  --radius: 0.75rem;
-  --sidebar: 15 23 42;
-  --sidebar-foreground: 148 163 184;
-  --sidebar-primary: 248 250 252;
-  --sidebar-primary-foreground: 15 23 42;
-  --sidebar-accent: 99 102 241;
-  --sidebar-accent-foreground: 255 255 255;
-  --sidebar-border: 148 163 184;
-  --sidebar-ring: 99 102 241;
-  --header: 15 23 42;
-  --header-foreground: 248 250 252;
-  --star-fill: 251 191 36;
-  --star-empty: 226 232 240;
-  /* Chart series (dataviz reference palette slots 1-2, validated on the card surface). */
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --chart-grid: #e2e8f0;
-  --chart-axis: #64748b;
+  --border: 226 219 212;
+  --input: 232 226 220;
+  --ring: 77 124 15 / 0.45;
+  --chart-1: 77 124 15;
+  --chart-2: 217 72 15;
+  --chart-3: 91 63 196;
+  --chart-4: 4 120 87;
+  --chart-5: 180 83 9;
+  --radius: 0.875rem;
+  --sidebar: 32 24 44;
+  --sidebar-foreground: 184 176 198;
+  --sidebar-primary: 247 244 238;
+  --sidebar-primary-foreground: 32 24 44;
+  --sidebar-accent: 200 241 105;
+  --sidebar-accent-foreground: 30 42 6;
+  --sidebar-border: 58 49 74;
+  --sidebar-ring: 200 241 105;
+  --header: 32 24 44;
+  --header-foreground: 247 244 238;
+  --star-fill: 217 72 15;
+  --star-empty: 226 219 212;
+
+  --st-open: 200 241 105;
+  --st-open-ink: 30 42 6;
+  --st-open-fg: 63 98 18;
+  --st-review: 255 213 122;
+  --st-review-ink: 61 42 0;
+  --st-review-fg: 146 64 14;
+  --st-sent: 127 227 192;
+  --st-sent-ink: 6 53 42;
+  --st-sent-fg: 4 120 87;
+  --st-uncertain: 255 93 115;
+  --st-uncertain-ink: 58 7 16;
+  --st-uncertain-fg: 190 18 60;
+  --st-info: 185 166 255;
+  --st-info-ink: 30 16 84;
+  --st-info-fg: 91 63 196;
+  --st-closed: 212 204 222;
+  --st-closed-ink: 107 101 119;
+  --st-closed-fg: 128 121 140;
+  --flame: 217 72 15;
+  --flame-off: 222 214 206;
+
+  /* Chart series (validated on the card surface of each theme). */
+  --series-1: #4d7c0f;
+  --series-2: #d9480f;
+  --chart-grid: #e7e0d8;
+  --chart-axis: #6b6577;
 }
 
 .dark {
-  --background: 17 24 39;
-  --background-secondary: 24 33 52;
-  --foreground: 226 232 240;
-  --card: 24 33 52;
-  --card-foreground: 226 232 240;
-  --popover: 30 41 59;
-  --popover-foreground: 226 232 240;
-  --primary: 129 140 248;
-  --primary-foreground: 8 10 20;
-  --secondary: 30 41 59;
-  --secondary-foreground: 203 213 225;
-  --muted: 30 41 59;
-  --muted-foreground: 100 116 139;
-  --accent: 167 139 250;
-  --accent-foreground: 8 10 20;
-  --accent-muted: 167 139 250 / 0.12;
-  --destructive: 248 113 113;
-  --destructive-foreground: 8 10 20;
-  --border: 51 65 85;
-  --input: 30 41 59;
-  --ring: 129 140 248 / 0.5;
-  --chart-1: 129 140 248;
-  --chart-2: 167 139 250;
-  --chart-3: 96 165 250;
-  --chart-4: 52 211 153;
-  --chart-5: 251 191 36;
-  --sidebar: 15 22 36;
-  --sidebar-foreground: 100 116 139;
-  --sidebar-primary: 226 232 240;
-  --sidebar-primary-foreground: 6 8 16;
-  --sidebar-accent: 129 140 248;
-  --sidebar-accent-foreground: 255 255 255;
-  --sidebar-border: 51 65 85;
-  --sidebar-ring: 129 140 248;
-  --header: 6 8 16;
-  --header-foreground: 226 232 240;
-  --star-fill: 251 191 36;
-  --star-empty: 30 37 60;
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --chart-grid: #2c3a52;
-  --chart-axis: #94a3b8;
+  --background: 23 19 31;
+  --background-secondary: 29 24 40;
+  --foreground: 243 238 230;
+  --card: 34 28 46;
+  --card-foreground: 243 238 230;
+  --popover: 40 33 54;
+  --popover-foreground: 243 238 230;
+  --primary: 200 241 105;
+  --primary-foreground: 30 42 6;
+  --secondary: 42 36 54;
+  --secondary-foreground: 226 219 235;
+  --muted: 42 36 54;
+  --muted-foreground: 167 159 181;
+  --accent: 255 122 89;
+  --accent-foreground: 42 14 6;
+  --accent-muted: 255 122 89 / 0.12;
+  --destructive: 255 93 115;
+  --destructive-foreground: 58 7 16;
+  --border: 50 42 67;
+  --input: 42 36 54;
+  --ring: 200 241 105 / 0.5;
+  --chart-1: 200 241 105;
+  --chart-2: 255 122 89;
+  --chart-3: 185 166 255;
+  --chart-4: 127 227 192;
+  --chart-5: 255 213 122;
+  --sidebar: 18 15 25;
+  --sidebar-foreground: 167 159 181;
+  --sidebar-primary: 243 238 230;
+  --sidebar-primary-foreground: 18 15 25;
+  --sidebar-accent: 200 241 105;
+  --sidebar-accent-foreground: 30 42 6;
+  --sidebar-border: 42 36 54;
+  --sidebar-ring: 200 241 105;
+  --header: 18 15 25;
+  --header-foreground: 243 238 230;
+  --star-fill: 255 122 89;
+  --star-empty: 42 36 54;
+
+  --st-open-fg: 200 241 105;
+  --st-review-fg: 255 213 122;
+  --st-sent-fg: 127 227 192;
+  --st-uncertain-fg: 255 143 160;
+  --st-info-fg: 185 166 255;
+  --st-closed: 58 51 71;
+  --st-closed-ink: 167 159 181;
+  --st-closed-fg: 138 130 152;
+  --flame: 255 122 89;
+  --flame-off: 58 51 71;
+
+  --series-1: #c8f169;
+  --series-2: #ff7a59;
+  --chart-grid: #2f2740;
+  --chart-axis: #a79fb5;
 }
 
 @theme inline {
   --font-sans: "Geist", "Geist Fallback";
   --font-mono: "Geist Mono", "Geist Mono Fallback";
+  --font-display: var(--font-bricolage), "Geist", "Geist Fallback";
+  --color-st-open: rgb(var(--st-open));
+  --color-st-open-ink: rgb(var(--st-open-ink));
+  --color-st-open-fg: rgb(var(--st-open-fg));
+  --color-st-review: rgb(var(--st-review));
+  --color-st-review-ink: rgb(var(--st-review-ink));
+  --color-st-review-fg: rgb(var(--st-review-fg));
+  --color-st-sent: rgb(var(--st-sent));
+  --color-st-sent-ink: rgb(var(--st-sent-ink));
+  --color-st-sent-fg: rgb(var(--st-sent-fg));
+  --color-st-uncertain: rgb(var(--st-uncertain));
+  --color-st-uncertain-ink: rgb(var(--st-uncertain-ink));
+  --color-st-uncertain-fg: rgb(var(--st-uncertain-fg));
+  --color-st-info: rgb(var(--st-info));
+  --color-st-info-ink: rgb(var(--st-info-ink));
+  --color-st-info-fg: rgb(var(--st-info-fg));
+  --color-st-closed: rgb(var(--st-closed));
+  --color-st-closed-ink: rgb(var(--st-closed-ink));
+  --color-st-closed-fg: rgb(var(--st-closed-fg));
+  --color-flame: rgb(var(--flame));
+  --color-flame-off: rgb(var(--flame-off));
   --color-background: rgb(var(--background));
   --color-background-secondary: rgb(var(--background-secondary));
   --color-foreground: rgb(var(--foreground));
@@ -454,5 +514,53 @@
 
   .dark .overflow-y-auto::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.3);
+  }
+}
+
+/* Motion for the "Hoje" view: the goal ring fills, cards rise, the "feito" stamp lands. */
+@keyframes ring-fill {
+  from {
+    stroke-dashoffset: var(--ring-length);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes stamp-in {
+  0% {
+    opacity: 0;
+    transform: rotate(-12deg) scale(1.8);
+  }
+  70% {
+    opacity: 1;
+    transform: rotate(-12deg) scale(0.92);
+  }
+  100% {
+    transform: rotate(-12deg) scale(1);
+  }
+}
+
+@layer utilities {
+  .animate-ring-fill {
+    animation: ring-fill 1.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-rise-in {
+    animation: rise-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-stamp-in {
+    animation: stamp-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.35s both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ring-fill,
+  .animate-rise-in,
+  .animate-stamp-in {
+    animation: none;
   }
 }

@@ -12,6 +12,7 @@ import {
   distribution,
   filterByPeriod,
   qualitySummary,
+  sentInWeek,
   weekStart,
   weeklySeries,
 } from "@/lib/job-search/metrics"
@@ -97,5 +98,15 @@ describe("qualitySummary", () => {
     expect(summary.byCode.DOSSIER_INVALID).toBe(1)
     expect(summary.byCode.ENUM_INVALID).toBe(1)
     expect(summary.snapshotIssues).toBe(0)
+  })
+})
+
+describe("sentInWeek", () => {
+  it("counts applications dated in the ISO week of today, not after today", () => {
+    // fake-1006 applied on Thursday 2026-09-03 (week of Monday 2026-08-31).
+    expect(sentInWeek(data.views, "2026-09-03")).toBe(1)
+    expect(sentInWeek(data.views, "2026-09-06")).toBe(1)
+    expect(sentInWeek(data.views, "2026-08-31")).toBe(0)
+    expect(sentInWeek(data.views, "2026-09-07")).toBe(0)
   })
 })

@@ -2,13 +2,14 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, ListChecks, Settings2, Briefcase, LogOut } from "lucide-react"
+import { BarChart3, Crosshair, Flame, LayoutGrid, LogOut, Settings2 } from "lucide-react"
 import { signOutAction } from "@/app/actions/auth"
 import { cn } from "@/lib/utils"
 
 const menuItems = [
-  { id: "visao-geral", href: "/", label: "Visão geral", icon: LayoutDashboard },
-  { id: "vagas", href: "/vagas", label: "Vagas", icon: ListChecks },
+  { id: "hoje", href: "/", label: "Hoje", icon: Flame },
+  { id: "vagas", href: "/vagas", label: "Vagas", icon: LayoutGrid },
+  { id: "analise", href: "/analise", label: "Análise", icon: BarChart3 },
   { id: "configuracoes", href: "/configuracoes", label: "Configurações", icon: Settings2 },
 ]
 
@@ -31,12 +32,14 @@ export function Sidebar() {
         <div className="absolute inset-0 mesh-bg pointer-events-none" />
 
         <div className="relative px-5 pt-6 pb-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center flex-shrink-0 glow-primary">
-            <Briefcase className="w-4 h-4 text-white" />
+          <div className="w-10 h-10 rounded-2xl bg-st-open flex items-center justify-center flex-shrink-0 -rotate-6">
+            <Crosshair className="w-5 h-5 text-st-open-ink" aria-hidden="true" />
           </div>
           <div>
-            <span className="text-sidebar-primary text-sm font-bold tracking-tight block">Estágios</span>
-            <span className="text-sidebar-foreground/70 text-xs">Painel do job-search</span>
+            <span className="font-display text-sidebar-primary text-lg font-bold tracking-tight block leading-tight">
+              Estágios
+            </span>
+            <span className="text-sidebar-foreground/80 text-xs">modo caça</span>
           </div>
         </div>
 
@@ -56,16 +59,13 @@ export function Sidebar() {
                 data-testid={`sidebar-${item.id}`}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "w-full h-10 rounded-lg flex items-center gap-3 px-3 transition-colors duration-200 relative",
+                  "w-full h-11 rounded-xl flex items-center gap-3 px-3 transition-colors duration-200 relative",
                   "focus:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
                   active
-                    ? "bg-sidebar-accent/15 text-sidebar-accent"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground hover:text-sidebar-primary hover:bg-sidebar-border/40"
                 )}
               >
-                {active && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-sidebar-accent rounded-full" />
-                )}
                 <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
                 <span className={cn("text-sm font-medium", active && "font-semibold")}>{item.label}</span>
               </Link>
@@ -91,10 +91,10 @@ export function Sidebar() {
 
       <header className="sticky top-0 z-50 border-b border-sidebar-border bg-sidebar lg:hidden">
         <div className="flex items-center gap-2 px-4 pt-3">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-            <Briefcase className="w-3.5 h-3.5 text-white" aria-hidden="true" />
+          <div className="w-7 h-7 rounded-lg bg-st-open flex items-center justify-center -rotate-6">
+            <Crosshair className="w-3.5 h-3.5 text-st-open-ink" aria-hidden="true" />
           </div>
-          <span className="text-sidebar-primary text-sm font-bold">Estágios</span>
+          <span className="font-display text-sidebar-primary text-base font-bold">Estágios</span>
           <form action={signOutAction} className="ml-auto">
             <button
               type="submit"
@@ -119,7 +119,7 @@ export function Sidebar() {
                 className={cn(
                   "shrink-0 rounded-md px-3 py-1.5 text-sm",
                   active
-                    ? "bg-sidebar-accent/20 text-sidebar-accent font-semibold"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
                     : "text-sidebar-foreground hover:text-sidebar-primary"
                 )}
               >

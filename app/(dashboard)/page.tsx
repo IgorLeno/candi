@@ -1,168 +1,226 @@
 import Link from "next/link"
+import { AlertOctagon, AlertTriangle, ArrowRight, Info } from "lucide-react"
 import { getJobSearchData } from "@/lib/job-search/source"
+import { sentInWeek } from "@/lib/job-search/metrics"
 import {
-  analysesPerWeek,
-  applicationsPerWeek,
-  computeFunnel,
-  computeKpis,
-  coverageBySource,
-  distribution,
-  filterByPeriod,
-  inPeriod,
-  qualitySummary,
-  type DistributionKey,
-} from "@/lib/job-search/metrics"
-import { PERIODS, attentionGroups, parsePeriod, periodRange, type FacetKey } from "@/lib/job-search/present"
-import { PageHeader } from "@/components/job-search/page-header"
-import { WeeklyChart } from "@/components/job-search/weekly-chart"
-import {
-  AttentionPanel,
-  CoverageTable,
-  DistributionCard,
-  Funnel,
-  KpiRow,
-  QualityPanel,
-  SectionCard,
-  UncertainSubmitAlert,
-} from "@/components/job-search/overview"
+  attentionGroups,
+  jobState,
+  listHref,
+  toListItem,
+  todayQueue,
+  type AttentionGroup,
+  type JobListItem,
+} from "@/lib/job-search/present"
+import { DataSourceLine } from "@/components/job-search/page-header"
+import { SyncButton } from "@/components/job-search/sync-button"
+import { GoalRing } from "@/components/job-search/goal-ring"
+import { UncertainSubmitAlert } from "@/components/job-search/overview"
+import { JobCard, NextMoveCard, ShelfTitle, StateLegend } from "@/components/job-search/visual"
 import { cn } from "@/lib/utils"
 
-const DISTRIBUTIONS: { key: DistributionKey; title: string; facet?: FacetKey; emptyLabel?: string }[] = [
-  { key: "interesse", title: "Interesse", facet: "interesse" },
-  { key: "status_analise", title: "Status da análise", facet: "status_analise" },
-  { key: "status_candidatura", title: "Status da candidatura", facet: "status_candidatura" },
-  { key: "status_disponibilidade", title: "Disponibilidade", facet: "status_disponibilidade" },
-  { key: "familia_funcao", title: "Família funcional", facet: "familia_funcao" },
-  { key: "setor", title: "Setor", facet: "setor" },
-  { key: "proximidade_eq", title: "Proximidade com EQ", facet: "proximidade_eq" },
-  { key: "tipo_programa", title: "Tipo de programa", facet: "tipo_programa" },
-  { key: "fonte_descoberta", title: "Fonte de descoberta", facet: "fonte_descoberta" },
-  { key: "portal_candidatura", title: "Portal de candidatura", facet: "portal_candidatura" },
-  { key: "zona", title: "Zona (dossier)", facet: "zona", emptyLabel: "Sem dossier" },
-  { key: "uf", title: "UF (dossier)", emptyLabel: "Sem dossier" },
-  { key: "modalidade", title: "Modalidade (dossier)", facet: "modalidade", emptyLabel: "Sem dossier" },
-]
+// "Hoje": the action queue. Charts and data quality live in /analise.
 
-export default async function OverviewPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>
-}) {
-  const params = await searchParams
+const TIME_ZONE = "America/Sao_Paulo"
+
+const CHIP_STYLE: Record<string, { className: string; icon: typeof Info }> = {
+  critical: { className: "bg-st-uncertain/15 text-st-uncertain-fg border-st-uncertain/40", icon: AlertOctagon },
+  warning: { className: "bg-st-review/15 text-st-review-fg border-st-review/45", icon: AlertTriangle },
+  info: { className: "bg-st-info/15 text-st-info-fg border-st-info/40", icon: Info },
+}
+
+function AttentionChip({ group }: { group: AttentionGroup }) {
+  const style = CHIP_STYLE[group.tone] ?? CHIP_STYLE.info
+  const Icon = style.icon
+  return (
+    <Link
+      prefetch={false}
+      href={group.href}
+      title={group.description}
+      data-testid={`attention-${group.id}`}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-transform hover:-translate-y-0.5",
+        style.className
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className="tabular-nums">{group.jobs.length}</span> {group.title.toLowerCase()}
+    </Link>
+  )
+}
+
+function CardGrid({ items, testId }: { items: JobListItem[]; testId: string }) {
+  return (
+    <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid={testId}>
+      {items.map((item, index) => (
+        <JobCard key={item.jobId} item={item} index={index} />
+      ))}
+    </ul>
+  )
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`
+}
+
+export default async function HojePage() {
   const data = await getJobSearchData()
-  const periodId = parsePeriod(params.periodo)
-  const period = periodRange(periodId, new Date().toISOString().slice(0, 10))
-  const views = filterByPeriod(data.views, period)
-  const coverageRows = data.coverage.filter((row) => inPeriod(row.data_execucao, period))
+  const items = data.views.map(toListItem)
+  const queue = todayQueue(items)
+  const [next, ...rest] = queue
 
-  // Attention reflects the current state of every job, whatever the period.
+  const now = new Date()
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE }).format(now)
+  const dateLabel = new Intl.DateTimeFormat("pt-BR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: TIME_ZONE,
+  }).format(now)
+  const sentThisWeek = sentInWeek(data.views, today)
+
   const attention = attentionGroups(data.views)
   const uncertain = attention.find((group) => group.id === "envio-incerto")
+  const chips = attention.filter((group) => group.id !== "envio-incerto")
+
+  const hot = queue.filter((item) => !item.interesse.invalid && item.interesse.value === "MUITO_ALTO").length
+  const review = queue.filter((item) => jobState(item) === "revisao").length
+  const radar = items.filter(
+    (item) =>
+      !item.archived &&
+      !item.statusAnalise.invalid &&
+      item.statusAnalise.value === "SELECIONADA" &&
+      jobState(item) === "nao-confirmada"
+  )
+  const sent = items
+    .filter((item) => jobState(item) === "enviada")
+    .sort((a, b) => (b.dataCandidatura ?? "").localeCompare(a.dataCandidatura ?? ""))
+
+  const subline = [
+    hot > 0 && `${hot} com interesse muito alto`,
+    review > 0 && plural(review, "pronta pra revisar", "prontas pra revisar"),
+  ].filter(Boolean)
 
   return (
-    <>
-      <PageHeader
-        title="Visão geral"
-        description="Funil, evolução e distribuições da busca, lidos do registro do job-search."
-        data={data}
+    <div className="space-y-8">
+      <section
+        data-testid="today-hero"
+        className="relative overflow-hidden rounded-3xl border border-border bg-card p-6 sm:p-8"
       >
-        <nav aria-label="Período" className="flex rounded-lg border border-border bg-card p-0.5">
-          {PERIODS.map((option) => (
-            <Link
-              prefetch={false}
-              key={option.id}
-              href={option.id === "tudo" ? "/" : `/?periodo=${option.id}`}
-              aria-current={option.id === periodId ? "page" : undefined}
-              data-testid={`period-${option.id}`}
-              className={cn(
-                "rounded-md px-3 py-1 text-sm",
-                option.id === periodId
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-32 -left-24 h-80 w-80 rounded-full bg-st-open/10 blur-3xl"
+        />
+        <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0 space-y-3">
+            <p className="text-sm font-medium text-muted-foreground first-letter:uppercase">{dateLabel}</p>
+            <h1 className="font-display text-4xl leading-[1.05] font-bold tracking-tight text-foreground sm:text-5xl">
+              {queue.length > 0 ? (
+                <>
+                  <span className="text-st-open-fg">{queue.length}</span>{" "}
+                  {queue.length === 1 ? "vaga aberta esperando você" : "vagas abertas esperando você"}
+                </>
+              ) : data.views.length === 0 ? (
+                "Registro vazio por enquanto"
+              ) : (
+                "Fila zerada. Nenhuma vaga aberta esperando você"
               )}
-            >
-              {option.label}
-            </Link>
+            </h1>
+            <p className="max-w-2xl text-muted-foreground">
+              {queue.length > 0
+                ? `${subline.length > 0 ? `${subline.join(", ")}. ` : ""}Comece pela próxima jogada.`
+                : data.views.length === 0
+                  ? "Assim que o job-search registrar vagas, elas aparecem aqui."
+                  : "Tudo que estava aberto e selecionado já saiu da fila. Hora de buscar mais vagas."}
+            </p>
+            <DataSourceLine data={data} />
+          </div>
+          <GoalRing sent={sentThisWeek} />
+        </div>
+        <div className="relative mt-6 flex flex-wrap items-center gap-2">
+          {chips.map((group) => (
+            <AttentionChip key={group.id} group={group} />
           ))}
-        </nav>
-      </PageHeader>
+          <div className="ml-auto">
+            <SyncButton />
+          </div>
+        </div>
+      </section>
 
       {uncertain && <UncertainSubmitAlert group={uncertain} />}
 
-      {data.views.length === 0 ? (
-        <SectionCard title="Registro vazio">
-          <p className="text-sm text-muted-foreground">
-            Nenhuma vaga com job_id foi encontrada na fonte. Assim que o job-search registrar vagas, elas aparecem aqui.
-          </p>
-        </SectionCard>
-      ) : (
-        <div className="space-y-6">
-          <KpiRow kpis={computeKpis(views)} />
-          {periodId !== "tudo" && (
-            <p className="-mt-3 text-xs text-muted-foreground">
-              Período aplicado pela data da primeira análise (vagas) e da execução (cobertura).
-            </p>
-          )}
-
-          <div className="grid gap-6 lg:grid-cols-5">
-            <SectionCard
-              title="Precisa de atenção"
-              description="Estado atual de todas as vagas, independente do período."
-              className="lg:col-span-2"
-              testId="attention-panel"
-            >
-              <AttentionPanel groups={attention} />
-            </SectionCard>
-            <div className="grid gap-6 lg:col-span-3">
-              <SectionCard title="Funil da busca" description="Contagem de cada etapa; percentual sobre as analisadas.">
-                <Funnel stages={computeFunnel(views)} />
-              </SectionCard>
-              <SectionCard title="Evolução semanal" description="Primeira análise e data de candidatura por semana.">
-                <WeeklyChart analyses={analysesPerWeek(views)} applications={applicationsPerWeek(views)} />
-              </SectionCard>
-            </div>
-          </div>
-
-          <section aria-labelledby="distribuicoes">
-            <h2 id="distribuicoes" className="mb-3 text-lg font-semibold text-foreground">
-              Distribuições
-            </h2>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {DISTRIBUTIONS.map((item) => (
-                <DistributionCard
-                  key={item.key}
-                  title={item.title}
-                  buckets={distribution(views, item.key)}
-                  total={views.length}
-                  facet={item.facet}
-                  emptyLabel={item.emptyLabel}
-                  testId={`dist-${item.key}`}
-                />
-              ))}
-            </div>
-          </section>
-
-          <div className="grid gap-6 xl:grid-cols-2">
-            <SectionCard
-              title="Cobertura de fontes"
-              description="Resultado de cada execução por fonte (aba Cobertura de Fontes)."
-              testId="coverage-card"
-            >
-              <CoverageTable sources={coverageBySource(data.coverage, period)} rows={coverageRows} />
-            </SectionCard>
-            <SectionCard
-              title="Qualidade dos dados"
-              description="Completude da análise e problemas detectados na leitura. Nada é corrigido aqui."
-            >
-              <QualityPanel
-                summary={qualitySummary({ views, issues: data.issues })}
-                total={views.length}
-                snapshotIssues={data.issues}
-              />
-            </SectionCard>
-          </div>
-        </div>
+      {next && (
+        <section aria-labelledby="proxima-jogada">
+          <ShelfTitle id="proxima-jogada">Próxima jogada</ShelfTitle>
+          <NextMoveCard item={next} />
+        </section>
       )}
-    </>
+
+      {rest.length > 0 && (
+        <section aria-labelledby="na-fila">
+          <ShelfTitle
+            id="na-fila"
+            aside={
+              <Link
+                prefetch={false}
+                href={listHref({ status_analise: "SELECIONADA", status_disponibilidade: "ABERTA" })}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                todas as abertas <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            }
+          >
+            Na fila · {rest.length}
+          </ShelfTitle>
+          <CardGrid items={rest} testId="queue-list" />
+        </section>
+      )}
+
+      {radar.length > 0 && (
+        <section aria-labelledby="no-radar">
+          <ShelfTitle id="no-radar" tone="muted">
+            No radar · disponibilidade a confirmar
+          </ShelfTitle>
+          <CardGrid items={radar} testId="radar-list" />
+        </section>
+      )}
+
+      <section aria-labelledby="enviadas">
+        <ShelfTitle
+          id="enviadas"
+          tone="sent"
+          aside={
+            sent.length > 0 && (
+              <Link
+                prefetch={false}
+                href={listHref({ status_candidatura: "ENVIADA" })}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                ver todas <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            )
+          }
+        >
+          Enviadas · {sent.length}
+        </ShelfTitle>
+        {sent.length > 0 ? (
+          <CardGrid items={sent.slice(0, 6)} testId="sent-list" />
+        ) : (
+          <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+            Nenhuma candidatura enviada ainda. A primeira é a que mais pesa.
+          </p>
+        )}
+      </section>
+
+      <footer className="flex flex-col gap-4 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <StateLegend />
+        <Link
+          prefetch={false}
+          href="/analise"
+          className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          Funil, distribuições e qualidade dos dados <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </Link>
+      </footer>
+    </div>
   )
 }

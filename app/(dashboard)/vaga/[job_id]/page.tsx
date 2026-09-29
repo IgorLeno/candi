@@ -3,11 +3,13 @@ import { AlertOctagon, ArrowLeft } from "lucide-react"
 import { labelFor } from "@/lib/job-search/enums"
 import { isInvalid } from "@/lib/job-search/sheet-parse"
 import { getJobSearchData } from "@/lib/job-search/source"
-import { cellDisplay, formatDay } from "@/lib/job-search/present"
+import { cellDisplay, formatDay, jobState, toListItem } from "@/lib/job-search/present"
 import type { EnumCell, JobView } from "@/lib/job-search/types"
 import { AnalysisBadge, CellBadge } from "@/components/job-search/cell-badge"
 import { ToneBadge } from "@/components/job-search/tone-badge"
 import { SectionCard } from "@/components/job-search/overview"
+import { DoneStamp, Flames, JourneyTrail, StateBadge, stateBarClass } from "@/components/job-search/visual"
+import { cn } from "@/lib/utils"
 import {
   ActivitiesSection,
   AnalysisBanner,
@@ -45,7 +47,10 @@ export default async function VagaPage({ params }: { params: Promise<{ job_id: s
     return (
       <>
         <BackLink />
-        <div className="glass-card rounded-xl py-12 text-center" data-testid="job-not-found">
+        <div
+          className="rounded-2xl border border-dashed border-border bg-card py-12 text-center"
+          data-testid="job-not-found"
+        >
           <p className="font-medium text-foreground">Vaga não encontrada</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Nenhuma linha do registro tem o job_id <span className="font-mono">{jobId}</span>.
@@ -62,34 +67,66 @@ function JobDetail({ view }: { view: JobView }) {
   const dossier = view.dossier?.dossier ?? null
   const postingUrl = dossier?.identity.url ?? job.url
   const applicationUrl = dossier?.identity.application_url ?? null
+  const state = jobState(toListItem(view))
+  const closed = state === "encerrada" || state === "retirada" || state === "fora"
 
   return (
     <article className="space-y-6" data-testid="job-detail">
       <div>
         <BackLink />
-        <header className="space-y-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl" data-testid="job-empresa">
-              {job.empresa || "(sem empresa)"}
-            </h1>
-            <p className="text-lg text-muted-foreground">{job.cargo || "(sem cargo)"}</p>
+        <header
+          className={cn(
+            "relative overflow-hidden rounded-3xl border border-border bg-card p-6 pl-7 sm:p-8 sm:pl-9",
+            closed && "border-dashed"
+          )}
+          data-state={state}
+        >
+          <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-2", stateBarClass(state))} />
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <StateBadge state={state} className="px-3 py-1 text-sm" />
+                <Flames cell={cellDisplay(job.interesse)} size="lg" />
+              </div>
+              <div>
+                <h1
+                  className={cn(
+                    "font-display text-3xl leading-tight font-bold tracking-tight text-foreground sm:text-4xl",
+                    closed && "text-st-closed-fg"
+                  )}
+                  data-testid="job-empresa"
+                >
+                  {job.empresa || "(sem empresa)"}
+                </h1>
+                <p className="mt-1 text-lg text-muted-foreground">{job.cargo || "(sem cargo)"}</p>
+              </div>
+              <div className="max-w-md">
+                <JourneyTrail cell={cellDisplay(job.status_candidatura)} state={state} withLabels />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch">
+              <ExternalAnchor href={applicationUrl ?? postingUrl} testId="link-principal" primary>
+                {applicationUrl ? "Ir para a candidatura" : "Abrir publicação"}
+              </ExternalAnchor>
+              {applicationUrl && (
+                <ExternalAnchor href={postingUrl} testId="link-vaga">
+                  Publicação
+                </ExternalAnchor>
+              )}
+              {state === "enviada" && <DoneStamp className="self-center text-base lg:mt-2" />}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5" data-testid="job-badges">
+          <div
+            className="mt-6 flex flex-wrap items-center gap-1.5 border-t border-border/70 pt-4"
+            data-testid="job-badges"
+          >
             <CellBadge cell={cellDisplay(job.interesse)} testId="badge-interesse" />
             <CellBadge cell={cellDisplay(job.status_analise)} testId="badge-status-analise" />
             <CellBadge cell={cellDisplay(job.status_disponibilidade)} testId="badge-disponibilidade" />
             <CellBadge cell={cellDisplay(job.status_candidatura)} testId="badge-candidatura" />
             <AnalysisBadge level={view.analysis} testId="badge-analysis" />
             {job.archived && <ToneBadge tone="muted">Aba Encerradas</ToneBadge>}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <ExternalAnchor href={postingUrl} testId="link-vaga">
-              Publicação
-            </ExternalAnchor>
-            <ExternalAnchor href={applicationUrl} testId="link-candidatura">
-              Página de candidatura
-            </ExternalAnchor>
-            <span className="text-xs text-muted-foreground">
+            <span className="ml-auto text-xs text-muted-foreground">
               job_id <span className="font-mono">{job.job_id}</span>
             </span>
           </div>
@@ -100,7 +137,7 @@ function JobDetail({ view }: { view: JobView }) {
         <div
           role="alert"
           data-testid="job-alert-envio-incerto"
-          className="flex items-start gap-3 rounded-xl border border-red-500/50 bg-red-500/10 p-4 text-red-800 dark:text-red-200"
+          className="flex items-start gap-3 rounded-2xl border-2 border-st-uncertain/60 bg-st-uncertain/10 p-4 text-st-uncertain-fg"
         >
           <AlertOctagon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
           <div>
@@ -206,7 +243,7 @@ function JobDetail({ view }: { view: JobView }) {
       {dossier && view.dossier && (
         <SectionCard title="Publicação original" testId="posting">
           {view.dossier.posting_truncated && (
-            <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">
+            <p className="mb-2 text-xs text-st-review-fg">
               Texto truncado na Sheet (limite de célula); o dossier foi analisado sobre a publicação completa.
             </p>
           )}

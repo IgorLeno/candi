@@ -7,9 +7,11 @@ import { Button } from "@/components/ui/button"
 // Server error details are not shown: production only exposes a digest.
 export default function DashboardError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <div className="glass-card mx-auto mt-12 max-w-lg rounded-xl p-6 text-center" role="alert">
-      <AlertTriangle className="mx-auto h-8 w-8 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-      <h1 className="mt-3 text-lg font-semibold text-foreground">Não foi possível ler os dados do job-search</h1>
+    <div className="mx-auto mt-12 max-w-lg rounded-2xl border border-border bg-card p-6 text-center" role="alert">
+      <AlertTriangle className="mx-auto h-8 w-8 text-st-review-fg" aria-hidden="true" />
+      <h1 className="mt-3 font-display text-xl font-bold text-foreground">
+        Não foi possível ler os dados do job-search
+      </h1>
       <p className="mt-1 text-sm text-muted-foreground">
         A fonte pode estar indisponível ou a sessão pode ter expirado. Nada foi alterado.
       </p>

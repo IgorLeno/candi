@@ -41,9 +41,12 @@ export function SectionCard({
   testId?: string
 }) {
   return (
-    <Card className={cn("glass-card min-w-0 gap-4 py-5", className)} data-testid={testId}>
+    <Card
+      className={cn("min-w-0 gap-4 rounded-2xl border-border bg-card py-5 shadow-none", className)}
+      data-testid={testId}
+    >
       <CardHeader className="px-5">
-        <CardTitle className="text-base">{title}</CardTitle>
+        <CardTitle className="font-display text-lg font-semibold">{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent className="px-5">{children}</CardContent>
@@ -92,10 +95,10 @@ export function KpiRow({ kpis }: { kpis: Kpis }) {
           key={tile.key}
           href={tile.href}
           data-testid={`kpi-${tile.key}`}
-          className="glass-card block rounded-xl p-4 transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="block rounded-2xl border border-border bg-card p-4 transition-[transform,border-color] hover:-translate-y-0.5 hover:border-foreground/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <p className="text-xs font-medium text-muted-foreground">{tile.label}</p>
-          <p className="mt-1 text-3xl font-bold text-foreground">{kpis[tile.key]}</p>
+          <p className="mt-1 font-display text-4xl font-bold text-foreground tabular-nums">{kpis[tile.key]}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">{tile.hint}</p>
         </Link>
       ))}
@@ -110,7 +113,7 @@ export function UncertainSubmitAlert({ group }: { group: AttentionGroup }) {
     <div
       role="alert"
       data-testid="alert-envio-incerto"
-      className="mb-6 rounded-xl border border-red-500/50 bg-red-500/10 p-4 text-red-800 dark:text-red-200"
+      className="rounded-2xl border-2 border-st-uncertain/60 bg-st-uncertain/10 p-4 text-st-uncertain-fg"
     >
       <div className="flex items-start gap-3">
         <AlertOctagon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
@@ -125,7 +128,7 @@ export function UncertainSubmitAlert({ group }: { group: AttentionGroup }) {
                 <Link
                   prefetch={false}
                   href={jobHref(job.jobId)}
-                  className="inline-flex rounded-md border border-red-500/40 bg-background/60 px-2 py-1 text-xs font-medium hover:bg-background"
+                  className="inline-flex rounded-full border border-st-uncertain/50 bg-background/60 px-3 py-1 text-xs font-semibold hover:bg-background"
                 >
                   {job.empresa} — {job.cargo}
                 </Link>
@@ -148,7 +151,7 @@ export function AttentionPanel({ groups }: { groups: AttentionGroup[] }) {
   if (groups.length === 0) {
     return (
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+        <CheckCircle2 className="h-4 w-4 text-st-sent-fg" aria-hidden="true" />
         Nada pendente de atenção.
       </p>
     )
@@ -270,12 +273,7 @@ export function DistributionCard({
               <>
                 <span className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1">
-                    {invalid && (
-                      <AlertTriangle
-                        className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
-                        aria-hidden="true"
-                      />
-                    )}
+                    {invalid && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-st-review-fg" aria-hidden="true" />}
                     <span className="truncate">{label}</span>
                   </span>
                   <span className="shrink-0 tabular-nums">
@@ -288,7 +286,7 @@ export function DistributionCard({
                     className="block h-full rounded-sm"
                     style={{
                       width: `${(bucket.count / max) * 100}%`,
-                      background: invalid ? "rgb(245 158 11)" : "var(--series-1)",
+                      background: invalid ? "rgb(var(--st-review))" : "var(--series-1)",
                     }}
                   />
                 </span>
@@ -439,7 +437,7 @@ export function QualityPanel({
                 prefetch={false}
                 href={listHref({ analysis: level })}
                 data-testid={`analysis-count-${level}`}
-                className="block rounded-lg border border-border p-3 hover:border-primary/50"
+                className="block rounded-xl border border-border p-3 hover:border-foreground/25"
               >
                 <ToneBadge tone={ANALYSIS_META[level].tone}>{ANALYSIS_META[level].label}</ToneBadge>
                 <p className="mt-2 text-2xl font-bold tabular-nums text-foreground">{summary.analysis[level]}</p>
@@ -491,7 +489,7 @@ export function QualityPanel({
           <ul className="space-y-1 text-sm" data-testid="snapshot-issues">
             {snapshotIssues.map((issue, index) => (
               <li key={index} className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-st-review-fg" aria-hidden />
                 <span className="break-words">{issue.message}</span>
               </li>
             ))}

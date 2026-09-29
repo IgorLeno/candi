@@ -4,10 +4,10 @@ import type { Tone } from "@/lib/job-search/present"
 import { cn } from "@/lib/utils"
 
 export const TONE_CLASSES: Record<Tone, string> = {
-  good: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30 dark:text-emerald-300",
-  warning: "bg-amber-500/10 text-amber-800 border-amber-500/40 dark:text-amber-300",
-  critical: "bg-red-500/10 text-red-700 border-red-500/40 dark:text-red-300",
-  info: "bg-sky-500/10 text-sky-800 border-sky-500/30 dark:text-sky-300",
+  good: "bg-st-open/15 text-st-open-fg border-st-open/40",
+  warning: "bg-st-review/15 text-st-review-fg border-st-review/45",
+  critical: "bg-st-uncertain/15 text-st-uncertain-fg border-st-uncertain/45",
+  info: "bg-st-info/15 text-st-info-fg border-st-info/40",
   neutral: "bg-secondary text-secondary-foreground border-border",
   muted: "bg-muted/60 text-muted-foreground border-border",
 }
