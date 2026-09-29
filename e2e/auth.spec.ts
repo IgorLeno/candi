@@ -39,7 +39,7 @@ test.describe("Autenticação", () => {
     await signInAs(context, E2E_AUTH_ENV.ALLOWED_EMAIL)
     await page.goto("/login")
     await expect(page).toHaveURL("/")
-    await expect(page.getByRole("heading", { name: "Visão geral" })).toBeVisible()
+    await expect(page.getByTestId("today-hero")).toBeVisible()
 
     await page.getByTestId("sidebar-sair").click()
     await expect(page).toHaveURL(/\/login/)
@@ -53,7 +53,7 @@ test.describe("Autenticação", () => {
   test("resposta lenta com o cookie antigo não reativa a sessão após Sair", async ({ page, context }) => {
     await signInAs(context, E2E_AUTH_ENV.ALLOWED_EMAIL)
     await page.goto("/")
-    await expect(page.getByRole("heading", { name: "Visão geral" })).toBeVisible()
+    await expect(page.getByTestId("today-hero")).toBeVisible()
 
     let releaseSlow!: () => void
     const released = new Promise<void>((resolve) => (releaseSlow = resolve))

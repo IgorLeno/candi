@@ -28,10 +28,13 @@ export function ExternalAnchor({
   href,
   children,
   testId,
+  primary = false,
 }: {
   href: string | null
   children: React.ReactNode
   testId?: string
+  /** The main call to action of the page (solid lime). */
+  primary?: boolean
 }) {
   const safe = safeHttpUrl(href)
   if (!safe) return null
@@ -41,7 +44,12 @@ export function ExternalAnchor({
       target="_blank"
       rel="noopener noreferrer nofollow"
       data-testid={testId}
-      className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-sm text-foreground hover:border-primary/60 hover:text-primary"
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-semibold transition-transform hover:-translate-y-0.5",
+        primary
+          ? "bg-st-open text-st-open-ink"
+          : "border border-border bg-card text-foreground hover:border-foreground/30"
+      )}
     >
       {children}
       <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -234,7 +242,7 @@ export function InterestSection({ dossier }: { dossier: Dossier }) {
 
         <FactorList
           title="Amplificadores fortes"
-          icon={<PlusCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />}
+          icon={<PlusCircle className="h-4 w-4 text-st-open-fg" aria-hidden="true" />}
           empty="Nenhum."
           items={interest.amplifiers.map((amp) => {
             const setor = extra(amp, "setor")
@@ -248,13 +256,13 @@ export function InterestSection({ dossier }: { dossier: Dossier }) {
         )}
         <FactorList
           title="Fatores fracos"
-          icon={<PlusCircle className="h-4 w-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />}
+          icon={<PlusCircle className="h-4 w-4 text-st-info-fg" aria-hidden="true" />}
           empty="Nenhum."
           items={interest.weak_positives.map((factor) => labelFor(factor))}
         />
         <FactorList
           title="Negativos"
-          icon={<MinusCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />}
+          icon={<MinusCircle className="h-4 w-4 text-st-review-fg" aria-hidden="true" />}
           empty="Nenhum."
           items={interest.negatives.map((negative) => labelFor(negative.type))}
         />

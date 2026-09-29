@@ -1,9 +1,9 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react"
+import { ChevronRight, LayoutGrid, Rows3, Search, SlidersHorizontal, X } from "lucide-react"
 import {
   DEFAULT_FILTERS,
   FACET_LABELS,
@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AnalysisBadge, CellBadge } from "@/components/job-search/cell-badge"
 import { ToneBadge } from "@/components/job-search/tone-badge"
+import { JobCard, StateLegend } from "@/components/job-search/visual"
 import { cn } from "@/lib/utils"
 
 const PRIMARY_FACETS: FacetKey[] = ["status_analise", "status_candidatura", "interesse", "analysis"]
@@ -40,6 +41,40 @@ const MORE_FACETS: FacetKey[] = [
   "modalidade",
 ]
 const ALL = "__all__"
+
+// Cards or table: a per-browser convenience, so it lives in localStorage rather than the URL.
+type ListView = "cards" | "tabela"
+const VIEW_KEY = "estagios:vista-vagas"
+
+// Fallback when storage is blocked: the choice then lasts until the page is reloaded.
+let memoryView: ListView = "cards"
+
+function readView(): ListView {
+  try {
+    const stored = window.localStorage.getItem(VIEW_KEY)
+    return stored === "tabela" || stored === "cards" ? stored : memoryView
+  } catch {
+    return memoryView
+  }
+}
+
+const VIEW_EVENT = "estagios:vista-vagas-change"
+
+function subscribeView(onChange: () => void): () => void {
+  window.addEventListener(VIEW_EVENT, onChange)
+  return () => window.removeEventListener(VIEW_EVENT, onChange)
+}
+
+function saveView(view: ListView) {
+  memoryView = view
+  try {
+    window.localStorage.setItem(VIEW_KEY, view)
+  } catch {
+    // Storage blocked: memoryView keeps the choice for this page load.
+  }
+  window.dispatchEvent(new Event(VIEW_EVENT))
+}
+
 // Long status names wrap inside their column instead of spilling into the next one.
 const WRAP = "whitespace-normal text-left"
 
@@ -80,6 +115,9 @@ export function JobsExplorer({ items, initialFilters }: { items: JobListItem[]; 
   const [filters, setFilters] = useState<JobFilters>(initialFilters)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [showMore, setShowMore] = useState(() => MORE_FACETS.some((facet) => initialFilters.facets[facet]))
+  // Server render and hydration both start on cards; the stored choice applies right after.
+  const view = useSyncExternalStore(subscribeView, readView, () => "cards" as ListView)
+  const changeView = saveView
 
   const visible = useMemo(
     () =>
@@ -109,7 +147,7 @@ export function JobsExplorer({ items, initialFilters }: { items: JobListItem[]; 
 
   return (
     <div className="space-y-4">
-      <div className="glass-card space-y-3 rounded-xl p-4">
+      <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
             <Search
@@ -220,15 +258,48 @@ export function JobsExplorer({ items, initialFilters }: { items: JobListItem[]; 
           <p className="ml-auto text-sm text-muted-foreground" data-testid="result-count" aria-live="polite">
             {visible.length} de {items.length} vagas
           </p>
+          <div className="flex rounded-lg border border-border p-0.5" role="group" aria-label="Visualização">
+            <Button
+              variant={view === "cards" ? "default" : "ghost"}
+              size="sm"
+              aria-pressed={view === "cards"}
+              onClick={() => changeView("cards")}
+              data-testid="view-cards"
+            >
+              <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+              Cartões
+            </Button>
+            <Button
+              variant={view === "tabela" ? "default" : "ghost"}
+              size="sm"
+              aria-pressed={view === "tabela"}
+              onClick={() => changeView("tabela")}
+              data-testid="view-table"
+            >
+              <Rows3 className="h-4 w-4" aria-hidden="true" />
+              Tabela
+            </Button>
+          </div>
         </div>
       </div>
 
+      <StateLegend />
+
       {visible.length === 0 ? (
-        <p className="glass-card rounded-xl py-12 text-center text-sm text-muted-foreground" data-testid="empty-list">
+        <p
+          className="rounded-2xl border border-dashed border-border bg-card/50 py-12 text-center text-sm text-muted-foreground"
+          data-testid="empty-list"
+        >
           {items.length === 0 ? "Nenhuma vaga no registro." : "Nenhuma vaga corresponde aos filtros."}
         </p>
+      ) : view === "cards" ? (
+        <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="job-list">
+          {visible.map((item, index) => (
+            <JobCard key={item.jobId} item={item} index={index} />
+          ))}
+        </ul>
       ) : (
-        <div className="glass-card overflow-hidden rounded-xl">
+        <div className="overflow-hidden rounded-2xl border border-border bg-card">
           <div
             className="hidden grid-cols-[2rem_minmax(0,2fr)_repeat(4,minmax(0,1fr))_5.5rem] gap-3 border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground lg:grid"
             aria-hidden="true"
@@ -280,7 +351,7 @@ function JobRowItem({ item, expanded, onToggle }: { item: JobListItem; expanded:
           <Link
             prefetch={false}
             href={jobHref(item.jobId)}
-            className="block truncate font-semibold text-foreground hover:text-primary"
+            className="block truncate font-semibold text-foreground hover:text-st-open-fg"
             data-testid="job-link"
           >
             {item.empresa || "(sem empresa)"}

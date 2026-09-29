@@ -12,10 +12,29 @@ test.describe("Painel do job-search", () => {
     await page.getByRole("option", { name: option, exact: true }).click()
   }
 
-  test("visão geral → lista → vaga", async ({ page }) => {
+  test("hoje: fila, próxima jogada e meta", async ({ page }) => {
     await page.goto("/")
-    await expect(page.getByRole("heading", { name: "Visão geral" })).toBeVisible()
+    await expect(page.getByTestId("today-hero")).toContainText("4 vagas abertas esperando você")
     await expect(page.getByTestId("data-source")).toContainText("Fixture local")
+    // Queue order: interest, then progress, then most recent analysis.
+    await expect(page.getByTestId("next-move")).toHaveAttribute("data-job-id", "fake-1001")
+    await expect(page.getByTestId("queue-list").getByTestId("job-row")).toHaveCount(3)
+    await expect(page.getByTestId("sent-list").getByTestId("job-row")).toHaveAttribute("data-job-id", "fake-1006")
+    await expect(page.getByTestId("goal-ring")).toHaveAttribute("data-goal", "5")
+
+    await page.getByTestId("sidebar-configuracoes").click()
+    await page.getByTestId("weekly-goal-input").fill("8")
+    await page.getByTestId("weekly-goal-save").click()
+    await page.getByTestId("sidebar-hoje").click()
+    await expect(page.getByTestId("goal-ring")).toHaveAttribute("data-goal", "8")
+
+    await page.getByTestId("next-move-link").click()
+    await expect(page).toHaveURL("/vaga/fake-1001")
+  })
+
+  test("análise → lista → vaga", async ({ page }) => {
+    await page.goto("/analise")
+    await expect(page.getByRole("heading", { name: "Análise" })).toBeVisible()
     await expect(page.getByTestId("kpi-analisadas")).toContainText("9")
     await expect(page.getByTestId("kpi-enviadas")).toContainText("1")
     await expect(page.getByTestId("funnel")).toBeVisible()
@@ -39,12 +58,12 @@ test.describe("Painel do job-search", () => {
   })
 
   test("KPI e distribuições abrem a lista filtrada", async ({ page }) => {
-    await page.goto("/")
+    await page.goto("/analise")
     await page.getByTestId("kpi-prontasRevisao").click()
     await expect(page).toHaveURL(/status_candidatura=PRONTA/)
     await expect(page.getByTestId("result-count")).toHaveText("1 de 9 vagas")
 
-    await page.goto("/")
+    await page.goto("/analise")
     await page
       .getByTestId("dist-interesse")
       .getByRole("link", { name: /Muito alto/ })
@@ -55,6 +74,12 @@ test.describe("Painel do job-search", () => {
 
   test("filtros e busca da lista", async ({ page }) => {
     await page.goto("/vagas")
+    // Cards by default; the table view shows the same rows.
+    await expect(page.getByTestId("job-row").first()).toHaveAttribute("data-state", /.+/)
+    await page.getByTestId("view-table").click()
+    await expect(page.getByTestId("view-table")).toHaveAttribute("aria-pressed", "true")
+    await expect(page.getByTestId("job-row")).toHaveCount(9)
+
     await pickFilter(page, "analysis", "Dossier inválido")
     await expect(page.getByTestId("job-row")).toHaveCount(1)
     await expect(page).toHaveURL(/analysis=INVALID/)
@@ -105,7 +130,7 @@ test.describe("Painel do job-search", () => {
   })
 
   test("enum inválido aparece como problema de dados", async ({ page }) => {
-    await page.goto("/")
+    await page.goto("/analise")
     await expect(page.getByTestId("dist-status_candidatura")).toContainText("Inválido")
     await expect(page.getByTestId("issue-ENUM_INVALID")).toContainText("1")
 

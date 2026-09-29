@@ -6,6 +6,10 @@ import {
   DEFAULT_FILTERS,
   attentionGroups,
   facetOptions,
+  flameCount,
+  jobState,
+  journeyStep,
+  todayQueue,
   filtersToParams,
   formatDay,
   formatTimestamp,
@@ -159,5 +163,44 @@ describe("safety and formatting", () => {
     expect(parsePeriod("7d")).toBe("tudo")
     expect(periodRange("tudo", "2026-09-25")).toEqual({})
     expect(periodRange("30d", "2026-09-25")).toEqual({ from: "2026-08-27", to: "2026-09-25" })
+  })
+})
+
+describe("visual state", () => {
+  it("maps each fixture job to one state, most decisive first", () => {
+    const states = Object.fromEntries(items.map((item) => [item.jobId, jobState(item)]))
+    expect(states).toEqual({
+      "fake-1001": "aberta",
+      "fake-1002": "aberta",
+      "fake-1003": "revisao",
+      "fake-1004": "aberta",
+      "fake-1005": "fora",
+      "fake-1006": "enviada",
+      "fake-1007": "incerto",
+      "fake-1008": "nao-confirmada",
+      "fake-0999": "encerrada",
+    })
+  })
+
+  it("never reads an invalid cell as a state value", () => {
+    const base = byId("fake-1001")
+    const invalid = { value: "ENVIADA ", invalid: true, tone: "warning" as const }
+    expect(jobState({ ...base, statusCandidatura: invalid })).toBe("aberta")
+    expect(journeyStep(invalid)).toBeNull()
+  })
+
+  it("trail and flames follow the job-search ladders, null outside them", () => {
+    expect(journeyStep(byId("fake-1002").statusCandidatura)).toBe(0)
+    expect(journeyStep(byId("fake-1001").statusCandidatura)).toBe(1)
+    expect(journeyStep(byId("fake-1003").statusCandidatura)).toBe(2)
+    expect(journeyStep(byId("fake-1006").statusCandidatura)).toBe(3)
+    expect(journeyStep({ value: "RETIRADA", invalid: false, tone: "muted" })).toBeNull()
+    expect(flameCount(byId("fake-1001").interesse)).toBe(3)
+    expect(flameCount(byId("fake-1003").interesse)).toBe(0)
+    expect(flameCount(byId("fake-1005").interesse)).toBeNull()
+  })
+
+  it("queues selected open jobs still to apply, by interest, progress, then recency", () => {
+    expect(todayQueue(items).map((item) => item.jobId)).toEqual(["fake-1001", "fake-1004", "fake-1002", "fake-1003"])
   })
 })

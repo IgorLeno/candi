@@ -1,6 +1,6 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google"
 import Script from "next/script"
 import { Toaster } from "sonner"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -8,6 +8,8 @@ import "./globals.css"
 
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
+// Display face for headings and big numbers; Geist stays the body font.
+const bricolage = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-bricolage" })
 const themeInitializationScript = `
   (function () {
     try {
@@ -28,8 +30,8 @@ const themeInitializationScript = `
 `
 
 export const metadata: Metadata = {
-  title: "Dashboard de Estágios - Engenharia Química",
-  description: "Acompanhe suas inscrições em vagas de estágio",
+  title: "Estágios — Caça",
+  description: "Fila de vagas do job-search: o que está aberto e qual é a próxima jogada",
   generator: "v0.app",
   icons: {
     icon: [
@@ -56,7 +58,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" className={bricolage.variable} suppressHydrationWarning>
       <head>
         <Script id="theme-initialization" strategy="beforeInteractive">
           {themeInitializationScript}

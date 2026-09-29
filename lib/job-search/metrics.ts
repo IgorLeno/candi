@@ -95,6 +95,15 @@ export function bucketOf(view: JobView, key: DistributionKey): string {
   return cell ?? EMPTY_BUCKET
 }
 
+/** Applications dated (data_candidatura) in the ISO week (Monday, UTC) that contains `today`. */
+export function sentInWeek(views: JobView[], today: string): number {
+  const week = weekStart(today)
+  return views.filter((view) => {
+    const date = view.job.data_candidatura
+    return date !== null && weekStart(date) === week && date.slice(0, 10) <= today
+  }).length
+}
+
 export interface Bucket {
   value: string
   count: number

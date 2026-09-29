@@ -158,6 +158,7 @@ export interface JobListItem {
   issueCodes: IssueCode[]
   dataPrimeiraAnalise: string | null
   dataUltimaAnalise: string | null
+  dataCandidatura: string | null
   facets: Record<FacetKey, string>
 }
 
@@ -187,6 +188,7 @@ export function toListItem(view: JobView): JobListItem {
     issueCodes: [...new Set(view.issues.map((issue) => issue.code))],
     dataPrimeiraAnalise: job.data_primeira_analise,
     dataUltimaAnalise: job.data_ultima_analise,
+    dataCandidatura: job.data_candidatura,
     facets: Object.fromEntries(FACET_KEYS.map((key) => [key, facetOf(view, key)])) as Record<FacetKey, string>,
   }
 }
@@ -434,4 +436,95 @@ export function formatTimestamp(timestamp: string | null | undefined): string {
   if (!timestamp) return "—"
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(timestamp)
   return match ? `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]} UTC` : timestamp
+}
+
+// ---------------------------------------------------------------------------
+// Visual state ("Hoje" view, cards). Presentation groupings over job-search values; they decide
+// only color, order and wording, never a job-search outcome.
+
+export type JobState =
+  | "incerto"
+  | "enviada"
+  | "retirada"
+  | "fora"
+  | "encerrada"
+  | "revisao"
+  | "aberta"
+  | "nao-confirmada"
+
+export const JOB_STATE_META: Record<JobState, { label: string; description: string }> = {
+  incerto: { label: "Envio incerto", description: "Possível envio sem confirmação; aguarda reconciliação." },
+  enviada: { label: "Enviada", description: "Candidatura enviada." },
+  retirada: { label: "Retirada", description: "Candidatura retirada." },
+  fora: { label: "Fora da fila", description: "Análise descartou ou não priorizou a vaga." },
+  encerrada: { label: "Encerrada", description: "Vaga encerrada no portal ou arquivada." },
+  revisao: { label: "Pronta pra revisar", description: "Candidatura preparada aguardando sua revisão." },
+  aberta: { label: "Aberta", description: "Vaga aberta." },
+  "nao-confirmada": { label: "Não confirmada", description: "Disponibilidade ainda não confirmada." },
+}
+
+type StateInput = Pick<
+  JobListItem,
+  "statusAnalise" | "statusDisponibilidade" | "statusCandidatura" | "archived" | "uncertainSubmit"
+>
+
+/** One visual state per job, most decisive first (an invalid cell never matches a state value). */
+export function jobState(item: StateInput): JobState {
+  const candidatura = item.statusCandidatura.invalid ? null : item.statusCandidatura.value
+  const analise = item.statusAnalise.invalid ? null : item.statusAnalise.value
+  const disponibilidade = item.statusDisponibilidade.invalid ? null : item.statusDisponibilidade.value
+  if (item.uncertainSubmit || candidatura === "ENVIO INCERTO") return "incerto"
+  if (candidatura === "ENVIADA") return "enviada"
+  if (candidatura === "RETIRADA") return "retirada"
+  if (analise === "DESCARTADA" || analise === "NÃO PRIORIZADA") return "fora"
+  if (disponibilidade === "ENCERRADA" || item.archived) return "encerrada"
+  if (candidatura === "PRONTA PARA REVISÃO") return "revisao"
+  if (disponibilidade === "ABERTA") return "aberta"
+  return "nao-confirmada"
+}
+
+/** Steps of the application trail after "NÃO INICIADA". */
+export const JOURNEY_STEPS = ["Em preparação", "Pronta pra revisar", "Enviada"] as const
+
+const JOURNEY_INDEX: Record<string, number> = {
+  "NÃO INICIADA": 0,
+  "EM PREPARAÇÃO": 1,
+  "PRONTA PARA REVISÃO": 2,
+  "ENVIO INCERTO": 2,
+  ENVIADA: 3,
+}
+
+/** Completed steps (0–3) of the trail; null when the status is empty, invalid or RETIRADA. */
+export function journeyStep(cell: CellDisplay): number | null {
+  if (cell.invalid || cell.value === null) return null
+  return JOURNEY_INDEX[cell.value] ?? null
+}
+
+const FLAMES: Record<string, number> = { BAIXO: 0, NORMAL: 1, ALTO: 2, MUITO_ALTO: 3 }
+
+/** Interest as 0–3 flames; null outside the interest ladder (indefinido, legado, inválido, vazio). */
+export function flameCount(cell: CellDisplay): number | null {
+  if (cell.invalid || cell.value === null) return null
+  return FLAMES[cell.value] ?? null
+}
+
+/**
+ * The "Hoje" queue: SELECIONADA and ABERTA jobs whose application is still to be done (not sent,
+ * withdrawn or uncertain), outside the archive. Highest interest first, then the furthest along,
+ * then the most recently analysed.
+ */
+export function todayQueue(items: JobListItem[]): JobListItem[] {
+  const queue = items.filter(
+    (item) =>
+      !item.archived &&
+      !item.statusAnalise.invalid &&
+      item.statusAnalise.value === "SELECIONADA" &&
+      (jobState(item) === "aberta" || jobState(item) === "revisao")
+  )
+  return queue.sort(
+    (a, b) =>
+      interestRank(a) - interestRank(b) ||
+      (journeyStep(b.statusCandidatura) ?? 0) - (journeyStep(a.statusCandidatura) ?? 0) ||
+      byRecent(a, b)
+  )
 }
