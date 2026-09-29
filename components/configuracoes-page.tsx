@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useSyncExternalStore } from "react"
 import { useTheme } from "next-themes"
 import { Palette, Target } from "lucide-react"
 import { toast } from "sonner"
@@ -91,8 +91,16 @@ function WeeklyGoalForm() {
   )
 }
 
+const noopSubscribe = () => () => {}
+
 export function ConfiguracoesPage() {
   const { theme, setTheme } = useTheme()
+  // next-themes only knows the theme on the client; the server render (and hydration) must show none.
+  const mounted = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false
+  )
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -106,7 +114,7 @@ export function ConfiguracoesPage() {
             <h3 className="mb-1 font-semibold text-foreground">Tema</h3>
             <p className="text-sm text-muted-foreground">Escolha entre tema claro, escuro ou automático</p>
           </div>
-          <Select value={theme} onValueChange={setTheme}>
+          <Select value={mounted ? (theme ?? "") : ""} onValueChange={setTheme}>
             <SelectTrigger className="w-[140px] border-border bg-background">
               <SelectValue placeholder="Selecione" />
             </SelectTrigger>
