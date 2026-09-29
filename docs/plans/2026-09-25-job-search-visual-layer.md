@@ -29,6 +29,7 @@ Regras invariantes:
 - Nenhum deploy lendo a Sheet real antes de Auth (WP4).
 - Dashboard **nunca escreve** na Sheet (credencial `spreadsheets.readonly`, service account própria, Viewer).
 - Nada de estado de vaga editável no dashboard. Correções vão pelo fluxo dos bots/coordenador.
+- Revisão 2026-09-29 ([central de operações](2026-09-29-ops-center-bot-triggers.md)): o painel pode **pedir** aos bots que comecem trabalho (busca, currículo, candidatura) pelo `dispatch.py` do job-search. Continua sem escrever na Sheet, sem texto livre para bots e sem aprovar nada.
 - Valor fora do domínio não quebra a UI: vai para bucket `INVÁLIDO` + painel de qualidade de dados (ex.: `NãO INICIADA`).
 - Divergência Sheet × dossier (ex.: `interesse` ≠ `dossier.interest.level`) é sinalizada, não resolvida.
 

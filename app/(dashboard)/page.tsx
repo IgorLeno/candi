@@ -14,6 +14,8 @@ import {
 import { DataSourceLine } from "@/components/job-search/page-header"
 import { SyncButton } from "@/components/job-search/sync-button"
 import { GoalRing } from "@/components/job-search/goal-ring"
+import { SearchOps } from "@/components/job-search/ops"
+import { isDispatchEnabled } from "@/lib/ops/dispatcher"
 import { UncertainSubmitAlert } from "@/components/job-search/overview"
 import { JobCard, NextMoveCard, ShelfTitle, StateLegend } from "@/components/job-search/visual"
 import { cn } from "@/lib/utils"
@@ -144,6 +146,11 @@ export default async function HojePage() {
             <SyncButton />
           </div>
         </div>
+        {isDispatchEnabled() && (
+          <div className="relative mt-6 border-t border-border/70 pt-5">
+            <SearchOps knownJobIds={data.views.map((view) => view.job.job_id)} />
+          </div>
+        )}
       </section>
 
       {uncertain && <UncertainSubmitAlert group={uncertain} />}

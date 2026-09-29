@@ -9,6 +9,9 @@ import { AnalysisBadge, CellBadge } from "@/components/job-search/cell-badge"
 import { ToneBadge } from "@/components/job-search/tone-badge"
 import { SectionCard } from "@/components/job-search/overview"
 import { DoneStamp, Flames, JourneyTrail, StateBadge, stateBarClass } from "@/components/job-search/visual"
+import { JobOps } from "@/components/job-search/ops"
+import { isDispatchEnabled } from "@/lib/ops/dispatcher"
+import { jobDispatchBlocker } from "@/lib/ops/present"
 import { cn } from "@/lib/utils"
 import {
   ActivitiesSection,
@@ -67,7 +70,8 @@ function JobDetail({ view }: { view: JobView }) {
   const dossier = view.dossier?.dossier ?? null
   const postingUrl = dossier?.identity.url ?? job.url
   const applicationUrl = dossier?.identity.application_url ?? null
-  const state = jobState(toListItem(view))
+  const item = toListItem(view)
+  const state = jobState(item)
   const closed = state === "encerrada" || state === "retirada" || state === "fora"
 
   return (
@@ -130,6 +134,11 @@ function JobDetail({ view }: { view: JobView }) {
               job_id <span className="font-mono">{job.job_id}</span>
             </span>
           </div>
+          {isDispatchEnabled() && (
+            <div className="mt-4">
+              <JobOps jobId={job.job_id} blocker={jobDispatchBlocker(item)} />
+            </div>
+          )}
         </header>
       </div>
 
