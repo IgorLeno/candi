@@ -1,9 +1,22 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
-import { Bot, CheckCircle2, Circle, Copy, FileText, Loader2, Radar, XCircle, type LucideIcon } from "lucide-react"
+import { useRouter } from "next/navigation"
+import {
+  Bot,
+  CheckCircle2,
+  Circle,
+  Copy,
+  FileSpreadsheet,
+  FileText,
+  Loader2,
+  Radar,
+  XCircle,
+  type LucideIcon,
+} from "lucide-react"
 import { toast } from "sonner"
-import { ackDispatch, listDispatches, startDispatch } from "@/app/actions/ops"
+import { syncJobSearch } from "@/app/actions/job-search"
+import { ackDispatch, listDispatches, registerWriteset, startDispatch } from "@/app/actions/ops"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -17,14 +30,33 @@ import { Progress } from "@/components/ui/progress"
 import { ToneBadge } from "@/components/job-search/tone-badge"
 import { formatTimestamp } from "@/lib/job-search/present"
 import { usePlatform, writePlatform } from "@/lib/ops/platform-pref"
-import { ACTION_META, PLATFORM_LABEL, STATUS_META, latest, refusalText, withRegistration } from "@/lib/ops/present"
-import { PLATFORMS, type Dispatch, type DispatchAction, type DispatchList, type DispatchStage } from "@/lib/ops/schema"
+import {
+  ACTION_META,
+  PLATFORM_LABEL,
+  STATUS_META,
+  canRegisterWriteset,
+  isActiveStatus,
+  latest,
+  persistSummary,
+  refusalText,
+  withRegistration,
+} from "@/lib/ops/present"
+import {
+  PLATFORMS,
+  type BotAction,
+  type Dispatch,
+  type DispatchAction,
+  type DispatchList,
+  type DispatchProgress,
+  type DispatchStage,
+} from "@/lib/ops/schema"
 import { cn } from "@/lib/utils"
 
 const ACTION_ICON: Record<DispatchAction, LucideIcon> = {
   BUSCAR_VAGAS: Radar,
   GERAR_CURRICULO: FileText,
   PREENCHER_CANDIDATURA: Bot,
+  REGISTRAR_WRITESET: FileSpreadsheet,
 }
 
 const POLL_ACTIVE_MS = 5_000
@@ -59,7 +91,12 @@ function useDispatches(filter: { jobId?: string; action?: DispatchAction }) {
     }
   }, [refresh])
 
-  const running = data?.dispatches.some((dispatch) => dispatch.status === "PENDENTE" || dispatch.status === "RODANDO")
+  // A search's writeset persistence runs as its own record; keep polling while it runs too.
+  const running = data?.dispatches.some(
+    (dispatch) =>
+      isActiveStatus(dispatch.status) ||
+      (dispatch.progress.registration != null && isActiveStatus(dispatch.progress.registration.status))
+  )
   useEffect(() => {
     if (!running) return
     const timer = window.setInterval(() => void refresh(), POLL_ACTIVE_MS)
@@ -140,6 +177,117 @@ function CommandBox({ command }: { command: string }) {
   )
 }
 
+/**
+ * Writeset of a finished search: "Registrar na planilha" asks job-search to persist it (the panel has no write
+ * credential). When the persistence this card watched finishes, the Sheet snapshot is read again.
+ */
+function WritesetRegistration({
+  dispatch,
+  progress,
+  onChanged,
+}: {
+  dispatch: Dispatch
+  progress: DispatchProgress
+  onChanged: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [pending, startTransition] = useTransition()
+  const [syncing, startSync] = useTransition()
+  const router = useRouter()
+  const registration = progress.registration ?? null
+  const status = registration?.status
+  const previous = useRef(status)
+
+  useEffect(() => {
+    const before = previous.current
+    previous.current = status
+    if (!before || !isActiveStatus(before) || status !== "CONCLUIDO") return
+    startSync(async () => {
+      try {
+        await syncJobSearch()
+        router.refresh()
+        toast.success("Writeset gravado pelo job-search; planilha relida.")
+      } catch {
+        toast.error("Writeset gravado, mas não foi possível sincronizar. Clique em Sincronizar.")
+      }
+    })
+  }, [status, router])
+
+  if (!progress.writeset_path) return null
+  const count = progress.writeset_job_ids?.length ?? 0
+  const running = status !== undefined && isActiveStatus(status)
+  const summary = status === "CONCLUIDO" ? persistSummary(registration?.result) : null
+  return (
+    <div className="space-y-2" data-testid="writeset-registration" data-registration={status ?? "none"}>
+      <p className="text-xs text-muted-foreground">
+        Writeset em <span className="font-mono">{progress.writeset_path}</span>
+        {summary
+          ? `: gravado pelo job-search (${summary}).`
+          : running
+            ? ": o job-search está gravando na planilha."
+            : ", pendente de persistência."}
+        {syncing && " Relendo a planilha…"}
+      </p>
+      {canRegisterWriteset(progress) && (
+        <Button size="sm" variant="outline" data-testid="register-writeset" onClick={() => setOpen(true)}>
+          <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+          {ACTION_META.REGISTRAR_WRITESET.verb}
+        </Button>
+      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent data-testid="register-dialog">
+          <DialogHeader>
+            <DialogTitle>{ACTION_META.REGISTRAR_WRITESET.label}</DialogTitle>
+            <DialogDescription>{ACTION_META.REGISTRAR_WRITESET.description}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p>
+              O job-search vai gravar{" "}
+              <strong>
+                {count} {count === 1 ? "vaga" : "vagas"}
+              </strong>{" "}
+              na planilha com a credencial de escrita dele: UPSERT por job_id com releitura, mais as linhas de Dossiers
+              e Cobertura de Fontes do writeset.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Writeset <span className="font-mono">{progress.writeset_path}</span>. Depois de gravado, o painel relê a
+              planilha.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)} data-testid="register-cancel">
+              Cancelar
+            </Button>
+            <Button
+              disabled={pending}
+              data-testid="register-confirm"
+              onClick={() =>
+                startTransition(async () => {
+                  try {
+                    const result = await registerWriteset(dispatch.id)
+                    if (!result.ok) {
+                      toast.error(refusalText(result.code))
+                      return
+                    }
+                    toast.success("Gravação pedida ao job-search.")
+                    setOpen(false)
+                    onChanged()
+                  } catch {
+                    toast.error(refusalText("UNAUTHENTICATED"))
+                  }
+                })
+              }
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              Gravar {count} {count === 1 ? "vaga" : "vagas"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
 const ACKABLE = new Set(["INCERTO", "FALHOU", "PRECISA_HUMANO", "PARADO", "MANUAL"])
 
 export function DispatchCard({
@@ -200,11 +348,8 @@ export function DispatchCard({
           </li>
         ))}
       </ol>
-      {dispatch.action === "BUSCAR_VAGAS" && progress.writeset_path && (
-        <p className="text-xs text-muted-foreground" data-testid="writeset-pending">
-          Writeset em <span className="font-mono">{progress.writeset_path}</span>. O coordenador grava na planilha (
-          <span className="font-mono">writeset.py persist</span>); depois clique em Sincronizar.
-        </p>
+      {dispatch.action === "BUSCAR_VAGAS" && (
+        <WritesetRegistration dispatch={dispatch} progress={progress} onChanged={onChanged} />
       )}
       {(dispatch.code || dispatch.marker) && dispatch.status !== "CONCLUIDO" && (
         <p className="text-xs text-muted-foreground">
@@ -244,7 +389,7 @@ function DispatchButton({
   primary,
   onStarted,
 }: {
-  action: DispatchAction
+  action: BotAction
   jobId?: string
   disabledReason: string | null
   warning?: string | null

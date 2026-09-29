@@ -1,6 +1,13 @@
 import type { Tone } from "@/lib/job-search/present"
 import type { JobListItem } from "@/lib/job-search/present"
-import type { Dispatch, DispatchAction, DispatchProgress, DispatchStatus, Platform } from "@/lib/ops/schema"
+import type {
+  Dispatch,
+  DispatchAction,
+  DispatchProgress,
+  DispatchStatus,
+  PersistResult,
+  RecordPlatform,
+} from "@/lib/ops/schema"
 
 // Labels and UX gating for bot dispatches. The dispatcher and the bots are the authority; nothing here
 // recomputes a job-search rule: a disabled button only saves a refused round trip.
@@ -10,7 +17,7 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     label: "Buscar vagas",
     verb: "Nova busca",
     description:
-      "O Lince faz a busca ampla e remove as vagas com bloqueio grave; o Threadgist leva as restantes ao ChatGPT para a análise; o writeset fica pronto para o coordenador gravar na planilha.",
+      "O Lince faz a busca ampla e remove as vagas com bloqueio grave; o Threadgist leva as restantes ao ChatGPT para a análise; o writeset fica pronto para ser gravado na planilha.",
   },
   GERAR_CURRICULO: {
     label: "Gerar currículo",
@@ -24,9 +31,15 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     description:
       "O Candidatinho abre o navegador de candidatura e preenche o formulário até a revisão. Nada é enviado: ele para antes do botão final e pede sua aprovação no Bot Chat.",
   },
+  REGISTRAR_WRITESET: {
+    label: "Registrar na planilha",
+    verb: "Registrar na planilha",
+    description:
+      "O job-search grava o writeset da busca na planilha com a credencial de escrita dele (writeset.py persist, só depois de writeset.py check VALID). O painel não tem credencial de escrita e não escreve na planilha.",
+  },
 }
 
-export const PLATFORM_LABEL: Record<Platform, string> = { hermes: "Hermes", grok: "Grok" }
+export const PLATFORM_LABEL: Record<RecordPlatform, string> = { hermes: "Hermes", grok: "Grok", host: "job-search" }
 
 export const STATUS_META: Record<DispatchStatus, { label: string; tone: Tone }> = {
   PENDENTE: { label: "Na fila", tone: "info" },
@@ -55,6 +68,13 @@ const REFUSAL_TEXT: Record<string, string> = {
   DOSSIER_NOT_VALID: "A vaga não tem dossier válido no runtime do job-search.",
   JOB_NOT_ACTIONABLE: "O dossier da vaga não está SELECIONADA e ABERTA.",
   DISPATCH_STILL_RUNNING: "O disparo ainda está rodando.",
+  DISPATCH_NOT_FOUND: "Disparo não encontrado no job-search.",
+  DISPATCH_ID_INVALID: "Identificador de disparo inválido.",
+  NOT_A_SEARCH: "Só o writeset de uma busca pode ser registrado.",
+  SEARCH_STILL_RUNNING: "A busca ainda está rodando: espere o writeset ficar pronto.",
+  WRITESET_NOT_VALID: "O writeset não existe ou não passou no writeset.py check.",
+  PERSIST_ACTIVE: "Já há uma gravação de writeset em andamento.",
+  WRITESET_ALREADY_REGISTERED: "Este writeset já foi gravado na planilha.",
 }
 
 export function refusalText(code: string): string {
@@ -80,27 +100,49 @@ export function jobDispatchBlocker(
 }
 
 /**
- * The last search stage ("registro na planilha") is the coordinator's: the dispatcher cannot see it.
- * The panel closes it from its own read-only Sheet snapshot: every writeset job_id is now in the Sheet.
+ * The last search stage ("registro na planilha"): the dispatcher closes it when it persisted the writeset
+ * itself; the coordinator may also persist it outside the panel. The panel adds its read-only Sheet snapshot:
+ * once every writeset job_id is in the Sheet, the stage is done whoever wrote it.
  */
 export function withRegistration(progress: DispatchProgress, knownJobIds: ReadonlySet<string>): DispatchProgress {
   const ids = progress.writeset_job_ids ?? []
   if (!progress.writeset_path || ids.length === 0) return progress
   const registered = ids.filter((id) => knownJobIds.has(id)).length
+  const all = registered === ids.length
   const stages = progress.stages.map((stage) =>
     stage.key === "registro"
       ? {
           ...stage,
-          state: registered === ids.length ? ("done" as const) : stage.state,
-          note:
-            registered === ids.length
-              ? `${ids.length} de ${ids.length} na planilha`
-              : `writeset pendente: ${registered} de ${ids.length} na planilha`,
+          state: all ? ("done" as const) : stage.state,
+          note: all
+            ? `${ids.length} de ${ids.length} na planilha`
+            : [stage.note, `${registered} de ${ids.length} na planilha`].filter(Boolean).join(" · "),
         }
       : stage
   )
   const done = stages.filter((stage) => stage.state === "done").length
   return { ...progress, stages, percent: Math.min(100, 5 + Math.round((95 * done) / stages.length)) }
+}
+
+export function isActiveStatus(status: DispatchStatus): boolean {
+  return status === "PENDENTE" || status === "RODANDO"
+}
+
+/**
+ * "Registrar na planilha" is offered while a valid writeset exists, its stage is not done (by the dispatcher
+ * or by the Sheet snapshot) and no persistence is running. The dispatcher re-checks everything.
+ */
+export function canRegisterWriteset(progress: DispatchProgress): boolean {
+  if (!progress.writeset_path) return false
+  const stage = progress.stages.find((item) => item.key === "registro")
+  if (stage?.state === "done") return false
+  return !(progress.registration && isActiveStatus(progress.registration.status))
+}
+
+export function persistSummary(result: PersistResult | null | undefined): string | null {
+  if (!result) return null
+  const { INSERTED, UPDATED, UNCHANGED } = result.jobs
+  return `${INSERTED} novas, ${UPDATED} atualizadas, ${UNCHANGED} sem mudança`
 }
 
 /** Latest dispatch of an action (the dispatcher lists newest first). */

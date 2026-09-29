@@ -27,9 +27,13 @@ Decisões do usuário (2026-09-25):
 Regras invariantes:
 
 - Nenhum deploy lendo a Sheet real antes de Auth (WP4).
-- Dashboard **nunca escreve** na Sheet (credencial `spreadsheets.readonly`, service account própria, Viewer).
+- Dashboard **nunca escreve** na Sheet (credencial `spreadsheets.readonly`, service account própria, Viewer). Revisão
+  2026-09-29 abaixo: ele pode pedir ao job-search que grave um writeset validado; quem escreve é o job-search.
 - Nada de estado de vaga editável no dashboard. Correções vão pelo fluxo dos bots/coordenador.
 - Revisão 2026-09-29 ([central de operações](2026-09-29-ops-center-bot-triggers.md)): o painel pode **pedir** aos bots que comecem trabalho (busca, currículo, candidatura) pelo `dispatch.py` do job-search. Continua sem escrever na Sheet, sem texto livre para bots e sem aprovar nada.
+- Revisão 2026-09-29 (D3 revista): botão "Registrar na planilha" pede ao job-search (`dispatch.py persist`) que grave o
+  writeset de uma busca com `writeset.py persist`, só depois de `writeset.py check` VALID e com a credencial de escrita
+  **do job-search**. O painel continua sem credencial de escrita e nunca escreve na Sheet diretamente.
 - Valor fora do domínio não quebra a UI: vai para bucket `INVÁLIDO` + painel de qualidade de dados (ex.: `NãO INICIADA`).
 - Divergência Sheet × dossier (ex.: `interesse` ≠ `dossier.interest.level`) é sinalizada, não resolvida.
 

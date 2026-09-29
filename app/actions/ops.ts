@@ -64,6 +64,18 @@ export async function listDispatches(input: unknown): Promise<ActionResult<Dispa
   return strip(await runDispatcher(args, listResultSchema))
 }
 
+/**
+ * "Registrar na planilha": asks job-search to persist a search's writeset (`dispatch.py persist <id>`). The
+ * dispatcher checks the writeset (`writeset.py check` VALID) and runs `writeset.py persist` with job-search's
+ * own write credential; the panel sends only the search id and never writes to the Sheet.
+ */
+export async function registerWriteset(searchId: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (typeof searchId !== "string" || !DISPATCH_ID_RE.test(searchId)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["persist", searchId], oneResultSchema)
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
 export async function ackDispatch(id: unknown): Promise<ActionResult<Dispatch>> {
   await requireSession()
   if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }

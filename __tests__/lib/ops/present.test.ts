@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { jobDispatchBlocker, latest, refusalText, withRegistration } from "@/lib/ops/present"
+import {
+  canRegisterWriteset,
+  jobDispatchBlocker,
+  latest,
+  persistSummary,
+  refusalText,
+  withRegistration,
+} from "@/lib/ops/present"
 import { dispatchSchema, startInputSchema, type Dispatch, type DispatchProgress } from "@/lib/ops/schema"
 
 const cell = (value: string | null, invalid = false) => ({ value, invalid, tone: "neutral" as const })
@@ -47,7 +54,10 @@ const searchProgress: DispatchProgress = {
 describe("withRegistration", () => {
   it("keeps the registration stage pending while the Sheet lacks writeset jobs", () => {
     const partial = withRegistration(searchProgress, new Set(["a"]))
-    expect(partial.stages[3]).toMatchObject({ state: "active", note: "writeset pendente: 1 de 2 na planilha" })
+    expect(partial.stages[3]).toMatchObject({
+      state: "active",
+      note: "pendente de persistência · 1 de 2 na planilha",
+    })
     expect(partial.percent).toBe(76)
   })
 
@@ -60,6 +70,45 @@ describe("withRegistration", () => {
   it("does nothing before the writeset exists", () => {
     const early = { ...searchProgress, writeset_path: null, writeset_job_ids: [] }
     expect(withRegistration(early, new Set(["a"]))).toBe(early)
+  })
+
+  it("keeps the dispatcher's done state when it persisted, before the Sheet is read again", () => {
+    const persisted: DispatchProgress = {
+      ...searchProgress,
+      stages: searchProgress.stages.map((stage) =>
+        stage.key === "registro" ? { ...stage, state: "done", note: "gravado pelo job-search" } : stage
+      ),
+    }
+    const out = withRegistration(persisted, new Set())
+    expect(out.stages[3]).toMatchObject({ state: "done", note: "gravado pelo job-search · 0 de 2 na planilha" })
+    expect(out.percent).toBe(100)
+  })
+})
+
+describe("canRegisterWriteset", () => {
+  const registration = (status: "PENDENTE" | "RODANDO" | "CONCLUIDO" | "FALHOU") => ({
+    id: "d-20260929T130000Z-abcdef",
+    status,
+    code: null,
+    result: null,
+  })
+
+  it("offers the button only for a pending writeset with no persistence running", () => {
+    expect(canRegisterWriteset(searchProgress)).toBe(true)
+    expect(canRegisterWriteset({ ...searchProgress, writeset_path: null })).toBe(false)
+    expect(canRegisterWriteset({ ...searchProgress, registration: registration("RODANDO") })).toBe(false)
+    expect(canRegisterWriteset({ ...searchProgress, registration: registration("PENDENTE") })).toBe(false)
+    // A failed persistence can be retried (writeset.py persist is idempotent).
+    expect(canRegisterWriteset({ ...searchProgress, registration: registration("FALHOU") })).toBe(true)
+    // Already in the Sheet (panel snapshot) or persisted by the dispatcher: no button.
+    expect(canRegisterWriteset(withRegistration(searchProgress, new Set(["a", "b"])))).toBe(false)
+  })
+
+  it("summarizes persistence counts only", () => {
+    expect(persistSummary(null)).toBeNull()
+    expect(persistSummary({ jobs: { INSERTED: 2, UPDATED: 1, UNCHANGED: 0 }, coverage: null, dossiers: null })).toBe(
+      "2 novas, 1 atualizadas, 0 sem mudança"
+    )
   })
 })
 
@@ -76,6 +125,8 @@ describe("schema", () => {
         .success
     ).toBe(false)
     expect(startInputSchema.safeParse({ action: "APROVAR", platform: "hermes" }).success).toBe(false)
+    // Persistence is not a bot action: only `registerWriteset` asks for it.
+    expect(startInputSchema.safeParse({ action: "REGISTRAR_WRITESET", platform: "hermes" }).success).toBe(false)
   })
 
   it("parses a dispatcher record and picks the latest per action", () => {
@@ -101,6 +152,34 @@ describe("schema", () => {
     const older: Dispatch = { ...parsed, id: "d-20260928T120000Z-abcdef" }
     expect(latest([parsed, older], "GERAR_CURRICULO")).toBe(parsed)
     expect(latest([parsed], "BUSCAR_VAGAS")).toBeNull()
+  })
+
+  it("parses a writeset persistence record and the registration inside a search", () => {
+    const result = { jobs: { INSERTED: 1, UPDATED: 0, UNCHANGED: 1 }, coverage: null, dossiers: null }
+    const record = dispatchSchema.parse({
+      id: "d-20260929T130000Z-abcdef",
+      action: "REGISTRAR_WRITESET",
+      platform: "host",
+      job_id: null,
+      status: "CONCLUIDO",
+      code: null,
+      marker: null,
+      bot: "job-search",
+      active: false,
+      acknowledged: false,
+      created_at: "2026-09-29T13:00:00Z",
+      finished_at: "2026-09-29T13:00:10Z",
+      source_id: "d-20260929T120000Z-abcdef",
+      result,
+      progress: { percent: 100, stages: [] },
+    })
+    expect(record.result).toEqual(result)
+    const search = { ...searchProgress, registration: { id: record.id, status: "CONCLUIDO", code: null, result } }
+    expect(dispatchSchema.shape.progress.parse(search).registration?.result).toEqual(result)
+    expect(
+      dispatchSchema.shape.progress.safeParse({ ...search, registration: { ...search.registration, id: "../x" } })
+        .success
+    ).toBe(false)
   })
 })
 

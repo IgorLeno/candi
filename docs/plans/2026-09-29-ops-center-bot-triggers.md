@@ -1,6 +1,7 @@
 # Central de operações: disparar bots pelo painel (2026-09-29)
 
-Status: **implementado (2026-09-29); falta a validação real com os bots** (último item abaixo). Commits direto na `main` dos
+Status: **implementado (2026-09-29), incluindo "Registrar na planilha" (D3 revista); falta a validação real com os
+bots** (itens abaixo). Commits direto na `main` dos
 dois repositórios (projeto solo, sem branches novas, por decisão do dono).
 
 Objetivo: o painel deixa de ser só leitura e passa a **pedir trabalho** aos bots do `job-search`:
@@ -8,7 +9,7 @@ Objetivo: o painel deixa de ser só leitura e passa a **pedir trabalho** aos bot
 1. `/vaga/[job_id]`: "Gerar currículo" → CVerino ("Severino") + Curriculinho, antes da candidatura.
 2. `/vaga/[job_id]`: "Preencher candidatura" → Candidatinho, de preferência com o currículo já pronto.
 3. `/` e `/vagas`: "Buscar vagas" → Lince (busca ampla + prefilter) → Service Threadgist (ChatGPT) →
-   writeset → coordenador grava na Sheet → "Sincronizar".
+   writeset → "Registrar na planilha" (job-search grava; ou o coordenador) → "Sincronizar".
 
 ## Decisões do dono (2026-09-29)
 
@@ -19,8 +20,13 @@ Objetivo: o painel deixa de ser só leitura e passa a **pedir trabalho** aos bot
   passa o `PATCH_READY` ao Curriculinho; o Curriculinho, aberto no MASTER no Claude Design, duplica, edita a
   cópia e exporta `cv.pdf`/`cv.json`. Quando o currículo estiver pronto (`cv_export.py verify` = `VALID`),
   o painel sinaliza e o "Preencher candidatura" avisa o Candidatinho que o CV já existe.
-- **D3**: a persistência continua com o coordenador; o painel só mostra "writeset pendente" e detecta o
+- **D3** (original): a persistência continua com o coordenador; o painel só mostra "writeset pendente" e detecta o
   registro pela Sheet depois de "Sincronizar". A análise passa obrigatoriamente pelo ChatGPT (Threadgist).
+- **D3 revista (2026-09-29, dono)**: botão "Registrar na planilha" no card da busca. O painel pede ao job-search
+  (`dispatch.py persist <id da busca>`) que rode `scripts/writeset.py persist` no writeset da busca, só depois de
+  `writeset.py check` VALID e com a credencial de escrita **do job-search**. O painel continua sem credencial de
+  escrita e nunca escreve na Sheet diretamente; o coordenador também pode persistir. A análise continua
+  obrigatoriamente pelo ChatGPT (Lince → Threadgist → ChatGPT).
 - **D4**: o registro do disparo guarda só estado e marcador, sem o texto da resposta.
 - **D5**: teto de gasto padrão de US$ 2 por perfil para os testes.
 - Indicador de progresso em porcentagem por etapa (busca, análise, writeset, registro; CVerino,
@@ -38,8 +44,13 @@ Objetivo: o painel deixa de ser só leitura e passa a **pedir trabalho** aos bot
 - [x] painel: `lib/ops/*` (execFile, zod, flag), `app/actions/ops.ts` (sessão em toda action)
 - [x] painel: botões, diálogo com seletor Hermes/Grok, barra de progresso, polling
 - [x] testes (Vitest + E2E com dispatcher falso) e quality gates; docs
+- [x] "Registrar na planilha" (D3 revista): job-search `dispatch.py persist` + testes + `RUNTIME.md` e
+      `methodology/registry.md`; painel `registerWriteset`, botão e diálogo no card da busca, sincronização ao
+      concluir; dispatcher falso de E2E com o mesmo contrato; testes e quality gates; docs
 - [ ] Validação real (dono): reiniciar o gateway com teto US$ 2, `deploy_bots.py` com o gateway parado, ligar
       `JOB_SEARCH_DISPATCH_ENABLED` no `.env.local` e disparar uma vez cada ação
+- [ ] Validação real do registro (dono): um writeset real indicado pelo dono, "Registrar na planilha" uma vez,
+      conferir contagens no card e na Sheet
 
 ### Resultado (2026-09-29)
 
@@ -57,6 +68,23 @@ Objetivo: o painel deixa de ser só leitura e passa a **pedir trabalho** aos bot
 - **Não verificado**: disparo real contra o gateway (nenhum bot foi acionado nesta sessão; o pipeline do Lince
   estava parado em `HUMAN_CONTROL_PAUSED` e reiniciar o gateway o interromperia); comportamento com o Bot Chat
   aberto no Desktop (`SESSION_NOT_OWNED` é tratado, mas não observado); modo Grok além de gerar o comando.
+- **Registrar na planilha (D3 revista)**. job-search `20277a8`: `dispatch.py persist <id da busca> [--again]`
+  recusa id inválido, busca inexistente/ativa/sem `op_dir`, writeset sem `check` VALID, outra gravação ativa (uma por
+  vez) e writeset igual (sha256) já gravado. Filho desanexado `_persist` (mesmo Python do disparo, que tem
+  `google-auth`) confere o sha de novo e roda `writeset.py persist` com timeout de 300 s; o registro
+  `REGISTRAR_WRITESET` (plataforma `host`) guarda só estado, código (`SHEET_<erro>`, `WRITESET_INVALID`,
+  `WRITESET_CHANGED`, `PERSIST_TIMEOUT` → `INCERTO`) e contagens. Assíncrono porque o persist faz ~4 chamadas à API
+  por vaga e passaria do timeout de 30 s do `execFile` do painel; repetir após falha é seguro (UPSERT e append
+  idempotentes), então `INCERTO` não bloqueia. A etapa "Registro na planilha" da busca fica `done` com a gravação
+  concluída do writeset atual. `test_dispatch.py` 21 testes (4 novos, persist falso), `validate_job_search.py` OK, 520
+  testes de `scripts/` OK, `git diff --check` limpo. Painel: `registerWriteset` (sessão antes de tudo, id por regex,
+  argv `["persist", id]`), botão e diálogo ("o job-search vai gravar N vagas… credencial de escrita dele"), polling
+  enquanto a gravação roda e `syncJobSearch` + `router.refresh()` quando ela conclui. Gates: lint (0 erros, 2 avisos
+  antigos), prettier, `tsc --noEmit`, Vitest 154/154, `next build` (numa cópia no scratchpad, para não trocar o
+  `.next` da instância do dono na 3000), Playwright 21/21 na 3010 com o dispatcher falso; screenshots do card
+  pendente, do diálogo e do card registrado conferidos. **Não verificado**: `writeset.py persist` contra a Sheet
+  real (nenhum teste grava a Sheet; execução real só com writeset indicado pelo dono) e o filho `_persist` real
+  (testado com runner falso; o spawn usa o mesmo caminho do `_deliver`).
 - Gateway em execução usa `JSB_BUDGET_USD=0.50` e ledger `real-20260929`; o padrão novo (US$ 2) só vale no
   próximo `serve.sh start`. A unit systemd fixa `JSB_GATEWAY_BUDGET=5` (não alterada).
 
@@ -134,8 +162,8 @@ Hoje (`2026-09-25-job-search-visual-layer.md`): painel **somente leitura**. Prop
 - O painel passa a ter **comandos de disparo**: pede a um bot que comece um trabalho, com um texto fixo e
   versionado no job-search. É o equivalente a digitar a primeira mensagem no Bot Chat, nada além disso.
 - Continua proibido:
-  - escrever na Sheet, direta ou indiretamente (credencial do painel segue `spreadsheets.readonly`);
-  - persistir writeset pelo painel (ver decisão D3);
+  - escrever na Sheet diretamente (credencial do painel segue `spreadsheets.readonly`); a única escrita indireta é
+    pedir ao job-search que persista um writeset VALID (D3 revista), com a credencial dele;
   - ler private store, `runtime/applications/*` ou credenciais dos bots pelo painel;
   - texto livre para bots, aprovar candidatura, responder `ok <código>`, enviar candidatura;
   - recalcular regra do job-search: bloqueios no painel são só UX; a autoridade é o dispatcher e o

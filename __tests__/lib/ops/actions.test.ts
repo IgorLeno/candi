@@ -10,7 +10,7 @@ vi.mock("@/lib/auth/session", () => ({ getAllowedSession: vi.fn(async () => sess
 vi.mock("@/lib/ops/dispatcher", () => ({ runDispatcher }))
 vi.mock("@/lib/job-search/source", () => ({ getJobSearchData: vi.fn(async () => ({ views: views.current })) }))
 
-import { ackDispatch, listDispatches, startDispatch } from "@/app/actions/ops"
+import { ackDispatch, listDispatches, registerWriteset, startDispatch } from "@/app/actions/ops"
 
 describe("ops server actions", () => {
   beforeEach(() => {
@@ -25,6 +25,7 @@ describe("ops server actions", () => {
     await expect(startDispatch({ action: "BUSCAR_VAGAS", platform: "hermes" })).rejects.toThrow("UNAUTHENTICATED")
     await expect(listDispatches({})).rejects.toThrow("UNAUTHENTICATED")
     await expect(ackDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(registerWriteset("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
@@ -38,6 +39,9 @@ describe("ops server actions", () => {
       await expect(startDispatch(input)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
     }
     await expect(ackDispatch("x; rm -rf /")).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    for (const id of [null, "runtime/operations/x/writeset.md", "--again", ["d-20260929T120000Z-abcdef"]]) {
+      await expect(registerWriteset(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
     await expect(listDispatches({ jobId: "a b" })).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
     expect(runDispatcher).not.toHaveBeenCalled()
   })
@@ -67,6 +71,9 @@ describe("ops server actions", () => {
     expect(runDispatcher.mock.calls[1][0]).toEqual(["start", "BUSCAR_VAGAS", "--platform", "hermes"])
     await listDispatches({ jobId: "fake-1001" })
     expect(runDispatcher.mock.calls[2][0]).toEqual(["list", "--limit", "5", "--job-id", "fake-1001"])
+    // Persistence: only the search id; never a path, a flag or a credential.
+    await registerWriteset("d-20260929T120000Z-abcdef")
+    expect(runDispatcher.mock.calls[3][0]).toEqual(["persist", "d-20260929T120000Z-abcdef"])
   })
 
   it("pass dispatcher refusals through as codes only", async () => {

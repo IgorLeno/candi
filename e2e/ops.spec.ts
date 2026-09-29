@@ -15,7 +15,7 @@ test.describe("Central de operações (bots)", () => {
     })
   })
 
-  test("buscar vagas: confirmação, progresso por etapa e registro detectado na planilha", async ({ page }) => {
+  test("buscar vagas: confirmação, progresso por etapa e registro na planilha pelo job-search", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)
     await page.goto("/")
@@ -34,13 +34,35 @@ test.describe("Central de operações (bots)", () => {
     await expect(card).toBeVisible()
     await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toBeDisabled()
 
-    // The fake finishes the dispatcher's part; the writeset jobs (fake-1001, fake-1002) are already in the
-    // fixture Sheet, so the panel closes the last stage itself.
+    // The fake finishes the bots' part. The writeset has fake-1001 (already in the fixture Sheet) and fake-9001
+    // (not yet), so the registration stage stays open until the writeset is persisted.
     await expect(card).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
-    await expect(card.locator('[data-stage="registro"]')).toHaveAttribute("data-state", "done")
-    await expect(card).toContainText("2 de 2 na planilha")
+    const registro = card.locator('[data-stage="registro"]')
+    await expect(registro).toHaveAttribute("data-state", "active")
+    await expect(registro).toContainText("pendente de persistência · 1 de 2 na planilha")
+    await expect(card).toContainText("76%")
+    const registration = card.getByTestId("writeset-registration")
+    await expect(registration).toHaveAttribute("data-registration", "none")
+
+    // Confirmation says who writes and how many jobs; cancel asks nothing.
+    await registration.getByTestId("register-writeset").click()
+    const dialog = page.getByTestId("register-dialog")
+    await expect(dialog).toContainText("2 vagas")
+    await expect(dialog).toContainText("credencial de escrita")
+    await expect(dialog).toContainText("writeset.py check VALID")
+    await page.getByTestId("register-cancel").click()
+    await expect(registration).toHaveAttribute("data-registration", "none")
+
+    await registration.getByTestId("register-writeset").click()
+    await page.getByTestId("register-confirm").click()
+    await expect(registration.getByTestId("register-writeset")).toHaveCount(0)
+    await expect(registration).toHaveAttribute("data-registration", "CONCLUIDO", { timeout: 20_000 })
+    await expect(registro).toHaveAttribute("data-state", "done")
+    await expect(registro).toContainText("gravado pelo job-search")
     await expect(card).toContainText("100%")
-    await expect(card.getByTestId("writeset-pending")).toContainText("writeset.py persist")
+    await expect(registration).toContainText("gravado pelo job-search (1 novas, 0 atualizadas, 1 sem mudança)")
+    // The panel reads the Sheet again once the persistence it watched finished.
+    await expect(page.getByText("planilha relida")).toBeVisible()
 
     await page.goto("/vagas")
     await expect(page.getByTestId("search-ops").getByTestId("dispatch-BUSCAR_VAGAS")).toHaveAttribute(
