@@ -165,7 +165,10 @@ Hoje (`2026-09-25-job-search-visual-layer.md`): painel **somente leitura**. Prop
   - escrever na Sheet diretamente (credencial do painel segue `spreadsheets.readonly`); a única escrita indireta é
     pedir ao job-search que persista um writeset VALID (D3 revista), com a credencial dele;
   - ler private store, `runtime/applications/*` ou credenciais dos bots pelo painel;
-  - texto livre para bots, aprovar candidatura, responder `ok <código>`, enviar candidatura;
+  - texto livre para bots, aprovar candidatura, responder `ok <código>`, enviar candidatura (exceção estreita
+    de 2026-09-30: a "vaga indicada", `2026-09-30-vaga-indicada.md` — texto por stdin, guardado no painel e no
+    dispatcher, gravado pelo job-search como dado não confiável num arquivo 0600; o comando continua fixo e só
+    aponta para o arquivo; só Hermes);
   - recalcular regra do job-search: bloqueios no painel são só UX; a autoridade é o dispatcher e o
     próprio bot (`application.py claim`/dedup, gate).
 - O job-search continua autoridade: templates dos comandos, pré-condições e a lista de ações permitidas

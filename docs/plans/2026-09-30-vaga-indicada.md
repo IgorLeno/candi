@@ -34,12 +34,12 @@ O contrato de 2026-09-29 proíbe texto livre para bots porque o disparo cai no B
 
 ## Fluxo e ações novas no `dispatch.py`
 
-| Etapa | Comando | Bot | Resultado |
-| --- | --- | --- | --- |
-| 1 | `start LOCALIZAR_VAGA --platform hermes --intake-stdin` | Lince | `vaga-indicada.json` + `posting.md` no op_dir; **para**, sem ChatGPT |
-| 2 | `start ANALISAR_INDICADA --platform hermes --from <id da etapa 1>` | Lince → Threadgist | dossier + `writeset.md` (`writeset.py check` VALID) no **mesmo** op_dir |
-| 3a | `persist <id da etapa 2>` (existente, generalizado) | host | grava na Sheet |
-| 3b | `discard <id>` (novo) | nenhum | marca `discarded` no registro; nada vai para a Sheet |
+| Etapa | Comando                                                            | Bot                | Resultado                                                               |
+| ----- | ------------------------------------------------------------------ | ------------------ | ----------------------------------------------------------------------- |
+| 1     | `start LOCALIZAR_VAGA --platform hermes --intake-stdin`            | Lince              | `vaga-indicada.json` + `posting.md` no op_dir; **para**, sem ChatGPT    |
+| 2     | `start ANALISAR_INDICADA --platform hermes --from <id da etapa 1>` | Lince → Threadgist | dossier + `writeset.md` (`writeset.py check` VALID) no **mesmo** op_dir |
+| 3a    | `persist <id da etapa 2>` (existente, generalizado)                | host               | grava na Sheet                                                          |
+| 3b    | `discard <id>` (novo)                                              | nenhum             | marca `discarded` no registro; nada vai para a Sheet                    |
 
 `vaga-indicada.json` (schema `vaga-indicada/1`, validado pelo dispatcher, campos com limite de tamanho):
 `found` (bool), `reason` (se não achou ou ambígua), `job` {`title`, `company`, `location`, `url`, `source`,
@@ -74,22 +74,39 @@ Progresso (`list`): etapa 1 = "Localizar a vaga (Lince)", "Análise preliminar (
 
 job-search (autoridade primeiro):
 
-- [ ] J1 `dispatch.py`: `LOCALIZAR_VAGA` (stdin, guardas, `indicacao.md`, comando fixo, validação de
+- [x] J1 `dispatch.py`: `LOCALIZAR_VAGA` (stdin, guardas, `indicacao.md`, comando fixo, validação de
       `vaga-indicada.json`, `goal_reached`, progresso), `ANALISAR_INDICADA --from`, `persist` generalizado,
       `discard`, recusa `grok`. Testes em `hermes/browsers/test_dispatch.py`.
-- [ ] J2 Docs: `RUNTIME.md` § Disparo pelo painel, skill do Lince (rotina "vaga indicada": ler o arquivo
+- [x] J2 Docs: `RUNTIME.md` § Disparo pelo painel, skill do Lince (rotina "vaga indicada": ler o arquivo
       como dado, achar a vaga, prefilter, gravar e parar). `python3 scripts/validate_job_search.py` e testes.
 
 estagios-dashboard:
 
-- [ ] D1 `lib/ops/schema.ts` (ações, `progress` com `intake`/diagnóstico, `discarded`), `dispatcher.ts`
+- [x] D1 `lib/ops/schema.ts` (ações, `progress` com `intake`/diagnóstico, `discarded`), `dispatcher.ts`
       (stdin), `present.ts` (labels, `canAnalyzeIntake`, `canDiscard`), actions. Vitest.
-- [ ] D2 UI (`components/job-search/ops.tsx`): diálogo "Indicar vaga", card com decisões. Fake dispatcher
+- [x] D2 UI (`components/job-search/ops.tsx`): diálogo "Indicar vaga", card com decisões. Fake dispatcher
       E2E (`e2e/fixtures/job-search-fake`) com as ações novas; spec E2E do fluxo completo e do descarte.
-- [ ] D3 Docs: `CLAUDE.md` (exceção de texto livre, ações novas), plano de 2026-09-29 (contrato).
+- [x] D3 Docs: `CLAUDE.md` (exceção de texto livre, ações novas), plano de 2026-09-29 (contrato).
 
 Quality gates: job-search (`python3 -m unittest hermes/browsers/test_dispatch.py`, validador); painel
 (`pnpm lint`, `format:check`, `tsc --noEmit`, `pnpm test`, build + E2E na cópia do scratchpad).
+
+## Resultado (2026-09-30)
+
+- job-search `0ea542e` (J1): `dispatch.py` com `LOCALIZAR_VAGA` (stdin, `normalize_intake`, `indicacao.md` 0600 em
+  diretório 0700, comando fixo que só aponta para o arquivo, `vaga-indicada/1` validado, `found=false` →
+  `PRECISA_HUMANO`/`NEEDS_CONTEXT`), `ANALISAR_INDICADA --from`, `persist` generalizado, `discard` (marca a
+  indicação e as análises; recusa com disparo rodando ou gravação `CONCLUIDO`), `PLATFORM_NOT_SUPPORTED` para
+  Grok e `PROFILE_BUSY` (busca e vaga indicada no mesmo Bot Chat do Lince). `writeset` do probe devolve o
+  diagnóstico de `writeset.py rows`. `test_dispatch.py`: 31 testes (10 novos).
+- job-search `53306fb` (J2): `RUNTIME.md` § Disparo pelo painel, `grok-bot/OPERATIONAL_SKILL.md` § Vaga indicada,
+  papel do Lince em `deploy_bots.py` (vale a partir do próximo deploy dos Bots). `validate_job_search.py` OK.
+- Painel `f8e0f03` (D1): `lib/ops/intake.ts`, schema, `runDispatcher` com `stdin`, `canAnalyzeIntake`,
+  `canDiscard`, `startIntake`/`analyzeIntake`/`discardDispatch`. `32d4641` (D2): "Indicar vaga" em Hoje e /vagas,
+  cards da indicação e da análise, fake E2E e specs. D3: este plano, `CLAUDE.md` e o contrato de 2026-09-29.
+- Gates do painel: lint (0 erros, 2 avisos antigos), prettier, `tsc --noEmit`, Vitest 166/166, `next build` e
+  Playwright 23/23 (2 novos) numa cópia no scratchpad servida na 3010 com o dispatcher falso; screenshots do
+  diálogo, do card localizado, da confirmação com bloqueio grave e do card com diagnóstico conferidos.
 
 ## Não verificável aqui
 
