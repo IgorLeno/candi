@@ -5,7 +5,9 @@ can be exercised deterministically. `persist` records a REGISTRAR_WRITESET that 
 (nothing is written anywhere). Vaga indicada: LOCALIZAR_VAGA reads the text from stdin (an intake mentioning
 "nao-existe" is not found: PRECISA_HUMANO/NEEDS_CONTEXT), ANALISAR_INDICADA --from produces a writeset, `discard`
 marks the chain. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
-the fixture, is refused with ALREADY_SENT). State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
+the fixture, is refused with ALREADY_SENT). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
+for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
+with ChatGPT refuses another with CHATGPT_BUSY. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import json
 import os
@@ -19,10 +21,13 @@ JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 APPROVAL_RE = re.compile(r"(?i)\b(ok|n[aã]o)\s+[0-9a-f]{8}\b")
 BOTS = {"BUSCAR_VAGAS": ("Lince", "Job Scout"), "GERAR_CURRICULO": ("CVerino", "CV Strategist"),
         "PREENCHER_CANDIDATURA": ("Candidatinho", "Application Operator"), "LOCALIZAR_VAGA": ("Lince", "Job Scout"),
-        "ANALISAR_INDICADA": ("Lince", "Job Scout")}
+        "ANALISAR_INDICADA": ("Lince", "Job Scout"), "ANALISAR_VAGA": ("ChatGPT (host)", "Job Scout")}
 LINCE = ("BUSCAR_VAGAS", "LOCALIZAR_VAGA", "ANALISAR_INDICADA")
 # Actions whose last stage is "registro na planilha" (a writeset the panel may persist).
-WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA")
+WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA", "ANALISAR_VAGA")
+HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA")
+CHATGPT_HOST = ("BUSCAR_VAGAS", "GERAR_CURRICULO", "ANALISAR_VAGA")
+NO_POSTING = "fake-1008"
 STAGES = {
     "BUSCAR_VAGAS": [("busca", "Busca ampla e prefilter (Lince)"), ("analise", "Análise no ChatGPT (Threadgist)"),
                      ("writeset", "Writeset pronto"), ("registro", "Registro na planilha")],
@@ -34,6 +39,9 @@ STAGES = {
     "LOCALIZAR_VAGA": [("localizar", "Localizar a vaga (Lince)"), ("prefilter", "Análise preliminar (prefilter)")],
     "ANALISAR_INDICADA": [("analise", "Análise no ChatGPT (Threadgist)"), ("writeset", "Writeset pronto"),
                           ("registro", "Registro na planilha")],
+    "ANALISAR_VAGA": [("planilha", "Dados da vaga (planilha, só leitura)"), ("posting", "Texto da vaga"),
+                      ("analise", "Análise no ChatGPT (host)"), ("writeset", "Writeset pronto"),
+                      ("registro", "Registro na planilha")],
 }
 REGISTER = "REGISTRAR_WRITESET"
 # fake-9001 is not in the fixture Sheet: the registration stage stays open until the panel persists it.
@@ -103,6 +111,8 @@ def view(rec, recs=()):
     out_stages = []
     for i, (key, label) in enumerate(stages):
         state = "done" if i < step else "active" if i == step and rec["status"] == "RODANDO" else "pending"
+        if i == step and rec["status"] in ("PRECISA_HUMANO", "FALHOU") and rec["action"] == "ANALISAR_VAGA":
+            state = "failed"
         if rec["action"] in WRITESET_ACTIONS and key == "registro" and step >= last:
             state = "active"
         out_stages.append({"key": key, "label": label, "state": state})
@@ -131,12 +141,16 @@ def view(rec, recs=()):
         else:
             registro["note"] = "pendente de persistência"
         done = sum(1 for s in out_stages if s["state"] == "done")
-        progress.update(percent=5 + round(95 * done / len(stages)), writeset_job_ids=WRITESET_JOB_IDS[rec["action"]],
+        progress.update(percent=5 + round(95 * done / len(stages)),
+                        writeset_job_ids=WRITESET_JOB_IDS.get(rec["action"]) or [rec["job_id"]],
                         writeset_path=f"runtime/operations/{rec.get('source_id') or rec['id']}/writeset.md",
                         registration={"id": reg["id"], "status": reg["status"], "code": None,
                                       "result": RESULT if reg["status"] == "CONCLUIDO" else None} if reg else None)
         if rec["action"] == "BUSCAR_VAGAS":
             progress.update(candidates=2, excluded=1)
+        elif rec["action"] == "ANALISAR_VAGA":
+            progress["diagnosis"] = [{**DIAGNOSIS[0], "job_id": rec["job_id"], "cargo": "", "empresa": "",
+                                      "status_analise": "NÃO PRIORIZADA", "interesse": "MÉDIO"}]
         else:
             progress["diagnosis"] = DIAGNOSIS
     out = {k: rec[k] for k in ("id", "action", "platform", "job_id", "status", "acknowledged", "created_at")}
@@ -146,6 +160,8 @@ def view(rec, recs=()):
                finished_at=None if rec["status"] == "RODANDO" else rec["created_at"],
                bot=BOTS[rec["action"]][1 if rec["platform"] == "grok" else 0],
                active=rec["status"] == "RODANDO", progress=progress)
+    if rec["action"] == "ANALISAR_VAGA":
+        out["mode"] = "host"
     if rec["status"] == "MANUAL":
         out["command"] = f"[painel:dispatch {rec['id']} · {rec['action']}]\n\nComando fixo de teste."
     return out
@@ -166,10 +182,12 @@ def main(argv):
     if cmd == "start":
         action, platform = argv[1], flag(argv, "--platform")
         job_id, source_id = flag(argv, "--job-id"), flag(argv, "--from")
-        if action in ("LOCALIZAR_VAGA", "ANALISAR_INDICADA") and platform != "hermes":
+        if action in HERMES_ONLY and platform != "hermes":
             return refuse("PLATFORM_NOT_SUPPORTED")
         if any(r["action"] == action and r["job_id"] == job_id and r["status"] == "RODANDO" for r in recs):
             return refuse("DISPATCH_ACTIVE")
+        if action == "ANALISAR_VAGA" and any(r["action"] in CHATGPT_HOST and r["status"] == "RODANDO" for r in recs):
+            return refuse("CHATGPT_BUSY")
         if action in LINCE and any(r["action"] in LINCE and r["status"] == "RODANDO" for r in recs):
             return refuse("PROFILE_BUSY")
         n = len(recs) + 1
@@ -232,7 +250,9 @@ def main(argv):
                     rec["status"] = "CONCLUIDO"
             elif rec["status"] == "RODANDO":
                 rec["step"] += 1
-                if rec["step"] >= last_step(rec["action"]):
+                if rec["action"] == "ANALISAR_VAGA" and rec["job_id"] == NO_POSTING and rec["step"] >= 1:
+                    rec.update(step=1, status="PRECISA_HUMANO", code="POSTING_UNAVAILABLE")
+                elif rec["step"] >= last_step(rec["action"]):
                     if rec["action"] == "LOCALIZAR_VAGA" and not rec["found"]:
                         rec.update(status="PRECISA_HUMANO", code="NEEDS_CONTEXT")
                     else:

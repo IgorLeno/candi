@@ -18,6 +18,7 @@ vi.mock("next/cache", () => ({ updateTag }))
 import {
   ackDispatch,
   analyzeIntake,
+  analyzeJob,
   declineJob,
   discardDispatch,
   listDispatches,
@@ -45,6 +46,7 @@ describe("ops server actions", () => {
     await expect(analyzeIntake("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(discardDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(declineJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
@@ -143,6 +145,27 @@ describe("ops server actions", () => {
       ok: false,
       code: "ALREADY_REGISTERED",
     })
+  })
+
+  it("analisar: send only a validated job_id that is in the Sheet, sent jobs included", async () => {
+    for (const id of [null, "../x", "--platform", "a b", ["fake-1001"]]) {
+      await expect(analyzeJob(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
+    await expect(analyzeJob("nao-existe")).resolves.toEqual({ ok: false, code: "JOB_NOT_FOUND" })
+    expect(runDispatcher).not.toHaveBeenCalled()
+    // fake-1006 is ENVIADA in the fixture: analysis is still allowed (the goal is the dossier).
+    await expect(analyzeJob("fake-1006")).resolves.toEqual({ ok: true, value: { id: "d" } })
+    expect(runDispatcher.mock.calls[0][0]).toEqual([
+      "start",
+      "ANALISAR_VAGA",
+      "--platform",
+      "hermes",
+      "--job-id",
+      "fake-1006",
+    ])
+    expect(runDispatcher.mock.calls[0]).toHaveLength(2)
+    runDispatcher.mockResolvedValue({ ok: false, code: "CHATGPT_BUSY", detail: "x" })
+    await expect(analyzeJob("fake-1001")).resolves.toEqual({ ok: false, code: "CHATGPT_BUSY" })
   })
 
   it("descartar vaga: send only a validated job_id and re-read the Sheet afterwards", async () => {

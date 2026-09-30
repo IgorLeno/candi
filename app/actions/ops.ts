@@ -9,6 +9,7 @@ import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
 import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
 import { jobDispatchBlocker } from "@/lib/ops/present"
 import {
+  ANALYZE_ACTION,
   DISPATCH_ACTIONS,
   DISPATCH_ID_RE,
   JOB_ID_RE,
@@ -108,6 +109,21 @@ export async function analyzeIntake(intakeId: unknown): Promise<ActionResult<Dis
   await requireSession()
   if (typeof intakeId !== "string" || !DISPATCH_ID_RE.test(intakeId)) return { ok: false, code: "INPUT_INVALID" }
   const args = ["start", "ANALISAR_INDICADA", "--platform", "hermes", "--from", intakeId]
+  const result = await runDispatcher(args, oneResultSchema)
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/**
+ * "Analisar": asks job-search to analyse one job already in the Sheet with the ChatGPT (host pipeline, Hermes only).
+ * Only the job_id leaves the panel: job-search reads the row and the posting itself and writes a writeset that the
+ * user registers later ("Registrar na planilha"). Allowed for sent jobs too (the goal is the dossier).
+ */
+export async function analyzeJob(jobId: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const data = await getJobSearchData()
+  if (!data.views.some((item) => item.job.job_id === jobId)) return { ok: false, code: "JOB_NOT_FOUND" }
+  const args = ["start", ANALYZE_ACTION, "--platform", "hermes", "--job-id", jobId]
   const result = await runDispatcher(args, oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }

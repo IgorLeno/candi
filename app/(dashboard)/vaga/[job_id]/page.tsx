@@ -144,7 +144,7 @@ function JobDetail({ view }: { view: JobView }) {
           </div>
           {isDispatchEnabled() && (
             <div className="mt-4">
-              <JobOps jobId={job.job_id} blocker={jobDispatchBlocker(item)} />
+              <JobOps jobId={job.job_id} blocker={jobDispatchBlocker(item)} analyzed={view.dossier?.valid === true} />
             </div>
           )}
         </header>

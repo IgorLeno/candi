@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  analyzeJobBlocker,
   canDeclineJob,
   canRegisterWriteset,
   jobDispatchBlocker,
@@ -67,6 +68,14 @@ const searchProgress: DispatchProgress = {
   writeset_job_ids: ["a", "b"],
   writeset_path: "runtime/operations/x/writeset.md",
 }
+
+describe("analyzeJobBlocker", () => {
+  it("only blocks while an analysis of the job is running (sent jobs included)", () => {
+    expect(analyzeJobBlocker(null)).toBeNull()
+    expect(analyzeJobBlocker({ active: false })).toBeNull()
+    expect(analyzeJobBlocker({ active: true })).toBe("Análise desta vaga em andamento.")
+  })
+})
 
 describe("withRegistration", () => {
   it("keeps the registration stage pending while the Sheet lacks writeset jobs", () => {
@@ -169,6 +178,43 @@ describe("schema", () => {
     const older: Dispatch = { ...parsed, id: "d-20260928T120000Z-abcdef" }
     expect(latest([parsed, older], "GERAR_CURRICULO")).toBe(parsed)
     expect(latest([parsed], "BUSCAR_VAGAS")).toBeNull()
+  })
+
+  it("parses an analysis record with its posting source and diagnosis", () => {
+    const parsed = dispatchSchema.parse({
+      id: "d-20260930T120000Z-abcdef",
+      action: "ANALISAR_VAGA",
+      platform: "hermes",
+      job_id: "11132619",
+      status: "CONCLUIDO",
+      code: null,
+      marker: "WRITESET_COMPLETE",
+      created_at: "2026-09-30T12:00:00Z",
+      finished_at: "2026-09-30T12:05:00Z",
+      bot: "ChatGPT (host)",
+      mode: "host",
+      active: false,
+      acknowledged: false,
+      progress: {
+        percent: 81,
+        stages: [{ key: "registro", label: "Registro na planilha", state: "active" }],
+        posting_source: "linkedin",
+        writeset_path: "runtime/operations/d-20260930T120000Z-abcdef/writeset.md",
+        writeset_job_ids: ["11132619"],
+        diagnosis: [
+          {
+            job_id: "11132619",
+            cargo: "Trainee",
+            empresa: "Usiminas",
+            status_analise: "SELECIONADA",
+            interesse: "ALTO",
+          },
+        ],
+        registration: null,
+      },
+    })
+    expect(parsed.progress.posting_source).toBe("linkedin")
+    expect(canRegisterWriteset(parsed.progress)).toBe(true)
   })
 
   it("parses a writeset persistence record and the registration inside a search", () => {

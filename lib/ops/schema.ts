@@ -15,10 +15,16 @@ export const INTAKE_ACTIONS = ["LOCALIZAR_VAGA", "ANALISAR_INDICADA"] as const
 export type IntakeAction = (typeof INTAKE_ACTIONS)[number]
 
 /**
+ * "Analisar" (Hermes only, job-search host pipeline): the ChatGPT analysis of one job already in the Sheet, started
+ * with only its job_id (`analyzeJob`). Its writeset is registered like a search's ("Registrar na planilha").
+ */
+export const ANALYZE_ACTION = "ANALISAR_VAGA"
+
+/**
  * Every record kind in the dispatcher's list. REGISTRAR_WRITESET is not a bot: it is `dispatch.py persist`,
  * where job-search runs `writeset.py persist` with its own write credential at the user's request.
  */
-export const DISPATCH_ACTIONS = [...BOT_ACTIONS, ...INTAKE_ACTIONS, "REGISTRAR_WRITESET"] as const
+export const DISPATCH_ACTIONS = [...BOT_ACTIONS, ...INTAKE_ACTIONS, ANALYZE_ACTION, "REGISTRAR_WRITESET"] as const
 export type DispatchAction = (typeof DISPATCH_ACTIONS)[number]
 
 export const PER_JOB_ACTIONS: readonly BotAction[] = ["GERAR_CURRICULO", "PREENCHER_CANDIDATURA"]
@@ -126,6 +132,8 @@ const progressSchema = z.object({
   discovery_code: z.string().nullable().optional(),
   claude_prompt: z.string().max(60_000).nullable().optional(),
   claude_url: z.string().max(2000).nullable().optional(),
+  /** "Analisar": where job-search found the posting (runtime, dossiers, linkedin). */
+  posting_source: z.string().max(40).nullable().optional(),
 })
 export type DispatchProgress = z.infer<typeof progressSchema>
 
@@ -147,7 +155,7 @@ export const dispatchSchema = z.object({
   progress: progressSchema,
   /** Only for Grok (manual paste): the fixed command text. */
   command: z.string().optional(),
-  /** REGISTRAR_WRITESET: the search it persists; ANALISAR_INDICADA: the LOCALIZAR_VAGA it analyses. */
+  /** REGISTRAR_WRITESET: the search or analysis it persists; ANALISAR_INDICADA: the LOCALIZAR_VAGA it analyses. */
   source_id: z.string().nullable().optional(),
   /** Vaga indicada discarded in the panel (nothing goes to the Sheet). */
   discarded: z.boolean().optional(),

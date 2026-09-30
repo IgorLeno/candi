@@ -43,6 +43,12 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     description:
       "O Lince leva a vaga localizada ao Threadgist, que faz a análise no ChatGPT; o writeset fica pronto e você decide se registra na planilha ou descarta.",
   },
+  ANALISAR_VAGA: {
+    label: "Análise da vaga",
+    verb: "Analisar",
+    description:
+      "O job-search lê esta vaga na planilha (só leitura), acha o texto da publicação e leva ao ChatGPT para a análise completa. O writeset fica pronto e você decide se registra na planilha.",
+  },
   REGISTRAR_WRITESET: {
     label: "Registrar na planilha",
     verb: "Registrar na planilha",
@@ -101,6 +107,8 @@ const REFUSAL_TEXT: Record<string, string> = {
   DISCARDED: "A vaga indicada foi descartada.",
   ALREADY_REGISTERED: "A vaga já foi gravada na planilha: não dá mais para descartar pelo painel.",
   SOURCE_REQUIRED: "Falta a vaga indicada de origem.",
+  // "Analisar" (dispatch.py start ANALISAR_VAGA).
+  CHATGPT_BUSY: "O ChatGPT do job-search já está ocupado com outra busca, currículo ou análise: espere terminar.",
   // "Descartar vaga" (dispatch.py decline → application.py decline).
   INVALID_JOB_ID: "Identificador de vaga inválido.",
   JOB_DISPATCH_ACTIVE: "Há um disparo desta vaga em andamento: espere terminar para descartar.",
@@ -146,6 +154,14 @@ export function canDeclineJob(item: Pick<JobListItem, "statusCandidatura" | "unc
   if (item.uncertainSubmit || item.statusCandidatura.invalid) return false
   const candidatura = item.statusCandidatura.value
   return candidatura !== "ENVIADA" && candidatura !== "ENVIO INCERTO" && candidatura !== "RETIRADA"
+}
+
+/**
+ * "Analisar" (UX gating only; job-search re-checks): any job in the Sheet, sent or not, as long as no analysis of it
+ * is running. Returns why the button is disabled, or null.
+ */
+export function analyzeJobBlocker(latestAnalysis: Pick<Dispatch, "active"> | null): string | null {
+  return latestAnalysis?.active ? "Análise desta vaga em andamento." : null
 }
 
 /**
