@@ -35,13 +35,13 @@ test.describe("Painel do job-search", () => {
   test("análise → lista → vaga", async ({ page }) => {
     await page.goto("/analise")
     await expect(page.getByRole("heading", { name: "Análise" })).toBeVisible()
-    await expect(page.getByTestId("kpi-analisadas")).toContainText("9")
+    await expect(page.getByTestId("kpi-analisadas")).toContainText("10")
     await expect(page.getByTestId("kpi-enviadas")).toContainText("1")
     await expect(page.getByTestId("funnel")).toBeVisible()
 
     await page.getByTestId("sidebar-vagas").click()
     await expect(page).toHaveURL("/vagas")
-    await expect(page.getByTestId("result-count")).toHaveText("9 de 9 vagas")
+    await expect(page.getByTestId("result-count")).toHaveText("10 de 10 vagas")
 
     await page.locator('[data-job-id="fake-1001"]').getByTestId("job-link").click()
     await expect(page).toHaveURL("/vaga/fake-1001")
@@ -61,7 +61,7 @@ test.describe("Painel do job-search", () => {
     await page.goto("/analise")
     await page.getByTestId("kpi-prontasRevisao").click()
     await expect(page).toHaveURL(/status_candidatura=PRONTA/)
-    await expect(page.getByTestId("result-count")).toHaveText("1 de 9 vagas")
+    await expect(page.getByTestId("result-count")).toHaveText("1 de 10 vagas")
 
     await page.goto("/analise")
     await page
@@ -78,14 +78,14 @@ test.describe("Painel do job-search", () => {
     await expect(page.getByTestId("job-row").first()).toHaveAttribute("data-state", /.+/)
     await page.getByTestId("view-table").click()
     await expect(page.getByTestId("view-table")).toHaveAttribute("aria-pressed", "true")
-    await expect(page.getByTestId("job-row")).toHaveCount(9)
+    await expect(page.getByTestId("job-row")).toHaveCount(10)
 
     await pickFilter(page, "analysis", "Dossier inválido")
     await expect(page.getByTestId("job-row")).toHaveCount(1)
     await expect(page).toHaveURL(/analysis=INVALID/)
 
     await page.getByTestId("clear-filters").click()
-    await expect(page.getByTestId("result-count")).toHaveText("9 de 9 vagas")
+    await expect(page.getByTestId("result-count")).toHaveText("10 de 10 vagas")
 
     await pickFilter(page, "interesse", "Alto")
     await expect(page.getByTestId("job-row")).toHaveCount(2)

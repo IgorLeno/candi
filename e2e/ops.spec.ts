@@ -189,7 +189,7 @@ test.describe("Central de operações (bots)", () => {
     // Without a ready CV the application dialog recommends generating it first.
     await ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
     await expect(page.getByTestId("dispatch-dialog")).toContainText("ainda não está pronto")
-    await expect(page.getByTestId("dispatch-dialog")).toContainText("Nada é enviado")
+    await expect(page.getByTestId("dispatch-dialog")).toContainText("Nenhuma candidatura é enviada")
     await page.getByTestId("dispatch-cancel").click()
 
     await ops.getByTestId("dispatch-button-GERAR_CURRICULO").click()
@@ -205,6 +205,70 @@ test.describe("Central de operações (bots)", () => {
     const application = page.getByTestId("job-ops").getByTestId("dispatch-PREENCHER_CANDIDATURA")
     await expect(application).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
     await expect(application.locator('[data-stage="aprovacao"]')).toHaveAttribute("data-state", "done")
+  })
+
+  test("analisar vaga enviada: confirmação, etapas, diagnóstico e registro na planilha", async ({ page }) => {
+    // The fake advances one stage per poll (5 s).
+    test.setTimeout(90_000)
+    // fake-1006 is ENVIADA and has no dossier: résumé and application are blocked, the analysis is not.
+    await page.goto("/vaga/fake-1006")
+    const ops = page.getByTestId("job-ops")
+    await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeDisabled()
+    const button = ops.getByTestId("analyze-button")
+    await expect(button).toBeEnabled()
+    await expect(button).toHaveText("Analisar")
+
+    // Cancel never dispatches; the dialog has no platform toggle (Hermes only).
+    await button.click()
+    const dialog = page.getByTestId("analyze-dialog")
+    await expect(dialog).toContainText("fake-1006")
+    await expect(dialog).toContainText("Candidatura, datas e observações não mudam")
+    await expect(dialog.getByTestId("platform-grok")).toHaveCount(0)
+    await page.getByTestId("analyze-cancel").click()
+    await expect(ops.getByTestId("dispatch-ANALISAR_VAGA")).toHaveCount(0)
+
+    await button.click()
+    await page.getByTestId("analyze-confirm").click()
+    const card = ops.getByTestId("dispatch-ANALISAR_VAGA")
+    await expect(card).toBeVisible()
+    await expect(ops.getByTestId("analyze-button")).toBeDisabled()
+    await expect(card).toContainText("ChatGPT (host) · Hermes")
+
+    await expect(card).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    for (const stage of ["planilha", "posting", "analise", "writeset"]) {
+      await expect(card.locator(`[data-stage="${stage}"]`)).toHaveAttribute("data-state", "done")
+    }
+    await expect(card.getByTestId("analysis-diagnosis")).toContainText("NÃO PRIORIZADA")
+    await expect(ops.getByTestId("analyze-button")).toBeEnabled()
+
+    // Registration is the existing writeset flow: job-search writes, the panel only asks and re-reads.
+    const registration = card.getByTestId("writeset-registration")
+    await registration.getByTestId("register-writeset").click()
+    await expect(page.getByTestId("register-dialog")).toContainText("1 vaga")
+    await page.getByTestId("register-confirm").click()
+    await expect(registration).toHaveAttribute("data-registration", "CONCLUIDO", { timeout: 20_000 })
+    await expect(card.locator('[data-stage="registro"]')).toHaveAttribute("data-state", "done")
+  })
+
+  test("analisar: vaga com dossier oferece refazer; vaga sem texto pede você", async ({ page }) => {
+    test.setTimeout(60_000)
+    await page.goto("/vaga/fake-1001")
+    await expect(page.getByTestId("job-ops").getByTestId("analyze-button")).toHaveText("Refazer análise")
+    await page.getByTestId("job-ops").getByTestId("analyze-button").click()
+    await expect(page.getByTestId("analyze-dialog")).toContainText("O dossier novo é anexado")
+    await page.getByTestId("analyze-cancel").click()
+
+    // fake-1008: no posting anywhere, so job-search stops and asks the user (never invents the text).
+    await page.goto("/vaga/fake-1008")
+    const ops = page.getByTestId("job-ops")
+    await ops.getByTestId("analyze-button").click()
+    await page.getByTestId("analyze-confirm").click()
+    const card = ops.getByTestId("dispatch-ANALISAR_VAGA")
+    await expect(card).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 20_000 })
+    await expect(card.locator('[data-stage="posting"]')).toHaveAttribute("data-state", "failed")
+    await expect(card).toContainText("POSTING_UNAVAILABLE")
+    await expect(card).toContainText("não achou o texto desta vaga")
+    await expect(card.getByTestId("writeset-registration")).toHaveCount(0)
   })
 
   test("grok: seletor de plataforma gera o comando para colar", async ({ page }) => {
@@ -230,5 +294,39 @@ test.describe("Central de operações (bots)", () => {
       await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeDisabled()
     }
     await expect(page.getByTestId("job-ops")).toContainText("Candidatura já enviada.")
+  })
+
+  test("descartar vaga: confirmação, carimbo vermelho DESCARTADA e a vaga continua listada", async ({ page }) => {
+    // The fake answers like job-search but cannot change the fixture Sheet: fake-1009 is already discarded there.
+    await page.goto("/vaga/fake-1002")
+    await page.getByTestId("decline-job").click()
+    const dialog = page.getByTestId("decline-job-dialog")
+    await expect(dialog).toContainText("RETIRADA")
+    await expect(dialog).toContainText("Não dá para desfazer")
+    await page.getByTestId("decline-job-cancel").click()
+    await expect(dialog).toBeHidden()
+    await page.getByTestId("decline-job").click()
+    await page.getByTestId("decline-job-confirm").click()
+    await expect(page.getByText("Vaga descartada e marcada como RETIRADA na planilha.")).toBeVisible()
+
+    // A discarded job keeps its card: red state, "descartada" stamp, no discard button.
+    await page.goto("/vaga/fake-1009")
+    await expect(page.getByTestId("state-badge").first()).toHaveAttribute("data-state", "descartada")
+    await expect(page.getByTestId("declined-stamp")).toHaveText("descartada")
+    await expect(page.getByTestId("decline-job")).toHaveCount(0)
+    // Sent and uncertain applications cannot be discarded.
+    for (const id of ["fake-1006", "fake-1007"]) {
+      await page.goto(`/vaga/${id}`)
+      await expect(page.getByTestId("job-detail")).toBeVisible()
+      await expect(page.getByTestId("decline-job")).toHaveCount(0)
+    }
+
+    // "Hoje": the queue offers the button; the discarded job leaves the queue but stays on its own shelf.
+    await page.goto("/")
+    await expect(page.getByTestId("queue-list").getByTestId("decline-job").first()).toBeVisible()
+    await expect(page.getByTestId("queue-list").locator('[data-job-id="fake-1009"]')).toHaveCount(0)
+    const declined = page.getByTestId("declined-list").locator('[data-job-id="fake-1009"]')
+    await expect(declined).toHaveAttribute("data-state", "descartada")
+    await expect(declined.getByTestId("declined-stamp")).toBeVisible()
   })
 })

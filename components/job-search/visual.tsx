@@ -60,6 +60,8 @@ const STATE_STYLES: Record<JobState, StateStyle> = {
     card: "border-dashed bg-card/40",
     title: "text-st-closed-fg line-through decoration-1",
   },
+  // Same symbol as a sent application, in red: the user decided on it, so the card stays fully legible.
+  descartada: { icon: Send, pill: "bg-destructive text-destructive-foreground", bar: "bg-destructive" },
   retirada: {
     icon: Undo2,
     pill: "bg-st-closed text-st-closed-ink",
@@ -185,18 +187,20 @@ export function JourneyTrail({
   )
 }
 
-/** The "feito" stamp on sent applications. */
-export function DoneStamp({ className }: { className?: string }) {
+/** The "feito" stamp on sent applications; `declined` is the red "descartada" stamp of a discarded job. */
+export function DoneStamp({ className, declined = false }: { className?: string; declined?: boolean }) {
   return (
     <span
       aria-hidden="true"
+      data-testid={declined ? "declined-stamp" : "done-stamp"}
       className={cn(
-        "animate-stamp-in pointer-events-none inline-block -rotate-12 rounded-md border-2 border-st-sent-fg px-2 py-0.5",
-        "font-display text-xs font-bold uppercase tracking-widest text-st-sent-fg",
+        "animate-stamp-in pointer-events-none inline-block -rotate-12 rounded-md border-2 px-2 py-0.5",
+        "font-display text-xs font-bold uppercase tracking-widest",
+        declined ? "border-destructive text-destructive" : "border-st-sent-fg text-st-sent-fg",
         className
       )}
     >
-      feito
+      {declined ? "descartada" : "feito"}
     </span>
   )
 }
@@ -209,7 +213,16 @@ function place(item: JobListItem): string {
  * One job as a card. The whole card is the link (stretched anchor); testids match the table rows so
  * both list views are tested the same way.
  */
-export function JobCard({ item, index = 0 }: { item: JobListItem; index?: number }) {
+export function JobCard({
+  item,
+  index = 0,
+  action,
+}: {
+  item: JobListItem
+  index?: number
+  /** Control above the stretched link (e.g. "Descartar vaga"); it must set its own `relative z-10`. */
+  action?: React.ReactNode
+}) {
   const state = jobState(item)
   const style = STATE_STYLES[state]
   return (
@@ -251,7 +264,9 @@ export function JobCard({ item, index = 0 }: { item: JobListItem; index?: number
           <JourneyTrail cell={item.statusCandidatura} state={state} testId="row-candidatura" />
         </div>
         {state === "enviada" && <DoneStamp />}
+        {state === "descartada" && <DoneStamp declined />}
       </div>
+      {action && <div className="flex justify-end">{action}</div>}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-2 text-xs text-muted-foreground">
         <AnalysisBadge level={item.analysis} testId="row-analysis" />
         <span className="tabular-nums">análise {formatDay(item.dataUltimaAnalise)}</span>
@@ -261,7 +276,7 @@ export function JobCard({ item, index = 0 }: { item: JobListItem; index?: number
 }
 
 /** The highlighted "next move": the top of the queue, with its call to action. */
-export function NextMoveCard({ item }: { item: JobListItem }) {
+export function NextMoveCard({ item, action }: { item: JobListItem; action?: React.ReactNode }) {
   const state = jobState(item)
   return (
     <article
@@ -302,6 +317,7 @@ export function NextMoveCard({ item }: { item: JobListItem }) {
           Abrir vaga
           <ArrowRight className="h-5 w-5" aria-hidden="true" />
         </Link>
+        {action && <div className="md:col-start-2 md:justify-self-end">{action}</div>}
       </div>
     </article>
   )
@@ -330,7 +346,15 @@ export function ShelfTitle({
   )
 }
 
-export const STATE_LEGEND: JobState[] = ["aberta", "revisao", "enviada", "incerto", "nao-confirmada", "encerrada"]
+export const STATE_LEGEND: JobState[] = [
+  "aberta",
+  "revisao",
+  "enviada",
+  "descartada",
+  "incerto",
+  "nao-confirmada",
+  "encerrada",
+]
 
 export function StateLegend() {
   return (

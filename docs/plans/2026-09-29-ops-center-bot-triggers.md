@@ -85,6 +85,10 @@ Objetivo: o painel deixa de ser só leitura e passa a **pedir trabalho** aos bot
   pendente, do diálogo e do card registrado conferidos. **Não verificado**: `writeset.py persist` contra a Sheet
   real (nenhum teste grava a Sheet; execução real só com writeset indicado pelo dono) e o filho `_persist` real
   (testado com runner falso; o spawn usa o mesmo caminho do `_deliver`).
+- **Analisar vaga registrada (2026-09-30)**, `docs/plans/2026-09-30-analisar-vaga.md`: ação nova `ANALISAR_VAGA`
+  (`start ANALISAR_VAGA --platform hermes --job-id <id>`), pipeline no host sem Bot, só `job_id` do painel, sem texto
+  livre; o writeset sai no op_dir do disparo e `persist` passa a aceitar esse id. Não exige dossier nem estado de
+  candidatura (vaga enviada incluída); um pipeline do host com ChatGPT por vez (`CHATGPT_BUSY`); só Hermes.
 - Gateway em execução usa `JSB_BUDGET_USD=0.50` e ledger `real-20260929`; o padrão novo (US$ 2) só vale no
   próximo `serve.sh start`. A unit systemd fixa `JSB_GATEWAY_BUDGET=5` (não alterada).
 

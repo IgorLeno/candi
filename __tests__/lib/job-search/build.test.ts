@@ -24,6 +24,7 @@ describe("buildJobSearchData on the job-search fixture", () => {
       "fake-1006",
       "fake-1007",
       "fake-1008",
+      "fake-1009",
       "fake-0999",
     ])
     expect(data.dossiersTabPresent).toBe(true)

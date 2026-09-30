@@ -17,7 +17,9 @@ import { GoalRing } from "@/components/job-search/goal-ring"
 import { SearchOps } from "@/components/job-search/ops"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
 import { UncertainSubmitAlert } from "@/components/job-search/overview"
+import { DeclineJobButton } from "@/components/job-search/decline-job"
 import { JobCard, NextMoveCard, ShelfTitle, StateLegend } from "@/components/job-search/visual"
+import { canDeclineJob } from "@/lib/ops/present"
 import { cn } from "@/lib/utils"
 
 // "Hoje": the action queue. Charts and data quality live in /analise.
@@ -50,11 +52,26 @@ function AttentionChip({ group }: { group: AttentionGroup }) {
   )
 }
 
-function CardGrid({ items, testId }: { items: JobListItem[]; testId: string }) {
+/** "Descartar vaga" where the user chooses what to apply for; only with bot dispatch enabled. */
+function declineAction(item: JobListItem, enabled: boolean): React.ReactNode {
+  if (!enabled || !canDeclineJob(item)) return undefined
+  const label = [item.empresa || "(sem empresa)", item.cargo || "(sem cargo)"].join(" · ")
+  return <DeclineJobButton jobId={item.jobId} label={label} />
+}
+
+function CardGrid({
+  items,
+  testId,
+  withDecline = false,
+}: {
+  items: JobListItem[]
+  testId: string
+  withDecline?: boolean
+}) {
   return (
     <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid={testId}>
       {items.map((item, index) => (
-        <JobCard key={item.jobId} item={item} index={index} />
+        <JobCard key={item.jobId} item={item} index={index} action={declineAction(item, withDecline)} />
       ))}
     </ul>
   )
@@ -96,6 +113,8 @@ export default async function HojePage() {
   const sent = items
     .filter((item) => jobState(item) === "enviada")
     .sort((a, b) => (b.dataCandidatura ?? "").localeCompare(a.dataCandidatura ?? ""))
+  const declined = items.filter((item) => jobState(item) === "descartada")
+  const dispatch = isDispatchEnabled()
 
   const subline = [
     hot > 0 && `${hot} com interesse muito alto`,
@@ -158,7 +177,7 @@ export default async function HojePage() {
       {next && (
         <section aria-labelledby="proxima-jogada">
           <ShelfTitle id="proxima-jogada">Próxima jogada</ShelfTitle>
-          <NextMoveCard item={next} />
+          <NextMoveCard item={next} action={declineAction(next, dispatch)} />
         </section>
       )}
 
@@ -178,7 +197,7 @@ export default async function HojePage() {
           >
             Na fila · {rest.length}
           </ShelfTitle>
-          <CardGrid items={rest} testId="queue-list" />
+          <CardGrid items={rest} testId="queue-list" withDecline={dispatch} />
         </section>
       )}
 
@@ -217,6 +236,15 @@ export default async function HojePage() {
           </p>
         )}
       </section>
+
+      {declined.length > 0 && (
+        <section aria-labelledby="descartadas">
+          <ShelfTitle id="descartadas" tone="muted">
+            Descartadas por você · {declined.length}
+          </ShelfTitle>
+          <CardGrid items={declined} testId="declined-list" />
+        </section>
+      )}
 
       <footer className="flex flex-col gap-4 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
         <StateLegend />

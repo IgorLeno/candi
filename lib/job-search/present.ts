@@ -155,6 +155,8 @@ export interface JobListItem {
   analysis: AnalysisLevel
   archived: boolean
   uncertainSubmit: boolean
+  /** RETIRADA by the user's own decision ("Descartar vaga"): last CLOSED event with USER_DECLINED. */
+  userDeclined: boolean
   issueCodes: IssueCode[]
   dataPrimeiraAnalise: string | null
   dataUltimaAnalise: string | null
@@ -164,6 +166,16 @@ export interface JobListItem {
 
 function facetOf(view: JobView, key: FacetKey): string {
   return key === "analysis" ? view.analysis : bucketOf(view, key as DistributionKey)
+}
+
+/**
+ * job-search writes RETIRADA for USER_DECLINED, JOB_CLOSED and NOT_ELIGIBLE alike; the CLOSED event's
+ * `evidencia` (registry.md) tells the user's own "Descartar vaga" apart. Events are already sorted by time.
+ */
+export function isUserDeclined(view: Pick<JobView, "job" | "events">): boolean {
+  if (enumText(view.job.status_candidatura) !== "RETIRADA") return false
+  const closed = view.events.filter((event) => enumText(event.evento) === "CLOSED")
+  return closed.at(-1)?.evidencia === "USER_DECLINED"
 }
 
 export function toListItem(view: JobView): JobListItem {
@@ -185,6 +197,7 @@ export function toListItem(view: JobView): JobListItem {
     analysis: view.analysis,
     archived: job.archived,
     uncertainSubmit: view.uncertainSubmit,
+    userDeclined: isUserDeclined(view),
     issueCodes: [...new Set(view.issues.map((issue) => issue.code))],
     dataPrimeiraAnalise: job.data_primeira_analise,
     dataUltimaAnalise: job.data_ultima_analise,
@@ -445,6 +458,7 @@ export function formatTimestamp(timestamp: string | null | undefined): string {
 export type JobState =
   | "incerto"
   | "enviada"
+  | "descartada"
   | "retirada"
   | "fora"
   | "encerrada"
@@ -455,6 +469,7 @@ export type JobState =
 export const JOB_STATE_META: Record<JobState, { label: string; description: string }> = {
   incerto: { label: "Envio incerto", description: "Possível envio sem confirmação; aguarda reconciliação." },
   enviada: { label: "Enviada", description: "Candidatura enviada." },
+  descartada: { label: "Descartada", description: "Você descartou esta vaga: não vai se candidatar." },
   retirada: { label: "Retirada", description: "Candidatura retirada." },
   fora: { label: "Fora da fila", description: "Análise descartou ou não priorizou a vaga." },
   encerrada: { label: "Encerrada", description: "Vaga encerrada no portal ou arquivada." },
@@ -466,7 +481,8 @@ export const JOB_STATE_META: Record<JobState, { label: string; description: stri
 type StateInput = Pick<
   JobListItem,
   "statusAnalise" | "statusDisponibilidade" | "statusCandidatura" | "archived" | "uncertainSubmit"
->
+> &
+  Partial<Pick<JobListItem, "userDeclined">>
 
 /** One visual state per job, most decisive first (an invalid cell never matches a state value). */
 export function jobState(item: StateInput): JobState {
@@ -475,7 +491,7 @@ export function jobState(item: StateInput): JobState {
   const disponibilidade = item.statusDisponibilidade.invalid ? null : item.statusDisponibilidade.value
   if (item.uncertainSubmit || candidatura === "ENVIO INCERTO") return "incerto"
   if (candidatura === "ENVIADA") return "enviada"
-  if (candidatura === "RETIRADA") return "retirada"
+  if (candidatura === "RETIRADA") return item.userDeclined ? "descartada" : "retirada"
   if (analise === "DESCARTADA" || analise === "NÃO PRIORIZADA") return "fora"
   if (disponibilidade === "ENCERRADA" || item.archived) return "encerrada"
   if (candidatura === "PRONTA PARA REVISÃO") return "revisao"

@@ -14,6 +14,7 @@ import {
   Loader2,
   MessagesSquare,
   Radar,
+  ScanSearch,
   Trash2,
   XCircle,
   type LucideIcon,
@@ -23,6 +24,7 @@ import { syncJobSearch } from "@/app/actions/job-search"
 import {
   ackDispatch,
   analyzeIntake,
+  analyzeJob,
   discardDispatch,
   listDispatches,
   registerWriteset,
@@ -50,6 +52,7 @@ import {
   PLATFORM_LABEL,
   STATUS_META,
   analysisOf,
+  analyzeJobBlocker,
   canAnalyzeIntake,
   canDiscard,
   canRegisterWriteset,
@@ -76,6 +79,7 @@ const ACTION_ICON: Record<DispatchAction, LucideIcon> = {
   PREENCHER_CANDIDATURA: Bot,
   LOCALIZAR_VAGA: Crosshair,
   ANALISAR_INDICADA: MessagesSquare,
+  ANALISAR_VAGA: ScanSearch,
   REGISTRAR_WRITESET: FileSpreadsheet,
 }
 
@@ -192,6 +196,38 @@ function CommandBox({ command }: { command: string }) {
       >
         <Copy className="h-4 w-4" aria-hidden="true" />
         Copiar comando
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * "Preencher vaga" (2026-09-30): job-search opened the application page in the Application Browser and wrote the
+ * prompt; there is no supported way to start Claude in Chrome programmatically, so the user pastes it. The copy
+ * happens only on click. Claude in Chrome is NOT covered by the Hermes submit gate: the prompt tells it to stop at
+ * READY_TO_SUBMIT and the user clicks the final button.
+ */
+function ClaudePromptBox({ prompt, url }: { prompt: string; url: string | null | undefined }) {
+  return (
+    <div className="space-y-2" data-testid="claude-prompt">
+      <p className="text-xs text-muted-foreground">
+        Página aberta{url ? " no Application Browser" : ""}. Cole este prompt no Claude in Chrome (painel do Claude na
+        aba da vaga). O Claude para em READY_TO_SUBMIT: o envio final é sempre seu.
+      </p>
+      <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs whitespace-pre-wrap">
+        {prompt}
+      </pre>
+      <Button
+        size="sm"
+        onClick={() =>
+          navigator.clipboard.writeText(prompt).then(
+            () => toast.success("Prompt copiado. Cole no Claude in Chrome."),
+            () => toast.error("Não foi possível copiar.")
+          )
+        }
+      >
+        <Copy className="h-4 w-4" aria-hidden="true" />
+        COPIAR PROMPT PARA CLAUDE
       </Button>
     </div>
   )
@@ -319,7 +355,6 @@ function IntakeDetails({ progress, analysis }: { progress: DispatchProgress; ana
   const href = safeHttpUrl(job?.url)
   const prefilter = analysis ? null : (result?.prefilter ?? null)
   const blocked = prefilter?.verdict === "BLOQUEIO_GRAVE"
-  const diagnosis = progress.diagnosis ?? []
   return (
     <div className="space-y-2 text-sm" data-testid="intake-details">
       {progress.intake_text && !analysis && (
@@ -387,18 +422,25 @@ function IntakeDetails({ progress, analysis }: { progress: DispatchProgress; ana
           Esta vaga já está na planilha: registrar de novo atualiza a linha dela.
         </p>
       )}
-      {diagnosis.length > 0 && (
-        <ul className="space-y-1" data-testid="intake-diagnosis">
-          {diagnosis.map((row, index) => (
-            <li key={index} className="text-sm">
-              <span className="text-muted-foreground">Diagnóstico do ChatGPT: </span>
-              <span className="font-mono font-semibold">{row.status_analise || "sem status"}</span>
-              {row.interesse && <span className="text-muted-foreground"> · interesse {row.interesse}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
+      <DiagnosisList progress={progress} testId="intake-diagnosis" />
     </div>
+  )
+}
+
+/** The ChatGPT verdict as `writeset.py rows` has it (never recomputed here). */
+function DiagnosisList({ progress, testId }: { progress: DispatchProgress; testId: string }) {
+  const diagnosis = progress.diagnosis ?? []
+  if (diagnosis.length === 0) return null
+  return (
+    <ul className="space-y-1" data-testid={testId}>
+      {diagnosis.map((row, index) => (
+        <li key={index} className="text-sm">
+          <span className="text-muted-foreground">Diagnóstico do ChatGPT: </span>
+          <span className="font-mono font-semibold">{row.status_analise || "sem status"}</span>
+          {row.interesse && <span className="text-muted-foreground"> · interesse {row.interesse}</span>}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -568,19 +610,32 @@ export function DispatchCard({
         ))}
       </ol>
       {intake && <IntakeDetails progress={progress} analysis={dispatch.action === "ANALISAR_INDICADA"} />}
-      {(dispatch.action === "BUSCAR_VAGAS" || (dispatch.action === "ANALISAR_INDICADA" && !dispatch.discarded)) && (
+      {dispatch.action === "ANALISAR_VAGA" && <DiagnosisList progress={progress} testId="analysis-diagnosis" />}
+      {(dispatch.action === "BUSCAR_VAGAS" ||
+        dispatch.action === "ANALISAR_VAGA" ||
+        (dispatch.action === "ANALISAR_INDICADA" && !dispatch.discarded)) && (
         <WritesetRegistration dispatch={dispatch} progress={progress} onChanged={onChanged} />
       )}
       {intake && <IntakeDecisions dispatch={dispatch} analysis={analysis} onChanged={onChanged} />}
       {(dispatch.code || dispatch.marker) && dispatch.status !== "CONCLUIDO" && (
         <p className="text-xs text-muted-foreground">
           Código: <span className="font-mono">{dispatch.code ?? dispatch.marker}</span>
-          {dispatch.status === "PRECISA_HUMANO" && " — veja o Bot Chat no Hermes Desktop."}
+          {dispatch.status === "PRECISA_HUMANO" &&
+            (dispatch.mode === "host"
+              ? dispatch.code === "PASTE_PROMPT_IN_CLAUDE"
+                ? " — cole o prompt abaixo no Claude in Chrome."
+                : dispatch.code === "POSTING_UNAVAILABLE"
+                  ? " — o job-search não achou o texto desta vaga (sem publicação salva, sem dossier anterior e fora do LinkedIn)."
+                  : " — ação sua necessária (veja o código)."
+              : " — veja o Bot Chat no Hermes Desktop.")}
           {dispatch.status === "INCERTO" &&
-            " — o acompanhamento caiu; confira o Bot Chat no Hermes Desktop antes de liberar um novo disparo."}
+            (dispatch.mode === "host"
+              ? " — o processo do job-search caiu; confira o runtime antes de liberar um novo disparo."
+              : " — o acompanhamento caiu; confira o Bot Chat no Hermes Desktop antes de liberar um novo disparo.")}
         </p>
       )}
       {dispatch.command && <CommandBox command={dispatch.command} />}
+      {progress.claude_prompt && <ClaudePromptBox prompt={progress.claude_prompt} url={progress.claude_url} />}
       {ACKABLE.has(dispatch.status) && !dispatch.acknowledged && (
         <Button
           size="sm"
@@ -810,6 +865,95 @@ function IntakeButton({ disabledReason, onStarted }: { disabledReason: string | 
   )
 }
 
+/**
+ * "Analisar" / "Refazer análise": the ChatGPT analysis of this job, which is already in the Sheet (job-search host
+ * pipeline, Hermes only, so no platform toggle). Only the job_id is sent; the result is a writeset to register.
+ */
+function AnalyzeButton({
+  jobId,
+  analyzed,
+  disabledReason,
+  onStarted,
+}: {
+  jobId: string
+  /** The job already has a valid dossier in the Sheet: the button offers to redo it. */
+  analyzed: boolean
+  disabledReason: string | null
+  onStarted: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [pending, startTransition] = useTransition()
+  const meta = ACTION_META.ANALISAR_VAGA
+  const verb = analyzed ? "Refazer análise" : meta.verb
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={disabledReason !== null}
+        title={disabledReason ?? undefined}
+        data-testid="analyze-button"
+        onClick={() => setOpen(true)}
+      >
+        <ScanSearch className="h-4 w-4" aria-hidden="true" />
+        {verb}
+      </Button>
+      {disabledReason && (
+        <span className="sr-only" data-testid="analyze-disabled">
+          {disabledReason}
+        </span>
+      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent data-testid="analyze-dialog">
+          <DialogHeader>
+            <DialogTitle>{verb}</DialogTitle>
+            <DialogDescription>{meta.description}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p>
+              Vaga <span className="font-mono">{jobId}</span>
+            </p>
+            <p className="text-xs text-muted-foreground" role="note">
+              Ao registrar, o veredito do ChatGPT pode mudar o status da análise e a classificação desta vaga na
+              planilha. Candidatura, datas e observações não mudam.
+              {analyzed && " O dossier novo é anexado e passa a valer no lugar do atual."} Roda sempre pelo Hermes, no
+              ChatGPT do job-search.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)} data-testid="analyze-cancel">
+              Cancelar
+            </Button>
+            <Button
+              disabled={pending}
+              data-testid="analyze-confirm"
+              onClick={() =>
+                startTransition(async () => {
+                  try {
+                    const result = await analyzeJob(jobId)
+                    if (!result.ok) {
+                      toast.error(refusalText(result.code))
+                      return
+                    }
+                    toast.success("Análise pedida ao job-search.")
+                    setOpen(false)
+                    onStarted()
+                  } catch {
+                    toast.error(refusalText("UNAUTHENTICATED"))
+                  }
+                })
+              }
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              Analisar no ChatGPT
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 function gatewayReason(data: DispatchList | null, platform: string): string | null {
   if (platform !== "hermes" || !data || data.gateway === "running") return null
   return "Gateway Hermes parado ou sem inferência. Inicie-o ou troque para Grok."
@@ -827,7 +971,6 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
     void refreshIntakes()
     void refreshAnalyses()
   }, [refresh, refreshIntakes, refreshAnalyses])
-  const platform = usePlatform()
   const known = useMemo(() => new Set(knownJobIds), [knownJobIds])
   const last = data ? latest(data.dispatches, "BUSCAR_VAGAS") : null
   const intake = intakes.data ? latest(intakes.data.dispatches, "LOCALIZAR_VAGA") : null
@@ -836,8 +979,7 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   const linceBusy = [last, intake, ...(analyses.data?.dispatches ?? [])].some((dispatch) => dispatch?.active)
     ? "O Lince já está com um disparo em andamento."
     : null
-  const reason =
-    (last?.active ? "Já existe uma busca em andamento." : null) ?? linceBusy ?? gatewayReason(data, platform)
+  const reason = (last?.active ? "Já existe uma busca em andamento." : null) ?? linceBusy
   const intakeReason = linceBusy ?? gatewayReason(data, "hermes")
   const shownError = error ?? intakes.error ?? analyses.error
   return (
@@ -858,17 +1000,24 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   )
 }
 
-/** Bot actions of one job: "Gerar currículo" first, then "Preencher candidatura". */
-export function JobOps({ jobId, blocker }: { jobId: string; blocker: string | null }) {
+/** Bot actions of one job: "Analisar", "Gerar currículo", then "Preencher candidatura". */
+export function JobOps({
+  jobId,
+  blocker,
+  analyzed,
+}: {
+  jobId: string
+  /** Blocks résumé and application only: "Analisar" works on any job in the Sheet, sent ones included. */
+  blocker: string | null
+  analyzed: boolean
+}) {
   const { data, error, refresh } = useDispatches({ jobId })
-  const platform = usePlatform()
+  const analysis = latest(data?.dispatches ?? [], "ANALISAR_VAGA")
   const cv = latest(data?.dispatches ?? [], "GERAR_CURRICULO")
   const application = latest(data?.dispatches ?? [], "PREENCHER_CANDIDATURA")
   const job = data?.job
   const base =
-    blocker ??
-    (job && !job.actionable ? "Sem dossier válido (SELECIONADA e ABERTA) no runtime do job-search." : null) ??
-    gatewayReason(data, platform)
+    blocker ?? (job && !job.actionable ? "Sem dossier válido (SELECIONADA e ABERTA) no runtime do job-search." : null)
   const cvReady = job?.cv === "VALID"
   return (
     <section
@@ -878,6 +1027,12 @@ export function JobOps({ jobId, blocker }: { jobId: string; blocker: string | nu
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="mr-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Bots</span>
+        <AnalyzeButton
+          jobId={jobId}
+          analyzed={analyzed}
+          disabledReason={analyzeJobBlocker(analysis)}
+          onStarted={refresh}
+        />
         <DispatchButton
           action="GERAR_CURRICULO"
           jobId={jobId}
@@ -900,8 +1055,9 @@ export function JobOps({ jobId, blocker }: { jobId: string; blocker: string | nu
       </div>
       {error && <p className="text-xs text-muted-foreground">{refusalText(error)}</p>}
       {base && <p className="text-xs text-muted-foreground">{base}</p>}
-      {(cv || application) && (
+      {(analysis || cv || application) && (
         <div className="grid gap-3 lg:grid-cols-2">
+          {analysis && <DispatchCard dispatch={analysis} onChanged={refresh} />}
           {cv && <DispatchCard dispatch={cv} onChanged={refresh} />}
           {application && <DispatchCard dispatch={application} onChanged={refresh} />}
         </div>

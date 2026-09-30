@@ -7,6 +7,7 @@ import {
   attentionGroups,
   facetOptions,
   flameCount,
+  isUserDeclined,
   jobState,
   journeyStep,
   todayQueue,
@@ -70,7 +71,7 @@ describe("filters", () => {
 
   it("searches empresa/cargo/job_id ignoring case and accents", () => {
     expect(ids({ q: "QUIMICA exemplo" })).toEqual(["fake-1006"])
-    expect(ids({ q: "fake-100" })).toHaveLength(8)
+    expect(ids({ q: "fake-100" })).toHaveLength(9)
     // Core sentence is searchable only when the dossier is valid (fake-1004 is not).
     expect(ids({ q: "parametros" })).toEqual(["fake-1001", "fake-1002", "fake-1003"])
   })
@@ -136,7 +137,7 @@ describe("attention groups", () => {
       "pronta-revisao": 1,
       divergencia: 1,
       "valor-invalido": 1,
-      "sem-dossier": 4,
+      "sem-dossier": 5,
     })
     expect(attentionGroups([])).toEqual([])
   })
@@ -178,8 +179,28 @@ describe("visual state", () => {
       "fake-1006": "enviada",
       "fake-1007": "incerto",
       "fake-1008": "nao-confirmada",
+      "fake-1009": "descartada",
       "fake-0999": "encerrada",
     })
+  })
+
+  it("tells the user's own discard apart from other RETIRADA by the last CLOSED event", () => {
+    const declined = data.views.find((view) => view.job.job_id === "fake-1009")!
+    expect(isUserDeclined(declined)).toBe(true)
+    expect(byId("fake-1009").userDeclined).toBe(true)
+    const closedByPortal = {
+      ...declined,
+      events: [
+        ...declined.events,
+        { ...declined.events[0], evidencia: "JOB_CLOSED", timestamp: "2026-09-26T00:00:00Z" },
+      ],
+    }
+    expect(isUserDeclined(closedByPortal)).toBe(false)
+    expect(jobState({ ...byId("fake-1009"), userDeclined: false })).toBe("retirada")
+    // A USER_DECLINED event does not matter unless the Sheet says RETIRADA.
+    expect(isUserDeclined({ ...declined, job: data.views[0].job })).toBe(false)
+    // The discarded job stays listed but leaves the "Hoje" queue.
+    expect(todayQueue(items).map((item) => item.jobId)).not.toContain("fake-1009")
   })
 
   it("never reads an invalid cell as a state value", () => {

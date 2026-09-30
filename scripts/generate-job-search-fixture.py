@@ -126,6 +126,11 @@ main_rows = [
     job("fake-1008", empresa="Alimentos Exemplo", familia_funcao="LABORATORIO_QUALIDADE", tipo_programa="REGULAR",
         proximidade_eq="CORRELATA", setor="ALIMENTOS", interesse="NORMAL", data_primeira_analise="2026-09-22",
         data_ultima_analise="2026-09-22", status_analise="SELECIONADA", status_disponibilidade="NÃO CONFIRMADA"),
+    # Discarded by the user from the panel (application.py decline): RETIRADA + CLOSED/USER_DECLINED.
+    job("fake-1009", empresa="Mineração Exemplo", familia_funcao="PROCESSOS_ENGENHARIA", tipo_programa="REGULAR",
+        proximidade_eq="DIRETA", setor="MINERACAO_MINERAIS", interesse="NORMAL", data_primeira_analise="2026-09-20",
+        data_ultima_analise="2026-09-20", status_analise="SELECIONADA", status_disponibilidade="ABERTA",
+        status_candidatura="RETIRADA"),
     job("", empresa="Linha sem job_id"),
 ]
 
@@ -143,6 +148,7 @@ events = [
     ["fake-1001", "fake-1001:1", "CLAIMED", "2026-09-24T11:00:00Z", "", "", ""],
     ["fake-1007", "fake-1007:1", "CLAIMED", "2026-09-18T10:00:00Z", "", "", ""],
     ["fake-1007", "fake-1007:1", "SUBMIT_INTENT", "2026-09-18T10:30:00Z", "CONFIRM", "0badc0de", ""],
+    ["fake-1009", "fake-1009:1", "CLOSED", "2026-09-25T14:00:00Z", "", "", "USER_DECLINED"],
 ]
 
 coverage = [
