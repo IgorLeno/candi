@@ -35,18 +35,20 @@ export type RunResult<T> = { ok: true; value: T } | DispatchRefusal
 /**
  * One dispatcher call. Exit 0 → `schema`; exit 1 with `{ok:false, code}` → refusal; anything else
  * (missing python, timeout, bad JSON) → DISPATCHER_UNAVAILABLE. Errors never carry stderr to the client.
+ * `stdin` carries the only free text (the "vaga indicada"), so it never lands in argv; stdin is always closed.
  */
 export function runDispatcher<T>(
   args: string[],
   schema: z.ZodType<T>,
-  config: DispatchConfig | null = dispatchConfig()
+  config: DispatchConfig | null = dispatchConfig(),
+  options: { stdin?: string } = {}
 ): Promise<RunResult<T>> {
   if (!config) return Promise.resolve({ ok: false, code: "DISPATCH_DISABLED" })
   const env = Object.fromEntries(
     PASSTHROUGH_ENV.flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : []))
   ) as NodeJS.ProcessEnv
   return new Promise((resolve) => {
-    execFile(
+    const child = execFile(
       config.python,
       [config.script, ...args],
       { env, timeout: 30_000, maxBuffer: 1024 * 1024, windowsHide: true },
@@ -68,5 +70,8 @@ export function runDispatcher<T>(
         resolve(value?.success ? { ok: true, value: value.data } : { ok: false, code: "DISPATCHER_UNAVAILABLE" })
       }
     )
+    // A dispatcher that exits early (or a missing python) closes the pipe: the exit callback reports it.
+    child.stdin?.on("error", () => {})
+    child.stdin?.end(options.stdin ?? "")
   })
 }

@@ -8,10 +8,17 @@ export const BOT_ACTIONS = ["BUSCAR_VAGAS", "GERAR_CURRICULO", "PREENCHER_CANDID
 export type BotAction = (typeof BOT_ACTIONS)[number]
 
 /**
+ * "Vaga indicada" (Hermes only): LOCALIZAR_VAGA gets the user's text over stdin (`startIntake`), then
+ * ANALISAR_INDICADA takes the located job to the ChatGPT (`analyzeIntake`). Not started through `startDispatch`.
+ */
+export const INTAKE_ACTIONS = ["LOCALIZAR_VAGA", "ANALISAR_INDICADA"] as const
+export type IntakeAction = (typeof INTAKE_ACTIONS)[number]
+
+/**
  * Every record kind in the dispatcher's list. REGISTRAR_WRITESET is not a bot: it is `dispatch.py persist`,
  * where job-search runs `writeset.py persist` with its own write credential at the user's request.
  */
-export const DISPATCH_ACTIONS = [...BOT_ACTIONS, "REGISTRAR_WRITESET"] as const
+export const DISPATCH_ACTIONS = [...BOT_ACTIONS, ...INTAKE_ACTIONS, "REGISTRAR_WRITESET"] as const
 export type DispatchAction = (typeof DISPATCH_ACTIONS)[number]
 
 export const PER_JOB_ACTIONS: readonly BotAction[] = ["GERAR_CURRICULO", "PREENCHER_CANDIDATURA"]
@@ -56,6 +63,38 @@ const persistResultSchema = z.object({
 })
 export type PersistResult = z.infer<typeof persistResultSchema>
 
+/** `vaga-indicada.json` as the dispatcher validated it (untrusted text from the Lince: render as plain text). */
+const intakeResultSchema = z.object({
+  found: z.boolean(),
+  reason: z.string().max(500).nullable(),
+  job: z
+    .object({
+      title: z.string().max(200).nullable(),
+      company: z.string().max(200).nullable(),
+      location: z.string().max(200).nullable(),
+      url: z.string().max(2000).nullable(),
+      source: z.string().max(100).nullable(),
+      job_id: z.string().max(64).nullable(),
+    })
+    .nullable(),
+  already_in_registry: z.boolean(),
+  prefilter: z
+    .object({ verdict: z.enum(["PASSA", "BLOQUEIO_GRAVE"]), reasons: z.array(z.string().max(300)).max(10) })
+    .nullable(),
+  posting: z.boolean().optional(),
+})
+export type IntakeResult = z.infer<typeof intakeResultSchema>
+
+/** Diagnosis rows exactly as `writeset.py rows` has them (never recomputed by the panel). */
+const diagnosisSchema = z.object({
+  job_id: z.string().max(200),
+  cargo: z.string().max(200),
+  empresa: z.string().max(200),
+  status_analise: z.string().max(200),
+  interesse: z.string().max(200),
+})
+export type Diagnosis = z.infer<typeof diagnosisSchema>
+
 const progressSchema = z.object({
   percent: z.number().min(0).max(100),
   stages: z.array(stageSchema),
@@ -77,6 +116,11 @@ const progressSchema = z.object({
     })
     .nullable()
     .optional(),
+  /** Vaga indicada: the text the user typed (untrusted, plain text), the Lince's result and the diagnosis. */
+  intake_text: z.string().max(1500).nullable().optional(),
+  intake: intakeResultSchema.nullable().optional(),
+  intake_state: z.enum(["missing", "invalid", "valid"]).optional(),
+  diagnosis: z.array(diagnosisSchema).max(50).optional(),
 })
 export type DispatchProgress = z.infer<typeof progressSchema>
 
@@ -96,8 +140,10 @@ export const dispatchSchema = z.object({
   progress: progressSchema,
   /** Only for Grok (manual paste): the fixed command text. */
   command: z.string().optional(),
-  /** Only for REGISTRAR_WRITESET: the search it persists and the counts. */
+  /** REGISTRAR_WRITESET: the search it persists; ANALISAR_INDICADA: the LOCALIZAR_VAGA it analyses. */
   source_id: z.string().nullable().optional(),
+  /** Vaga indicada discarded in the panel (nothing goes to the Sheet). */
+  discarded: z.boolean().optional(),
   result: persistResultSchema.nullable().optional(),
 })
 export type Dispatch = z.infer<typeof dispatchSchema>

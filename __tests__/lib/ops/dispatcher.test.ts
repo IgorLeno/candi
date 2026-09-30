@@ -20,6 +20,8 @@ elif mode == "crash":
     print(json.dumps({"ok": True, "n": 1})); sys.exit(3)
 elif mode == "env":
     print(json.dumps({"ok": True, "keys": sorted(os.environ)}))
+elif mode == "stdin":
+    print(json.dumps({"ok": True, "stdin": sys.stdin.read(), "argv": sys.argv[1:]}))
 `
 
 function fakeConfig(): DispatchConfig {
@@ -84,5 +86,20 @@ describe("runDispatcher", () => {
     expect(keys.every((key) => ["HOME", "PATH", "LANG", "LC_CTYPE", "JOB_SEARCH_BROWSERS_STATE"].includes(key))).toBe(
       true
     )
+  })
+
+  it("sends the intake text over stdin (never argv) and closes stdin otherwise", async () => {
+    const schema = z.object({ ok: z.literal(true), stdin: z.string(), argv: z.array(z.string()) })
+    const config = fakeConfig()
+    const text = "Estágio na Braskem\nsegunda linha --platform grok"
+    await expect(runDispatcher(["stdin"], schema, config, { stdin: text })).resolves.toEqual({
+      ok: true,
+      value: { ok: true, stdin: text, argv: ["stdin"] },
+    })
+    // Without stdin the pipe is closed at once: a reader gets EOF instead of hanging until the timeout.
+    await expect(runDispatcher(["stdin"], schema, config)).resolves.toEqual({
+      ok: true,
+      value: { ok: true, stdin: "", argv: ["stdin"] },
+    })
   })
 })

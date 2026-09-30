@@ -31,6 +31,18 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     description:
       "O Candidatinho abre o navegador de candidatura e preenche o formulário até a revisão. Nada é enviado: ele para antes do botão final e pede sua aprovação no Bot Chat.",
   },
+  LOCALIZAR_VAGA: {
+    label: "Vaga indicada",
+    verb: "Indicar vaga",
+    description:
+      "O Lince procura exatamente a vaga que você descrever e faz a análise preliminar (prefilter), sem ChatGPT. Depois você decide se ela vai para a análise no ChatGPT.",
+  },
+  ANALISAR_INDICADA: {
+    label: "Análise da vaga indicada",
+    verb: "Mandar para o ChatGPT",
+    description:
+      "O Lince leva a vaga localizada ao Threadgist, que faz a análise no ChatGPT; o writeset fica pronto e você decide se registra na planilha ou descarta.",
+  },
   REGISTRAR_WRITESET: {
     label: "Registrar na planilha",
     verb: "Registrar na planilha",
@@ -75,6 +87,17 @@ const REFUSAL_TEXT: Record<string, string> = {
   WRITESET_NOT_VALID: "O writeset não existe ou não passou no writeset.py check.",
   PERSIST_ACTIVE: "Já há uma gravação de writeset em andamento.",
   WRITESET_ALREADY_REGISTERED: "Este writeset já foi gravado na planilha.",
+  PROFILE_BUSY: "O Lince já está com um disparo em andamento (busca ou vaga indicada).",
+  PLATFORM_NOT_SUPPORTED: "A vaga indicada só roda pelo Hermes.",
+  INTAKE_INVALID:
+    "A indicação precisa ter de 10 a 1500 caracteres e não pode conter marca do painel nem marcador de contrato dos bots.",
+  INTAKE_LOOKS_LIKE_APPROVAL: "A indicação não pode parecer uma aprovação (ok ou não seguido de 8 caracteres hex).",
+  INTAKE_NOT_DONE: "A localização da vaga ainda não concluiu.",
+  INTAKE_NOT_FOUND: "O Lince não localizou a vaga: indique de novo com mais detalhe.",
+  NOT_AN_INTAKE: "Este disparo não é de uma vaga indicada.",
+  DISCARDED: "A vaga indicada foi descartada.",
+  ALREADY_REGISTERED: "A vaga já foi gravada na planilha: não dá mais para descartar pelo painel.",
+  SOURCE_REQUIRED: "Falta a vaga indicada de origem.",
 }
 
 export function refusalText(code: string): string {
@@ -148,4 +171,30 @@ export function persistSummary(result: PersistResult | null | undefined): string
 /** Latest dispatch of an action (the dispatcher lists newest first). */
 export function latest(dispatches: Dispatch[], action: DispatchAction): Dispatch | null {
   return dispatches.find((dispatch) => dispatch.action === action) ?? null
+}
+
+/** The latest analysis of a "vaga indicada" (the dispatcher lists newest first). */
+export function analysisOf(analyses: Dispatch[], intakeId: string): Dispatch | null {
+  return analyses.find((dispatch) => dispatch.source_id === intakeId) ?? null
+}
+
+/**
+ * "Mandar para o ChatGPT": the Lince located the job, it was not discarded and no analysis of it is running or
+ * done (a failed one may be retried). A BLOQUEIO_GRAVE prefilter does not block: the user decides.
+ */
+export function canAnalyzeIntake(intake: Dispatch, analysis: Dispatch | null): boolean {
+  if (intake.action !== "LOCALIZAR_VAGA" || intake.discarded || intake.status !== "CONCLUIDO") return false
+  if (!intake.progress.intake?.found) return false
+  return !(analysis && !analysis.discarded && (analysis.active || analysis.status === "CONCLUIDO"))
+}
+
+/**
+ * "Descartar" (panel only, nothing goes to the Sheet): not while something runs and not after the writeset was
+ * recorded. The dispatcher checks the whole chain again.
+ */
+export function canDiscard(dispatch: Dispatch): boolean {
+  if (dispatch.action !== "LOCALIZAR_VAGA" && dispatch.action !== "ANALISAR_INDICADA") return false
+  if (dispatch.discarded || isActiveStatus(dispatch.status)) return false
+  const registration = dispatch.progress.registration
+  return !(registration && (registration.status === "CONCLUIDO" || isActiveStatus(registration.status)))
 }

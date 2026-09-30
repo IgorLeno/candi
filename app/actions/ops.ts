@@ -5,6 +5,7 @@ import { getAllowedSession } from "@/lib/auth/session"
 import { getJobSearchData } from "@/lib/job-search/source"
 import { toListItem } from "@/lib/job-search/present"
 import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
+import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
 import { jobDispatchBlocker } from "@/lib/ops/present"
 import {
   DISPATCH_ACTIONS,
@@ -19,7 +20,8 @@ import {
 
 // Bot dispatch from the panel. Server Functions are not covered by `proxy.ts`: every action checks the
 // session itself, before touching input or the dispatcher. Nothing typed by the client becomes bot text:
-// the dispatcher sends fixed commands and only receives an action, a platform and a validated job_id.
+// the dispatcher sends fixed commands and only receives an action, a platform and a validated job_id. The one
+// exception is the "vaga indicada" text: guarded here, sent over stdin, stored by job-search as untrusted data.
 
 async function requireSession(): Promise<void> {
   if (!(await getAllowedSession())) throw new Error("UNAUTHENTICATED")
@@ -80,5 +82,37 @@ export async function ackDispatch(id: unknown): Promise<ActionResult<Dispatch>> 
   await requireSession()
   if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["ack", id], oneResultSchema)
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/**
+ * "Indicar vaga": asks the Lince (Hermes only) to locate one specific job described in free text and run the
+ * prefilter. The text goes over stdin, never argv; job-search re-applies the same guards and writes it to a
+ * private file marked as untrusted data. The bot command stays fixed and only points to that file.
+ */
+export async function startIntake(text: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (typeof text !== "string" || text.length > INTAKE_MAX * 4) return { ok: false, code: "INPUT_INVALID" }
+  const intake = normalizeIntake(text)
+  if (!intake.ok) return { ok: false, code: intake.code }
+  const args = ["start", "LOCALIZAR_VAGA", "--platform", "hermes", "--intake-stdin"]
+  const result = await runDispatcher(args, oneResultSchema, undefined, { stdin: intake.text })
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/** "Mandar para o ChatGPT": the Lince takes the located job to the Threadgist (Hermes only). Only the id. */
+export async function analyzeIntake(intakeId: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (typeof intakeId !== "string" || !DISPATCH_ID_RE.test(intakeId)) return { ok: false, code: "INPUT_INVALID" }
+  const args = ["start", "ANALISAR_INDICADA", "--platform", "hermes", "--from", intakeId]
+  const result = await runDispatcher(args, oneResultSchema)
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/** "Descartar" a vaga indicada: job-search only marks its records; nothing goes to the Sheet. */
+export async function discardDispatch(id: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["discard", id], oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }

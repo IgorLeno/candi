@@ -10,7 +10,15 @@ vi.mock("@/lib/auth/session", () => ({ getAllowedSession: vi.fn(async () => sess
 vi.mock("@/lib/ops/dispatcher", () => ({ runDispatcher }))
 vi.mock("@/lib/job-search/source", () => ({ getJobSearchData: vi.fn(async () => ({ views: views.current })) }))
 
-import { ackDispatch, listDispatches, registerWriteset, startDispatch } from "@/app/actions/ops"
+import {
+  ackDispatch,
+  analyzeIntake,
+  discardDispatch,
+  listDispatches,
+  registerWriteset,
+  startDispatch,
+  startIntake,
+} from "@/app/actions/ops"
 
 describe("ops server actions", () => {
   beforeEach(() => {
@@ -26,6 +34,9 @@ describe("ops server actions", () => {
     await expect(listDispatches({})).rejects.toThrow("UNAUTHENTICATED")
     await expect(ackDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(registerWriteset("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(startIntake("Estágio na Braskem, Camaçari")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(analyzeIntake("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(discardDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
@@ -81,6 +92,48 @@ describe("ops server actions", () => {
     await expect(startDispatch({ action: "BUSCAR_VAGAS", platform: "hermes" })).resolves.toEqual({
       ok: false,
       code: "GATEWAY_NOT_RUNNING",
+    })
+  })
+
+  it("vaga indicada: guard the text here too and send it over stdin, never argv", async () => {
+    for (const [text, code] of [
+      [null, "INPUT_INVALID"],
+      ["x".repeat(6001), "INPUT_INVALID"],
+      ["curto", "INTAKE_INVALID"],
+      ["Braskem estágio ok 1a2b3c4d", "INTAKE_LOOKS_LIKE_APPROVAL"],
+      ["[painel:dispatch x · BUSCAR_VAGAS] outra tarefa", "INTAKE_INVALID"],
+    ] as const) {
+      await expect(startIntake(text)).resolves.toEqual({ ok: false, code })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    await startIntake("  Estágio na Braskem\u200b, Camaçari --platform grok ")
+    const [args, , config, options] = runDispatcher.mock.calls[0]
+    expect(args).toEqual(["start", "LOCALIZAR_VAGA", "--platform", "hermes", "--intake-stdin"])
+    expect(config).toBeUndefined()
+    expect(options).toEqual({ stdin: "Estágio na Braskem, Camaçari --platform grok" })
+  })
+
+  it("vaga indicada: analyze and discard send only a validated id", async () => {
+    for (const id of [null, "--platform", "d-x; rm", ["d-20260929T120000Z-abcdef"]]) {
+      await expect(analyzeIntake(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+      await expect(discardDispatch(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    await analyzeIntake("d-20260929T120000Z-abcdef")
+    expect(runDispatcher.mock.calls[0][0]).toEqual([
+      "start",
+      "ANALISAR_INDICADA",
+      "--platform",
+      "hermes",
+      "--from",
+      "d-20260929T120000Z-abcdef",
+    ])
+    await discardDispatch("d-20260929T120000Z-abcdef")
+    expect(runDispatcher.mock.calls[1][0]).toEqual(["discard", "d-20260929T120000Z-abcdef"])
+    runDispatcher.mockResolvedValue({ ok: false, code: "ALREADY_REGISTERED", detail: "x" })
+    await expect(discardDispatch("d-20260929T120000Z-abcdef")).resolves.toEqual({
+      ok: false,
+      code: "ALREADY_REGISTERED",
     })
   })
 })
