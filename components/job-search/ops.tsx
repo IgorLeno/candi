@@ -7,16 +7,28 @@ import {
   CheckCircle2,
   Circle,
   Copy,
+  Crosshair,
+  ExternalLink,
   FileSpreadsheet,
   FileText,
   Loader2,
+  MessagesSquare,
   Radar,
+  Trash2,
   XCircle,
   type LucideIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 import { syncJobSearch } from "@/app/actions/job-search"
-import { ackDispatch, listDispatches, registerWriteset, startDispatch } from "@/app/actions/ops"
+import {
+  ackDispatch,
+  analyzeIntake,
+  discardDispatch,
+  listDispatches,
+  registerWriteset,
+  startDispatch,
+  startIntake,
+} from "@/app/actions/ops"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -26,14 +38,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
+import { Textarea } from "@/components/ui/textarea"
 import { ToneBadge } from "@/components/job-search/tone-badge"
-import { formatTimestamp } from "@/lib/job-search/present"
+import { formatTimestamp, safeHttpUrl } from "@/lib/job-search/present"
+import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
 import { usePlatform, writePlatform } from "@/lib/ops/platform-pref"
 import {
   ACTION_META,
   PLATFORM_LABEL,
   STATUS_META,
+  analysisOf,
+  canAnalyzeIntake,
+  canDiscard,
   canRegisterWriteset,
   isActiveStatus,
   latest,
@@ -56,6 +74,8 @@ const ACTION_ICON: Record<DispatchAction, LucideIcon> = {
   BUSCAR_VAGAS: Radar,
   GERAR_CURRICULO: FileText,
   PREENCHER_CANDIDATURA: Bot,
+  LOCALIZAR_VAGA: Crosshair,
+  ANALISAR_INDICADA: MessagesSquare,
   REGISTRAR_WRITESET: FileSpreadsheet,
 }
 
@@ -288,17 +308,211 @@ function WritesetRegistration({
   )
 }
 
+/**
+ * "Vaga indicada": what the user typed and what the Lince found. All of it is untrusted text (user input, job
+ * posting fields): rendered as text, the link only through `safeHttpUrl`. The diagnosis is `writeset.py rows`.
+ */
+function IntakeDetails({ progress, analysis }: { progress: DispatchProgress; analysis: boolean }) {
+  // The analysis card sits next to its intake card: it only names the job and adds the diagnosis.
+  const result = progress.intake ?? null
+  const job = result?.found ? result.job : null
+  const href = safeHttpUrl(job?.url)
+  const prefilter = analysis ? null : (result?.prefilter ?? null)
+  const blocked = prefilter?.verdict === "BLOQUEIO_GRAVE"
+  const diagnosis = progress.diagnosis ?? []
+  return (
+    <div className="space-y-2 text-sm" data-testid="intake-details">
+      {progress.intake_text && !analysis && (
+        <p
+          className="line-clamp-3 rounded-lg border border-border bg-muted/40 p-2 text-xs whitespace-pre-wrap text-muted-foreground"
+          title={progress.intake_text}
+          data-testid="intake-text"
+        >
+          {progress.intake_text}
+        </p>
+      )}
+      {result && !result.found && (
+        <p className="text-xs" data-testid="intake-reason">
+          Não localizada{result.reason ? `: ${result.reason}` : ""}. Indique de novo com mais detalhe (empresa, cargo,
+          link).
+        </p>
+      )}
+      {job && (
+        <div className="space-y-1" data-testid="intake-job">
+          <p>
+            <span className="font-semibold text-foreground">{job.title}</span>
+            {job.company && <> · {job.company}</>}
+            {job.location && <span className="text-muted-foreground"> · {job.location}</span>}
+          </p>
+          <p className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            {job.source && <span>Fonte: {job.source}</span>}
+            {href && (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
+                data-testid="intake-link"
+              >
+                Abrir a vaga
+                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              </a>
+            )}
+          </p>
+        </div>
+      )}
+      {prefilter && (
+        <div className="space-y-1" data-testid="intake-prefilter" data-verdict={prefilter.verdict}>
+          <ToneBadge tone={blocked ? "warning" : "good"}>
+            {blocked ? "Prefilter: bloqueio grave" : "Prefilter: passa"}
+          </ToneBadge>
+          {prefilter.reasons.length > 0 && (
+            <ul className="list-disc pl-5 text-xs text-muted-foreground">
+              {prefilter.reasons.map((reason, index) => (
+                <li key={index}>{reason}</li>
+              ))}
+            </ul>
+          )}
+          {blocked && (
+            <p className="text-xs text-muted-foreground">O bloqueio não impede a análise no ChatGPT: você decide.</p>
+          )}
+        </div>
+      )}
+      {result?.already_in_registry && !analysis && (
+        <p
+          className="rounded-lg border border-st-review/45 bg-st-review/15 p-2 text-xs text-st-review-fg"
+          role="note"
+          data-testid="intake-in-registry"
+        >
+          Esta vaga já está na planilha: registrar de novo atualiza a linha dela.
+        </p>
+      )}
+      {diagnosis.length > 0 && (
+        <ul className="space-y-1" data-testid="intake-diagnosis">
+          {diagnosis.map((row, index) => (
+            <li key={index} className="text-sm">
+              <span className="text-muted-foreground">Diagnóstico do ChatGPT: </span>
+              <span className="font-mono font-semibold">{row.status_analise || "sem status"}</span>
+              {row.interesse && <span className="text-muted-foreground"> · interesse {row.interesse}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** "Mandar para o ChatGPT" (located intake) and "Descartar" (panel only), each behind a confirmation. */
+function IntakeDecisions({
+  dispatch,
+  analysis,
+  onChanged,
+}: {
+  dispatch: Dispatch
+  analysis: Dispatch | null
+  onChanged: () => void
+}) {
+  const [confirm, setConfirm] = useState<"analyze" | "discard" | null>(null)
+  const [pending, startTransition] = useTransition()
+  const analyze = dispatch.action === "LOCALIZAR_VAGA" && canAnalyzeIntake(dispatch, analysis)
+  // Once an analysis exists, the decision (register or discard) lives on its card.
+  const discard = canDiscard(dispatch) && !(dispatch.action === "LOCALIZAR_VAGA" && analysis && !analysis.discarded)
+  if (!analyze && !discard) return null
+  const blocked = dispatch.progress.intake?.prefilter?.verdict === "BLOQUEIO_GRAVE"
+
+  const run = (kind: "analyze" | "discard") =>
+    startTransition(async () => {
+      try {
+        const result = kind === "analyze" ? await analyzeIntake(dispatch.id) : await discardDispatch(dispatch.id)
+        if (!result.ok) {
+          toast.error(refusalText(result.code))
+          return
+        }
+        toast.success(
+          kind === "analyze"
+            ? "Lince acionado para a análise no ChatGPT."
+            : "Vaga indicada descartada. Nada foi para a planilha."
+        )
+        setConfirm(null)
+        onChanged()
+      } catch {
+        toast.error(refusalText("UNAUTHENTICATED"))
+      }
+    })
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {analyze && (
+        <Button size="sm" data-testid="intake-analyze" onClick={() => setConfirm("analyze")}>
+          <MessagesSquare className="h-4 w-4" aria-hidden="true" />
+          {ACTION_META.ANALISAR_INDICADA.verb}
+        </Button>
+      )}
+      {discard && (
+        <Button size="sm" variant="outline" data-testid="intake-discard" onClick={() => setConfirm("discard")}>
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
+          Descartar
+        </Button>
+      )}
+      <Dialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
+        <DialogContent data-testid="intake-decision-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {confirm === "analyze" ? ACTION_META.ANALISAR_INDICADA.label : "Descartar a vaga indicada"}
+            </DialogTitle>
+            <DialogDescription>
+              {confirm === "analyze"
+                ? ACTION_META.ANALISAR_INDICADA.description
+                : "Ela sai do acompanhamento do painel. Nada vai para a planilha e nenhum bot é acionado."}
+            </DialogDescription>
+          </DialogHeader>
+          {confirm === "analyze" && (
+            <div className="space-y-2 text-sm">
+              {blocked && (
+                <p className="rounded-lg border border-st-review/45 bg-st-review/15 p-2 text-st-review-fg" role="note">
+                  O prefilter apontou bloqueio grave. A análise roda mesmo assim, porque a decisão é sua.
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Roda pelo Hermes. Nada é gravado na planilha sem o seu &ldquo;Registrar na planilha&rdquo;.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirm(null)} data-testid="intake-decision-cancel">
+              Cancelar
+            </Button>
+            <Button
+              variant={confirm === "discard" ? "destructive" : "default"}
+              disabled={pending}
+              data-testid="intake-decision-confirm"
+              onClick={() => confirm && run(confirm)}
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              {confirm === "discard" ? "Descartar" : "Acionar Hermes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
 const ACKABLE = new Set(["INCERTO", "FALHOU", "PRECISA_HUMANO", "PARADO", "MANUAL"])
 
 export function DispatchCard({
   dispatch,
   knownJobIds,
+  analysis = null,
   onChanged,
 }: {
   dispatch: Dispatch
   knownJobIds?: ReadonlySet<string>
+  /** LOCALIZAR_VAGA: the latest analysis of this intake, if any. */
+  analysis?: Dispatch | null
   onChanged: () => void
 }) {
+  const intake = dispatch.action === "LOCALIZAR_VAGA" || dispatch.action === "ANALISAR_INDICADA"
   const [pending, startTransition] = useTransition()
   const progress =
     dispatch.action === "BUSCAR_VAGAS" && knownJobIds
@@ -321,6 +535,11 @@ export function DispatchCard({
         <ToneBadge tone={status.tone} className="ml-auto" data-testid="dispatch-status">
           {status.label}
         </ToneBadge>
+        {dispatch.discarded && (
+          <ToneBadge tone="muted" data-testid="dispatch-discarded">
+            Descartada
+          </ToneBadge>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <Progress
@@ -348,9 +567,11 @@ export function DispatchCard({
           </li>
         ))}
       </ol>
-      {dispatch.action === "BUSCAR_VAGAS" && (
+      {intake && <IntakeDetails progress={progress} analysis={dispatch.action === "ANALISAR_INDICADA"} />}
+      {(dispatch.action === "BUSCAR_VAGAS" || (dispatch.action === "ANALISAR_INDICADA" && !dispatch.discarded)) && (
         <WritesetRegistration dispatch={dispatch} progress={progress} onChanged={onChanged} />
       )}
+      {intake && <IntakeDecisions dispatch={dispatch} analysis={analysis} onChanged={onChanged} />}
       {(dispatch.code || dispatch.marker) && dispatch.status !== "CONCLUIDO" && (
         <p className="text-xs text-muted-foreground">
           Código: <span className="font-mono">{dispatch.code ?? dispatch.marker}</span>
@@ -493,25 +714,146 @@ function DispatchButton({
   )
 }
 
+/**
+ * "Indicar vaga": free text for the Lince to find one specific job (Hermes only). The same guards as the
+ * dispatcher run here only to explain a refusal early; the text becomes data for the Lince, never a command.
+ */
+function IntakeButton({ disabledReason, onStarted }: { disabledReason: string | null; onStarted: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState("")
+  const [pending, startTransition] = useTransition()
+  const meta = ACTION_META.LOCALIZAR_VAGA
+  const check = normalizeIntake(text)
+  const length = intakeLength(text.trim())
+  const problem = !check.ok && text.trim().length > 0 ? refusalText(check.code) : null
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={disabledReason !== null}
+        title={disabledReason ?? undefined}
+        data-testid="intake-button"
+        onClick={() => setOpen(true)}
+      >
+        <Crosshair className="h-4 w-4" aria-hidden="true" />
+        {meta.verb}
+      </Button>
+      {disabledReason && (
+        <span className="sr-only" data-testid="intake-disabled">
+          {disabledReason}
+        </span>
+      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent data-testid="intake-dialog">
+          <DialogHeader>
+            <DialogTitle>{meta.verb}</DialogTitle>
+            <DialogDescription>{meta.description}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <Label htmlFor="intake-text">Qual vaga?</Label>
+            <Textarea
+              id="intake-text"
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              placeholder="Empresa, cargo, link se tiver. Ex.: estágio em processos na Braskem, Camaçari."
+              rows={5}
+              aria-describedby="intake-hint"
+              aria-invalid={problem !== null}
+              data-testid="intake-input"
+            />
+            <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground" id="intake-hint">
+              <span data-testid="intake-problem" className={cn(problem && "text-st-uncertain-fg")}>
+                {problem ?? "Empresa, cargo, link se tiver."}
+              </span>
+              <span className="tabular-nums" data-testid="intake-count">
+                {length}/{INTAKE_MAX}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground" role="note">
+              O texto vira dado para o Lince procurar a vaga, não comando: não aprova nada, não muda regra e não vai
+              para a planilha. Roda sempre pelo Hermes.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)} data-testid="intake-cancel">
+              Cancelar
+            </Button>
+            <Button
+              disabled={pending || !check.ok}
+              data-testid="intake-confirm"
+              onClick={() =>
+                startTransition(async () => {
+                  try {
+                    const result = await startIntake(text)
+                    if (!result.ok) {
+                      toast.error(refusalText(result.code))
+                      return
+                    }
+                    toast.success(`${result.value.bot} procurando a vaga.`)
+                    setText("")
+                    setOpen(false)
+                    onStarted()
+                  } catch {
+                    toast.error(refusalText("UNAUTHENTICATED"))
+                  }
+                })
+              }
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              Procurar a vaga
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 function gatewayReason(data: DispatchList | null, platform: string): string | null {
   if (platform !== "hermes" || !data || data.gateway === "running") return null
   return "Gateway Hermes parado ou sem inferência. Inicie-o ou troque para Grok."
 }
 
-/** "Buscar vagas" plus the latest search progress (Hoje and /vagas). */
+/** "Buscar vagas" and "Indicar vaga" plus the latest search and intake progress (Hoje and /vagas). */
 export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   const { data, error, refresh } = useDispatches({ action: "BUSCAR_VAGAS" })
+  const intakes = useDispatches({ action: "LOCALIZAR_VAGA" })
+  const analyses = useDispatches({ action: "ANALISAR_INDICADA" })
+  const { refresh: refreshIntakes } = intakes
+  const { refresh: refreshAnalyses } = analyses
+  const refreshAll = useCallback(() => {
+    void refresh()
+    void refreshIntakes()
+    void refreshAnalyses()
+  }, [refresh, refreshIntakes, refreshAnalyses])
   const platform = usePlatform()
   const known = useMemo(() => new Set(knownJobIds), [knownJobIds])
   const last = data ? latest(data.dispatches, "BUSCAR_VAGAS") : null
-  const reason = (last?.active ? "Já existe uma busca em andamento." : null) ?? gatewayReason(data, platform)
+  const intake = intakes.data ? latest(intakes.data.dispatches, "LOCALIZAR_VAGA") : null
+  const analysis = intake && analyses.data ? analysisOf(analyses.data.dispatches, intake.id) : null
+  // Search and intake share the Lince's Bot Chat: one at a time (the dispatcher refuses with PROFILE_BUSY).
+  const linceBusy = [last, intake, ...(analyses.data?.dispatches ?? [])].some((dispatch) => dispatch?.active)
+    ? "O Lince já está com um disparo em andamento."
+    : null
+  const reason =
+    (last?.active ? "Já existe uma busca em andamento." : null) ?? linceBusy ?? gatewayReason(data, platform)
+  const intakeReason = linceBusy ?? gatewayReason(data, "hermes")
+  const shownError = error ?? intakes.error ?? analyses.error
   return (
     <section className="space-y-3" data-testid="search-ops" aria-label="Busca de vagas pelos bots">
       <div className="flex flex-wrap items-center gap-2">
-        <DispatchButton action="BUSCAR_VAGAS" disabledReason={reason} primary onStarted={refresh} />
-        {error && <span className="text-xs text-muted-foreground">{refusalText(error)}</span>}
+        <DispatchButton action="BUSCAR_VAGAS" disabledReason={reason} primary onStarted={refreshAll} />
+        <IntakeButton disabledReason={intakeReason} onStarted={refreshAll} />
+        {shownError && <span className="text-xs text-muted-foreground">{refusalText(shownError)}</span>}
       </div>
-      {last && <DispatchCard dispatch={last} knownJobIds={known} onChanged={refresh} />}
+      {last && <DispatchCard dispatch={last} knownJobIds={known} onChanged={refreshAll} />}
+      {intake && (
+        <div className="grid gap-3 lg:grid-cols-2" data-testid="intake-ops">
+          <DispatchCard dispatch={intake} analysis={analysis} onChanged={refreshAll} />
+          {analysis && <DispatchCard dispatch={analysis} onChanged={refreshAll} />}
+        </div>
+      )}
     </section>
   )
 }
