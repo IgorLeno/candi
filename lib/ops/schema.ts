@@ -121,6 +121,11 @@ const progressSchema = z.object({
   intake: intakeResultSchema.nullable().optional(),
   intake_state: z.enum(["missing", "invalid", "valid"]).optional(),
   diagnosis: z.array(diagnosisSchema).max(50).optional(),
+  /** Host pipelines (2026-09-30): current stage and, for "Preencher vaga", the prompt to paste in Claude in Chrome. */
+  stage: z.string().nullable().optional(),
+  discovery_code: z.string().nullable().optional(),
+  claude_prompt: z.string().max(60_000).nullable().optional(),
+  claude_url: z.string().max(2000).nullable().optional(),
 })
 export type DispatchProgress = z.infer<typeof progressSchema>
 
@@ -133,6 +138,8 @@ export const dispatchSchema = z.object({
   code: z.string().nullable(),
   marker: z.string().nullable(),
   bot: z.string(),
+  /** `host` = job-search pipeline on this machine (no gateway); `bot` = Hermes Bot Chat (legacy/fallback). */
+  mode: z.enum(["host", "bot"]).optional(),
   active: z.boolean(),
   acknowledged: z.boolean(),
   created_at: z.string(),

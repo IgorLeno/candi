@@ -17,19 +17,19 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     label: "Buscar vagas",
     verb: "Nova busca",
     description:
-      "O Lince faz a busca ampla e remove as vagas com bloqueio grave; o Threadgist leva as restantes ao ChatGPT para a análise; o writeset fica pronto para ser gravado na planilha.",
+      "O job-search busca no LinkedIn e na Gupy pelo navegador do portal, remove só o que é objetivamente inelegível e leva o resto (e as vagas pendentes) ao ChatGPT para a análise; o writeset fica pronto para ser gravado na planilha.",
   },
   GERAR_CURRICULO: {
     label: "Gerar currículo",
     verb: "Gerar currículo",
     description:
-      "O CVerino monta o patch com o ChatGPT e entrega ao Curriculinho, que duplica o MASTER no Claude Design, edita só a cópia e exporta cv.pdf.",
+      "O job-search pede o patch editorial ao ChatGPT, confere o formato e manda o texto sem edição ao Claude in Chrome (/ajustar-curriculo), que edita o currículo e exporta o PDF.",
   },
   PREENCHER_CANDIDATURA: {
-    label: "Preencher candidatura",
-    verb: "Preencher candidatura",
+    label: "Preencher vaga",
+    verb: "Preencher vaga",
     description:
-      "O Candidatinho abre o navegador de candidatura e preenche o formulário até a revisão. Nada é enviado: ele para antes do botão final e pede sua aprovação no Bot Chat.",
+      "O job-search confere a vaga, gera o currículo se faltar, abre a página no Application Browser e prepara o prompt para você colar no Claude in Chrome. O Claude para antes do botão final; o envio é sempre seu.",
   },
   LOCALIZAR_VAGA: {
     label: "Vaga indicada",

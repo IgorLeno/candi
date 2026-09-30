@@ -198,6 +198,38 @@ function CommandBox({ command }: { command: string }) {
 }
 
 /**
+ * "Preencher vaga" (2026-09-30): job-search opened the application page in the Application Browser and wrote the
+ * prompt; there is no supported way to start Claude in Chrome programmatically, so the user pastes it. The copy
+ * happens only on click. Claude in Chrome is NOT covered by the Hermes submit gate: the prompt tells it to stop at
+ * READY_TO_SUBMIT and the user clicks the final button.
+ */
+function ClaudePromptBox({ prompt, url }: { prompt: string; url: string | null | undefined }) {
+  return (
+    <div className="space-y-2" data-testid="claude-prompt">
+      <p className="text-xs text-muted-foreground">
+        Página aberta{url ? " no Application Browser" : ""}. Cole este prompt no Claude in Chrome (painel do Claude na
+        aba da vaga). O Claude para em READY_TO_SUBMIT: o envio final é sempre seu.
+      </p>
+      <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs whitespace-pre-wrap">
+        {prompt}
+      </pre>
+      <Button
+        size="sm"
+        onClick={() =>
+          navigator.clipboard.writeText(prompt).then(
+            () => toast.success("Prompt copiado. Cole no Claude in Chrome."),
+            () => toast.error("Não foi possível copiar.")
+          )
+        }
+      >
+        <Copy className="h-4 w-4" aria-hidden="true" />
+        COPIAR PROMPT PARA CLAUDE
+      </Button>
+    </div>
+  )
+}
+
+/**
  * Writeset of a finished search: "Registrar na planilha" asks job-search to persist it (the panel has no write
  * credential). When the persistence this card watched finishes, the Sheet snapshot is read again.
  */
@@ -575,12 +607,18 @@ export function DispatchCard({
       {(dispatch.code || dispatch.marker) && dispatch.status !== "CONCLUIDO" && (
         <p className="text-xs text-muted-foreground">
           Código: <span className="font-mono">{dispatch.code ?? dispatch.marker}</span>
-          {dispatch.status === "PRECISA_HUMANO" && " — veja o Bot Chat no Hermes Desktop."}
+          {dispatch.status === "PRECISA_HUMANO" &&
+            (dispatch.mode === "host"
+              ? " — ação sua necessária (veja o código)."
+              : " — veja o Bot Chat no Hermes Desktop.")}
           {dispatch.status === "INCERTO" &&
-            " — o acompanhamento caiu; confira o Bot Chat no Hermes Desktop antes de liberar um novo disparo."}
+            (dispatch.mode === "host"
+              ? " — o processo do job-search caiu; confira o runtime antes de liberar um novo disparo."
+              : " — o acompanhamento caiu; confira o Bot Chat no Hermes Desktop antes de liberar um novo disparo.")}
         </p>
       )}
       {dispatch.command && <CommandBox command={dispatch.command} />}
+      {progress.claude_prompt && <ClaudePromptBox prompt={progress.claude_prompt} url={progress.claude_url} />}
       {ACKABLE.has(dispatch.status) && !dispatch.acknowledged && (
         <Button
           size="sm"
@@ -827,7 +865,6 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
     void refreshIntakes()
     void refreshAnalyses()
   }, [refresh, refreshIntakes, refreshAnalyses])
-  const platform = usePlatform()
   const known = useMemo(() => new Set(knownJobIds), [knownJobIds])
   const last = data ? latest(data.dispatches, "BUSCAR_VAGAS") : null
   const intake = intakes.data ? latest(intakes.data.dispatches, "LOCALIZAR_VAGA") : null
@@ -836,8 +873,7 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   const linceBusy = [last, intake, ...(analyses.data?.dispatches ?? [])].some((dispatch) => dispatch?.active)
     ? "O Lince já está com um disparo em andamento."
     : null
-  const reason =
-    (last?.active ? "Já existe uma busca em andamento." : null) ?? linceBusy ?? gatewayReason(data, platform)
+  const reason = (last?.active ? "Já existe uma busca em andamento." : null) ?? linceBusy
   const intakeReason = linceBusy ?? gatewayReason(data, "hermes")
   const shownError = error ?? intakes.error ?? analyses.error
   return (
@@ -861,14 +897,11 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
 /** Bot actions of one job: "Gerar currículo" first, then "Preencher candidatura". */
 export function JobOps({ jobId, blocker }: { jobId: string; blocker: string | null }) {
   const { data, error, refresh } = useDispatches({ jobId })
-  const platform = usePlatform()
   const cv = latest(data?.dispatches ?? [], "GERAR_CURRICULO")
   const application = latest(data?.dispatches ?? [], "PREENCHER_CANDIDATURA")
   const job = data?.job
   const base =
-    blocker ??
-    (job && !job.actionable ? "Sem dossier válido (SELECIONADA e ABERTA) no runtime do job-search." : null) ??
-    gatewayReason(data, platform)
+    blocker ?? (job && !job.actionable ? "Sem dossier válido (SELECIONADA e ABERTA) no runtime do job-search." : null)
   const cvReady = job?.cv === "VALID"
   return (
     <section
