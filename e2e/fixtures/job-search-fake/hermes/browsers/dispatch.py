@@ -4,7 +4,8 @@ No bots, no gateway, no Sheet: every `list` advances running dispatches one stag
 can be exercised deterministically. `persist` records a REGISTRAR_WRITESET that finishes on the second `list`
 (nothing is written anywhere). Vaga indicada: LOCALIZAR_VAGA reads the text from stdin (an intake mentioning
 "nao-existe" is not found: PRECISA_HUMANO/NEEDS_CONTEXT), ANALISAR_INDICADA --from produces a writeset, `discard`
-marks the chain. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
+marks the chain. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
+the fixture, is refused with ALREADY_SENT). State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import json
 import os
@@ -264,6 +265,14 @@ def main(argv):
             r.update(discarded=True, acknowledged=True)
         save(recs)
         print(json.dumps({"ok": True, "dispatch": view(rec, recs)}))
+        return 0
+    if cmd == "decline":
+        job_id = argv[1] if len(argv) > 1 else ""
+        if not JOB_ID_RE.match(job_id):
+            return refuse("INVALID_JOB_ID")
+        if job_id == "fake-1006":
+            return refuse("ALREADY_SENT")
+        print(json.dumps({"ok": True, "decline": {"job_id": job_id, "status_candidatura": "RETIRADA"}}))
         return 0
     if cmd == "ack":
         for rec in recs:

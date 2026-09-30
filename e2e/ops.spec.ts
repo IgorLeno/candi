@@ -231,4 +231,38 @@ test.describe("Central de operações (bots)", () => {
     }
     await expect(page.getByTestId("job-ops")).toContainText("Candidatura já enviada.")
   })
+
+  test("descartar vaga: confirmação, carimbo vermelho DESCARTADA e a vaga continua listada", async ({ page }) => {
+    // The fake answers like job-search but cannot change the fixture Sheet: fake-1009 is already discarded there.
+    await page.goto("/vaga/fake-1002")
+    await page.getByTestId("decline-job").click()
+    const dialog = page.getByTestId("decline-job-dialog")
+    await expect(dialog).toContainText("RETIRADA")
+    await expect(dialog).toContainText("Não dá para desfazer")
+    await page.getByTestId("decline-job-cancel").click()
+    await expect(dialog).toBeHidden()
+    await page.getByTestId("decline-job").click()
+    await page.getByTestId("decline-job-confirm").click()
+    await expect(page.getByText("Vaga descartada e marcada como RETIRADA na planilha.")).toBeVisible()
+
+    // A discarded job keeps its card: red state, "descartada" stamp, no discard button.
+    await page.goto("/vaga/fake-1009")
+    await expect(page.getByTestId("state-badge").first()).toHaveAttribute("data-state", "descartada")
+    await expect(page.getByTestId("declined-stamp")).toHaveText("descartada")
+    await expect(page.getByTestId("decline-job")).toHaveCount(0)
+    // Sent and uncertain applications cannot be discarded.
+    for (const id of ["fake-1006", "fake-1007"]) {
+      await page.goto(`/vaga/${id}`)
+      await expect(page.getByTestId("job-detail")).toBeVisible()
+      await expect(page.getByTestId("decline-job")).toHaveCount(0)
+    }
+
+    // "Hoje": the queue offers the button; the discarded job leaves the queue but stays on its own shelf.
+    await page.goto("/")
+    await expect(page.getByTestId("queue-list").getByTestId("decline-job").first()).toBeVisible()
+    await expect(page.getByTestId("queue-list").locator('[data-job-id="fake-1009"]')).toHaveCount(0)
+    const declined = page.getByTestId("declined-list").locator('[data-job-id="fake-1009"]')
+    await expect(declined).toHaveAttribute("data-state", "descartada")
+    await expect(declined.getByTestId("declined-stamp")).toBeVisible()
+  })
 })

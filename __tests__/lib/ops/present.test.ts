@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  canDeclineJob,
   canRegisterWriteset,
   jobDispatchBlocker,
   latest,
@@ -18,6 +19,22 @@ const open = {
   archived: false,
   uncertainSubmit: false,
 }
+
+describe("canDeclineJob", () => {
+  it("allows any job whose application was not sent, uncertain or withdrawn", () => {
+    expect(canDeclineJob(open)).toBe(true)
+    expect(canDeclineJob({ ...open, statusCandidatura: cell("PRONTA PARA REVISÃO") })).toBe(true)
+    expect(canDeclineJob({ ...open, statusCandidatura: cell(null) })).toBe(true)
+  })
+
+  it("refuses sent, uncertain, withdrawn and invalid statuses", () => {
+    for (const status of ["ENVIADA", "ENVIO INCERTO", "RETIRADA"]) {
+      expect(canDeclineJob({ ...open, statusCandidatura: cell(status) })).toBe(false)
+    }
+    expect(canDeclineJob({ ...open, uncertainSubmit: true })).toBe(false)
+    expect(canDeclineJob({ ...open, statusCandidatura: cell("NãO INICIADA", true) })).toBe(false)
+  })
+})
 
 describe("jobDispatchBlocker", () => {
   it("allows a selected, open job not yet sent", () => {

@@ -174,6 +174,13 @@ export type DispatchList = z.infer<typeof listResultSchema>
 
 export const oneResultSchema = z.object({ ok: z.literal(true), dispatch: dispatchSchema })
 
+/** `dispatch.py decline <job_id>`: job-search wrote RETIRADA (USER_DECLINED) to the Sheet. Fixed fields only. */
+export const declineResultSchema = z.object({
+  ok: z.literal(true),
+  decline: z.object({ job_id: z.string().regex(JOB_ID_RE), status_candidatura: z.literal("RETIRADA") }),
+})
+export type DeclineResult = z.infer<typeof declineResultSchema>["decline"]
+
 export const refusalSchema = z.object({
   ok: z.literal(false),
   code: z.string().max(80),

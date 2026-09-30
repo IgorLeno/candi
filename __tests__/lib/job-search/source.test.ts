@@ -28,7 +28,7 @@ describe("getJobSearchData", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch")
     const data = await getJobSearchData()
     expect(data.source).toBe("fixture")
-    expect(data.views).toHaveLength(9)
+    expect(data.views).toHaveLength(10)
     expect(fetchSpy).not.toHaveBeenCalled()
     // Server Component props must survive JSON serialization unchanged.
     expect(JSON.parse(JSON.stringify(data))).toEqual(data)

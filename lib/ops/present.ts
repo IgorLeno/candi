@@ -101,6 +101,19 @@ const REFUSAL_TEXT: Record<string, string> = {
   DISCARDED: "A vaga indicada foi descartada.",
   ALREADY_REGISTERED: "A vaga já foi gravada na planilha: não dá mais para descartar pelo painel.",
   SOURCE_REQUIRED: "Falta a vaga indicada de origem.",
+  // "Descartar vaga" (dispatch.py decline → application.py decline).
+  INVALID_JOB_ID: "Identificador de vaga inválido.",
+  JOB_DISPATCH_ACTIVE: "Há um disparo desta vaga em andamento: espere terminar para descartar.",
+  ALREADY_SENT: "A candidatura já foi enviada: não dá para descartar.",
+  SUBMIT_UNCERTAIN: "ENVIO INCERTO: reconcilie a candidatura antes de descartar.",
+  ALREADY_DECLINED: "A vaga já estava retirada na planilha.",
+  ROW_NOT_FOUND: "A vaga não foi encontrada na planilha.",
+  ROW_DUPLICATED: "A vaga aparece duplicada na planilha: corrija antes de descartar.",
+  WRONG_STATE: "A candidatura está num estado que não permite descartar.",
+  REGISTRY_UNAVAILABLE: "O job-search não conseguiu acessar a planilha.",
+  READBACK_MISMATCH: "A planilha não confirmou a gravação. Sincronize e confira a vaga.",
+  DECLINE_UNCERTAIN: "Sem resposta a tempo do job-search. Sincronize e confira se a vaga ficou descartada.",
+  DECLINE_FAILED: "O job-search não conseguiu descartar a vaga.",
 }
 
 export function refusalText(code: string): string {
@@ -123,6 +136,16 @@ export function jobDispatchBlocker(
     return "A vaga não está aberta."
   if (item.statusAnalise.invalid || item.statusAnalise.value !== "SELECIONADA") return "A vaga não foi selecionada."
   return null
+}
+
+/**
+ * "Descartar vaga" (UX gating only; job-search re-checks the Sheet): not after a sent, uncertain or withdrawn
+ * application. Closed or unselected jobs can still be discarded: the user is choosing what to keep.
+ */
+export function canDeclineJob(item: Pick<JobListItem, "statusCandidatura" | "uncertainSubmit">): boolean {
+  if (item.uncertainSubmit || item.statusCandidatura.invalid) return false
+  const candidatura = item.statusCandidatura.value
+  return candidatura !== "ENVIADA" && candidatura !== "ENVIO INCERTO" && candidatura !== "RETIRADA"
 }
 
 /**

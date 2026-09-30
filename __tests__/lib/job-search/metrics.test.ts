@@ -23,15 +23,15 @@ const data = buildJobSearchData(fixtureSnapshot(), "fixture", "now")
 describe("KPIs and funnel", () => {
   it("counts the fixture", () => {
     expect(computeKpis(data.views)).toEqual({
-      analisadas: 9,
-      selecionadas: 8,
-      abertas: 6,
+      analisadas: 10,
+      selecionadas: 9,
+      abertas: 7,
       emPreparacao: 2,
       prontasRevisao: 1,
       enviadas: 1,
       envioIncerto: 1,
     })
-    expect(computeFunnel(data.views).map((stage) => stage.count)).toEqual([9, 8, 6, 4, 1])
+    expect(computeFunnel(data.views).map((stage) => stage.count)).toEqual([10, 9, 7, 4, 1])
   })
 
   it("filters by first-analysis period", () => {
@@ -43,8 +43,9 @@ describe("KPIs and funnel", () => {
       "fake-1004",
       "fake-1007",
       "fake-1008",
+      "fake-1009",
     ])
-    expect(filterByPeriod(data.views, {})).toHaveLength(9)
+    expect(filterByPeriod(data.views, {})).toHaveLength(10)
   })
 })
 
@@ -54,8 +55,8 @@ describe("distribution", () => {
       view.job.job_id === "fake-1001" ? { ...view, job: { ...view.job, setor: { invalid: "Mineração" } } } : view
     )
     expect(distribution(views, "setor")).toContainEqual({ value: INVALID_BUCKET, count: 1 })
-    expect(distribution(data.views, "zona")).toContainEqual({ value: EMPTY_BUCKET, count: 6 })
-    expect(distribution(data.views, "zona")[0]).toEqual({ value: EMPTY_BUCKET, count: 6 })
+    expect(distribution(data.views, "zona")).toContainEqual({ value: EMPTY_BUCKET, count: 7 })
+    expect(distribution(data.views, "zona")[0]).toEqual({ value: EMPTY_BUCKET, count: 7 })
   })
 })
 
@@ -74,7 +75,7 @@ describe("weekly series", () => {
 
   it("aggregates analyses per week from the fixture", () => {
     const series = analysesPerWeek(data.views)
-    expect(series.reduce((sum, point) => sum + point.count, 0)).toBe(9)
+    expect(series.reduce((sum, point) => sum + point.count, 0)).toBe(10)
     expect(series[0].week).toBe("2026-08-17")
   })
 })
@@ -93,7 +94,7 @@ describe("coverage", () => {
 describe("qualitySummary", () => {
   it("counts analysis levels and affected jobs per issue code", () => {
     const summary = qualitySummary(data)
-    expect(summary.analysis).toEqual({ FULL: 1, PARTIAL: 6, NONE: 1, INVALID: 1 })
+    expect(summary.analysis).toEqual({ FULL: 1, PARTIAL: 7, NONE: 1, INVALID: 1 })
     expect(summary.byCode.UNCERTAIN_SUBMIT).toBe(1)
     expect(summary.byCode.DOSSIER_INVALID).toBe(1)
     expect(summary.byCode.ENUM_INVALID).toBe(1)

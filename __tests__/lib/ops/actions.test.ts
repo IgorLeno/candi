@@ -5,14 +5,20 @@ import { fixtureSnapshot } from "@/__tests__/lib/job-search/helpers"
 const session = vi.hoisted(() => ({ current: null as null | { user: { email: string } } }))
 const runDispatcher = vi.hoisted(() => vi.fn())
 const views = vi.hoisted(() => ({ current: [] as unknown[] }))
+const updateTag = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/session", () => ({ getAllowedSession: vi.fn(async () => session.current) }))
 vi.mock("@/lib/ops/dispatcher", () => ({ runDispatcher }))
-vi.mock("@/lib/job-search/source", () => ({ getJobSearchData: vi.fn(async () => ({ views: views.current })) }))
+vi.mock("@/lib/job-search/source", () => ({
+  JOB_SEARCH_CACHE_TAG: "job-search",
+  getJobSearchData: vi.fn(async () => ({ views: views.current })),
+}))
+vi.mock("next/cache", () => ({ updateTag }))
 
 import {
   ackDispatch,
   analyzeIntake,
+  declineJob,
   discardDispatch,
   listDispatches,
   registerWriteset,
@@ -24,6 +30,7 @@ describe("ops server actions", () => {
   beforeEach(() => {
     session.current = { user: { email: "owner@e2e.test" } }
     runDispatcher.mockReset()
+    updateTag.mockReset()
     runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, dispatch: { id: "d" } } })
     views.current = buildJobSearchData(fixtureSnapshot(), "fixture", "2026-09-29T12:00:00Z").views
   })
@@ -37,6 +44,7 @@ describe("ops server actions", () => {
     await expect(startIntake("Estágio na Braskem, Camaçari")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeIntake("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(discardDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(declineJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
@@ -135,5 +143,26 @@ describe("ops server actions", () => {
       ok: false,
       code: "ALREADY_REGISTERED",
     })
+  })
+
+  it("descartar vaga: send only a validated job_id and re-read the Sheet afterwards", async () => {
+    for (const id of [null, "../x", "--job-id", "a b", ["fake-1001"]]) {
+      await expect(declineJob(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    runDispatcher.mockResolvedValue({
+      ok: true,
+      value: { ok: true, decline: { job_id: "fake-1001", status_candidatura: "RETIRADA" } },
+    })
+    await expect(declineJob("fake-1001")).resolves.toEqual({
+      ok: true,
+      value: { job_id: "fake-1001", status_candidatura: "RETIRADA" },
+    })
+    expect(runDispatcher.mock.calls[0][0]).toEqual(["decline", "fake-1001"])
+    expect(updateTag).toHaveBeenCalledWith("job-search")
+    // An uncertain write may have landed: the Sheet is re-read on refusals too.
+    runDispatcher.mockResolvedValue({ ok: false, code: "DECLINE_UNCERTAIN", detail: "x" })
+    await expect(declineJob("fake-1001")).resolves.toEqual({ ok: false, code: "DECLINE_UNCERTAIN" })
+    expect(updateTag).toHaveBeenCalledTimes(2)
   })
 })

@@ -1,8 +1,9 @@
 "use server"
 
+import { updateTag } from "next/cache"
 import { z } from "zod"
 import { getAllowedSession } from "@/lib/auth/session"
-import { getJobSearchData } from "@/lib/job-search/source"
+import { JOB_SEARCH_CACHE_TAG, getJobSearchData } from "@/lib/job-search/source"
 import { toListItem } from "@/lib/job-search/present"
 import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
 import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
@@ -11,9 +12,11 @@ import {
   DISPATCH_ACTIONS,
   DISPATCH_ID_RE,
   JOB_ID_RE,
+  declineResultSchema,
   listResultSchema,
   oneResultSchema,
   startInputSchema,
+  type DeclineResult,
   type Dispatch,
   type DispatchList,
 } from "@/lib/ops/schema"
@@ -115,4 +118,18 @@ export async function discardDispatch(id: unknown): Promise<ActionResult<Dispatc
   if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["discard", id], oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/**
+ * "Descartar vaga": the user will not apply. job-search (`dispatch.py decline` → `application.py decline`) writes
+ * RETIRADA with a CLOSED/USER_DECLINED event, using its own credential; the panel sends only the job_id. The
+ * Sheet snapshot is dropped afterwards so the card shows the discarded state. There is no undo.
+ */
+export async function declineJob(jobId: unknown): Promise<ActionResult<DeclineResult>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["decline", jobId], declineResultSchema)
+  // Uncertain or failed writes may still have landed: re-read the Sheet either way.
+  updateTag(JOB_SEARCH_CACHE_TAG)
+  return result.ok ? { ok: true, value: result.value.decline } : { ok: false, code: result.code }
 }
