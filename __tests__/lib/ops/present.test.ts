@@ -187,5 +187,6 @@ describe("refusalText", () => {
   it("explains known codes and falls back to the code", () => {
     expect(refusalText("GATEWAY_NOT_RUNNING")).toMatch(/Grok/)
     expect(refusalText("XYZ")).toBe("Disparo recusado (XYZ).")
+    expect(refusalText("APPLICATION_CDP_DOWN")).toMatch(/CDP 9227/)
   })
 })

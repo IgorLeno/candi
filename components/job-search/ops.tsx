@@ -609,7 +609,9 @@ export function DispatchCard({
           Código: <span className="font-mono">{dispatch.code ?? dispatch.marker}</span>
           {dispatch.status === "PRECISA_HUMANO" &&
             (dispatch.mode === "host"
-              ? " — ação sua necessária (veja o código)."
+              ? dispatch.code === "PASTE_PROMPT_IN_CLAUDE"
+                ? " — cole o prompt abaixo no Claude in Chrome."
+                : " — ação sua necessária (veja o código)."
               : " — veja o Bot Chat no Hermes Desktop.")}
           {dispatch.status === "INCERTO" &&
             (dispatch.mode === "host"
