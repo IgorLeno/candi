@@ -189,7 +189,7 @@ test.describe("Central de operações (bots)", () => {
     // Without a ready CV the application dialog recommends generating it first.
     await ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
     await expect(page.getByTestId("dispatch-dialog")).toContainText("ainda não está pronto")
-    await expect(page.getByTestId("dispatch-dialog")).toContainText("Nada é enviado")
+    await expect(page.getByTestId("dispatch-dialog")).toContainText("Nenhuma candidatura é enviada")
     await page.getByTestId("dispatch-cancel").click()
 
     await ops.getByTestId("dispatch-button-GERAR_CURRICULO").click()
