@@ -52,7 +52,7 @@ import { usePlatform, writePlatform } from "@/lib/ops/platform-pref"
 import {
   ACTION_META,
   PLATFORM_LABEL,
-  STATUS_META,
+  statusBadge,
   activeIntake,
   analysisOf,
   analyzeJobBlocker,
@@ -772,7 +772,7 @@ export function DispatchCard({
     dispatch.action === "BUSCAR_VAGAS" && knownJobIds
       ? withRegistration(dispatch.progress, knownJobIds)
       : dispatch.progress
-  const status = STATUS_META[dispatch.status]
+  const status = statusBadge(dispatch.status, progress)
   const Icon = ACTION_ICON[dispatch.action]
   return (
     <div
@@ -786,7 +786,12 @@ export function DispatchCard({
         <span className="text-xs text-muted-foreground">
           {dispatch.bot} · {PLATFORM_LABEL[dispatch.platform]} · {formatTimestamp(dispatch.created_at)}
         </span>
-        <ToneBadge tone={status.tone} className="ml-auto" data-testid="dispatch-status">
+        <ToneBadge
+          tone={status.tone}
+          className="ml-auto"
+          data-testid="dispatch-status"
+          data-recovered={status.recovered || undefined}
+        >
           {status.label}
         </ToneBadge>
         {dispatch.discarded && (
@@ -848,6 +853,7 @@ export function DispatchCard({
               : canRefineIntake(dispatch)
                 ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
                 : " — veja o Bot Chat no Hermes Desktop.")}
+          {status.recovered && " — a análise foi refeita fora deste disparo e o writeset foi gravado na planilha."}
           {dispatch.status === "INCERTO" &&
             (dispatch.mode === "host"
               ? " — o processo do job-search caiu; confira o runtime antes de liberar um novo disparo."

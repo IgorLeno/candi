@@ -10,6 +10,7 @@ import {
   latest,
   persistSummary,
   refusalText,
+  statusBadge,
   withRegistration,
 } from "@/lib/ops/present"
 import {
@@ -157,6 +158,36 @@ describe("withRegistration", () => {
     const out = withRegistration(persisted, new Set())
     expect(out.stages[3]).toMatchObject({ state: "done", note: "gravado pelo job-search · 0 de 2 na planilha" })
     expect(out.percent).toBe(100)
+  })
+})
+
+describe("statusBadge", () => {
+  const registered = (status: "CONCLUIDO" | "FALHOU" | "RODANDO") => ({
+    ...searchProgress,
+    registration: { id: "d-20260929T130000Z-abcdef", status, code: null, result: null },
+  })
+
+  it("shows a failed search whose writeset was later registered as recovered", () => {
+    expect(statusBadge("FALHOU", registered("CONCLUIDO"))).toEqual({
+      label: "Recuperada",
+      tone: "warning",
+      recovered: true,
+    })
+  })
+
+  it("keeps Falhou while the registration did not conclude", () => {
+    expect(statusBadge("FALHOU", searchProgress)).toEqual({ label: "Falhou", tone: "critical", recovered: false })
+    expect(statusBadge("FALHOU", registered("FALHOU")).label).toBe("Falhou")
+    expect(statusBadge("FALHOU", registered("RODANDO")).label).toBe("Falhou")
+  })
+
+  it("leaves other statuses alone", () => {
+    expect(statusBadge("CONCLUIDO", registered("CONCLUIDO"))).toEqual({
+      label: "Concluído",
+      tone: "good",
+      recovered: false,
+    })
+    expect(statusBadge("INCERTO", registered("CONCLUIDO")).label).toBe("Incerto")
   })
 })
 

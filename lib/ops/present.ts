@@ -71,6 +71,22 @@ export const STATUS_META: Record<DispatchStatus, { label: string; tone: Tone }> 
   MANUAL: { label: "Manual (Grok)", tone: "info" },
 }
 
+/**
+ * The card badge. A dispatch record is never rewritten after it ends, so a search that failed (e.g. on the
+ * ChatGPT composer) keeps FALHOU even when its analysis was redone outside the dispatch and the resulting
+ * writeset was registered later. Only a concluded registration of the current writeset counts as recovery;
+ * the Sheet snapshot alone does not, since someone else may have written those jobs.
+ */
+export function statusBadge(
+  status: DispatchStatus,
+  progress: Pick<DispatchProgress, "registration">
+): { label: string; tone: Tone; recovered: boolean } {
+  if (status === "FALHOU" && progress.registration?.status === "CONCLUIDO") {
+    return { label: "Recuperada", tone: "warning", recovered: true }
+  }
+  return { ...STATUS_META[status], recovered: false }
+}
+
 /** Refusal codes from the dispatcher or the server action, in plain Portuguese. */
 const REFUSAL_TEXT: Record<string, string> = {
   UNAUTHENTICATED: "Sessão expirada. Entre de novo.",
