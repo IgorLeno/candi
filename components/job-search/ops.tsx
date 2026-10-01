@@ -612,9 +612,7 @@ function IntakeDecisions({
           return
         }
         toast.success(
-          kind === "analyze"
-            ? "Lince acionado para a análise no ChatGPT."
-            : "Vaga indicada descartada. Nada foi para a planilha."
+          kind === "analyze" ? "Análise no ChatGPT iniciada." : "Vaga indicada descartada. Nada foi para a planilha."
         )
         setConfirm(null)
         onChanged()
@@ -1216,11 +1214,15 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   const intake = intakes.data ? activeIntake(intakes.data.dispatches) : null
   const discarded = intakes.data ? discardedIntakes(intakes.data.dispatches) : []
   const analysis = intake && analyses.data ? analysisOf(analyses.data.dispatches, intake.id) : null
-  // Search and intake share the Lince's Bot Chat: one at a time (the dispatcher refuses with PROFILE_BUSY).
-  const linceBusy = [last, intake, ...(analyses.data?.dispatches ?? [])].some((dispatch) => dispatch?.active)
+  // Search and intake share the Lince's Bot Chat: one at a time (the dispatcher refuses with PROFILE_BUSY). The
+  // intake analysis runs on the host and does not hold the Lince, but it holds the ChatGPT the search also uses.
+  const linceBusy = [last, intake].some((dispatch) => dispatch?.active)
     ? "O Lince já está com um disparo em andamento."
     : null
-  const reason = (last?.active ? "Já existe uma busca em andamento." : null) ?? linceBusy
+  const chatgptBusy = (analyses.data?.dispatches ?? []).some((dispatch) => dispatch.active)
+    ? "A análise da vaga indicada está usando o ChatGPT."
+    : null
+  const reason = (last?.active ? "Já existe uma busca em andamento." : null) ?? linceBusy ?? chatgptBusy
   const intakeReason = linceBusy ?? gatewayReason(data, "hermes")
   const shownError = error ?? intakes.error ?? analyses.error
   return (

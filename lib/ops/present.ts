@@ -42,7 +42,7 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     label: "Análise da vaga indicada",
     verb: "Mandar para o ChatGPT",
     description:
-      "O Lince leva a vaga localizada ao Threadgist, que faz a análise no ChatGPT; o writeset fica pronto e você decide se registra na planilha ou descarta.",
+      "O job-search leva a vaga localizada direto ao ChatGPT, sem Bot; o writeset fica pronto e você decide se registra na planilha ou descarta.",
   },
   ANALISAR_VAGA: {
     label: "Análise da vaga",

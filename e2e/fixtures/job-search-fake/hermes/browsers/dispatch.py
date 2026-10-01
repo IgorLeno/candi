@@ -23,12 +23,12 @@ JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 APPROVAL_RE = re.compile(r"(?i)\b(ok|n[aã]o)\s+[0-9a-f]{8}\b")
 BOTS = {"BUSCAR_VAGAS": ("Lince", "Job Scout"), "GERAR_CURRICULO": ("CVerino", "CV Strategist"),
         "PREENCHER_CANDIDATURA": ("Candidatinho", "Application Operator"), "LOCALIZAR_VAGA": ("Lince", "Job Scout"),
-        "ANALISAR_INDICADA": ("Lince", "Job Scout"), "ANALISAR_VAGA": ("ChatGPT (host)", "Job Scout")}
-LINCE = ("BUSCAR_VAGAS", "LOCALIZAR_VAGA", "ANALISAR_INDICADA")
+        "ANALISAR_INDICADA": ("ChatGPT (host)", "Job Scout"), "ANALISAR_VAGA": ("ChatGPT (host)", "Job Scout")}
+LINCE = ("BUSCAR_VAGAS", "LOCALIZAR_VAGA")
 # Actions whose last stage is "registro na planilha" (a writeset the panel may persist).
 WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA", "ANALISAR_VAGA")
 HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA")
-CHATGPT_HOST = ("BUSCAR_VAGAS", "GERAR_CURRICULO", "ANALISAR_VAGA")
+CHATGPT_HOST = ("BUSCAR_VAGAS", "GERAR_CURRICULO", "ANALISAR_VAGA", "ANALISAR_INDICADA")
 NO_POSTING = "fake-1008"
 STAGES = {
     "BUSCAR_VAGAS": [("busca", "Busca ampla e prefilter (Lince)"), ("analise", "Análise (Threadgist)"),
@@ -39,7 +39,8 @@ STAGES = {
     "PREENCHER_CANDIDATURA": [("claim", "Claim e preflight"), ("preenchimento", "Preenchimento do formulário"),
                               ("revisao", "Revisão e gate"), ("aprovacao", "Aguardando sua aprovação")],
     "LOCALIZAR_VAGA": [("localizar", "Localizar a vaga (Lince)"), ("prefilter", "Análise preliminar (prefilter)")],
-    "ANALISAR_INDICADA": [("analise", "Análise (Threadgist)"), ("writeset", "Writeset pronto"),
+    "ANALISAR_INDICADA": [("posting", "Texto da vaga e planilha (só leitura)"),
+                          ("analise", "Análise no ChatGPT (host)"), ("writeset", "Writeset pronto"),
                           ("registro", "Registro na planilha")],
     "ANALISAR_VAGA": [("planilha", "Dados da vaga (planilha, só leitura)"), ("posting", "Texto da vaga"),
                       ("analise", "Análise no ChatGPT (host)"), ("writeset", "Writeset pronto"),
@@ -162,7 +163,7 @@ def view(rec, recs=()):
             progress["diagnosis_by"] = "chatgpt"
         else:
             progress["diagnosis"] = DIAGNOSIS
-            progress["diagnosis_by"] = "threadgist"
+            progress["diagnosis_by"] = "chatgpt"
     out = {k: rec[k] for k in ("id", "action", "platform", "job_id", "status", "acknowledged", "created_at")}
     if rec["action"] in ("LOCALIZAR_VAGA", "ANALISAR_INDICADA"):
         out.update(source_id=rec.get("source_id"), discarded=bool(rec.get("discarded")))
@@ -172,7 +173,7 @@ def view(rec, recs=()):
                finished_at=None if rec["status"] == "RODANDO" else rec["created_at"],
                bot=BOTS[rec["action"]][1 if rec["platform"] == "grok" else 0],
                active=rec["status"] == "RODANDO", progress=progress)
-    if rec["action"] == "ANALISAR_VAGA":
+    if rec["action"] in ("ANALISAR_VAGA", "ANALISAR_INDICADA"):
         out["mode"] = "host"
     if rec["status"] == "MANUAL":
         out["command"] = f"[painel:dispatch {rec['id']} · {rec['action']}]\n\nComando fixo de teste."
@@ -198,7 +199,8 @@ def main(argv):
             return refuse("PLATFORM_NOT_SUPPORTED")
         if any(r["action"] == action and r["job_id"] == job_id and r["status"] == "RODANDO" for r in recs):
             return refuse("DISPATCH_ACTIVE")
-        if action == "ANALISAR_VAGA" and any(r["action"] in CHATGPT_HOST and r["status"] == "RODANDO" for r in recs):
+        if action in ("ANALISAR_VAGA", "ANALISAR_INDICADA") and any(
+                r["action"] in CHATGPT_HOST and r["status"] == "RODANDO" for r in recs):
             return refuse("CHATGPT_BUSY")
         if action in LINCE and any(r["action"] in LINCE and r["status"] == "RODANDO" for r in recs):
             return refuse("PROFILE_BUSY")

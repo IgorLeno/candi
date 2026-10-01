@@ -125,8 +125,9 @@ test.describe("Central de operações (bots)", () => {
     await expect(analysis).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
     await expect(analysis.getByTestId("intake-diagnosis")).toContainText("SELECIONADA")
     await expect(analysis.getByTestId("intake-diagnosis")).toContainText("interesse ALTO")
-    // Bot path: the label never claims ChatGPT; the reason is shown as plain text (no HTML).
-    await expect(analysis.getByTestId("intake-diagnosis")).toContainText("Diagnóstico do Threadgist")
+    // Host pipeline: ChatGPT straight from job-search; the reason is shown as plain text (no HTML).
+    await expect(analysis).toContainText("ChatGPT (host) · Hermes")
+    await expect(analysis.getByTestId("intake-diagnosis")).toContainText("Diagnóstico do ChatGPT")
     await expect(analysis.getByTestId("diagnosis-reason")).toHaveText(
       "Gate 4 aprovado: <b>núcleo</b> de processos químicos com evidência direta"
     )
