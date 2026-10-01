@@ -134,6 +134,44 @@ export function refusalText(code: string): string {
   return REFUSAL_TEXT[code] ?? `Disparo recusado (${code}).`
 }
 
+// "Excluir vaga" (dispatch.py delete-job → application.py delete). Codes shared with "Descartar" get their own words;
+// every code that may mean "some rows are already gone" sends the user to sync and check.
+const DELETE_JOB_REFUSAL_TEXT: Record<string, string> = {
+  JOB_DISPATCH_ACTIVE: "Há um disparo desta vaga em andamento: espere terminar para excluir.",
+  ALREADY_SENT: "A candidatura já foi enviada: não dá para excluir a vaga.",
+  SUBMIT_UNCERTAIN: "ENVIO INCERTO: reconcilie a candidatura antes de excluir a vaga.",
+  ROW_DUPLICATED: "A vaga aparece duplicada na planilha: corrija antes de excluir.",
+  WRONG_STATE: "A candidatura está num estado que não permite excluir.",
+  BACKUP_FAILED: "O job-search não conseguiu gravar o backup local, então nada foi apagado.",
+  ROWS_CHANGED: "A planilha mudou durante a exclusão e nada foi apagado. Sincronize e tente de novo.",
+  DELETE_PARTIAL:
+    "Exclusão parcial: parte das linhas saiu da planilha e a linha principal ficou. Sincronize, confira e exclua de novo para terminar.",
+  DELETE_UNCERTAIN:
+    "O job-search não confirmou a exclusão: pode ter apagado linhas. Sincronize e confira a vaga na planilha.",
+  DISPATCHER_UNAVAILABLE:
+    "Não foi possível falar com o dispatcher do job-search e a exclusão pode ter acontecido. Sincronize e confira a vaga.",
+  DELETE_FAILED: "O job-search não conseguiu rodar a exclusão; nada foi apagado.",
+}
+
+export function deleteJobRefusalText(code: string): string {
+  return DELETE_JOB_REFUSAL_TEXT[code] ?? refusalText(code)
+}
+
+/**
+ * "Excluir vaga" (UX gating only; job-search re-checks the Sheet and the events): any job in the main tab whose
+ * application was not sent or uncertain. Discarded (RETIRADA) jobs can be deleted; rows only in "Encerradas" cannot.
+ */
+export function canDeleteJob(item: Pick<JobListItem, "statusCandidatura" | "uncertainSubmit" | "archived">): boolean {
+  if (item.uncertainSubmit || item.archived || item.statusCandidatura.invalid) return false
+  const candidatura = item.statusCandidatura.value
+  return candidatura !== "ENVIADA" && candidatura !== "ENVIO INCERTO"
+}
+
+/** The strong confirmation of "Excluir vaga": the user types the job_id itself. */
+export function deleteJobConfirmed(typed: string, jobId: string): boolean {
+  return typed.trim() === jobId
+}
+
 /** Why a per-job button is disabled, from the Sheet row (null = allowed). */
 export function jobDispatchBlocker(
   item: Pick<

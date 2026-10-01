@@ -2,14 +2,23 @@ import { describe, expect, it } from "vitest"
 import {
   analyzeJobBlocker,
   canDeclineJob,
+  canDeleteJob,
   canRegisterWriteset,
+  deleteJobConfirmed,
+  deleteJobRefusalText,
   jobDispatchBlocker,
   latest,
   persistSummary,
   refusalText,
   withRegistration,
 } from "@/lib/ops/present"
-import { dispatchSchema, startInputSchema, type Dispatch, type DispatchProgress } from "@/lib/ops/schema"
+import {
+  deleteJobResultSchema,
+  dispatchSchema,
+  startInputSchema,
+  type Dispatch,
+  type DispatchProgress,
+} from "@/lib/ops/schema"
 
 const cell = (value: string | null, invalid = false) => ({ value, invalid, tone: "neutral" as const })
 
@@ -34,6 +43,46 @@ describe("canDeclineJob", () => {
     }
     expect(canDeclineJob({ ...open, uncertainSubmit: true })).toBe(false)
     expect(canDeclineJob({ ...open, statusCandidatura: cell("NãO INICIADA", true) })).toBe(false)
+  })
+})
+
+describe("canDeleteJob", () => {
+  it("allows any job in the main tab whose application was not sent or uncertain, withdrawn ones included", () => {
+    for (const status of ["NÃO INICIADA", "PRONTA PARA REVISÃO", "RETIRADA", null]) {
+      expect(canDeleteJob({ ...open, statusCandidatura: cell(status) })).toBe(true)
+    }
+  })
+
+  it("refuses sent, uncertain, invalid statuses and rows from the archive tab", () => {
+    for (const status of ["ENVIADA", "ENVIO INCERTO"]) {
+      expect(canDeleteJob({ ...open, statusCandidatura: cell(status) })).toBe(false)
+    }
+    expect(canDeleteJob({ ...open, uncertainSubmit: true })).toBe(false)
+    expect(canDeleteJob({ ...open, statusCandidatura: cell("NãO INICIADA", true) })).toBe(false)
+    expect(canDeleteJob({ ...open, archived: true })).toBe(false)
+  })
+})
+
+describe("deleteJobConfirmed", () => {
+  it("needs the exact job_id typed (surrounding spaces ignored)", () => {
+    expect(deleteJobConfirmed("4450471269", "4450471269")).toBe(true)
+    expect(deleteJobConfirmed(" 4450471269 ", "4450471269")).toBe(true)
+    for (const typed of ["", "445047126", "44504712690", "excluir", "4450471269x"]) {
+      expect(deleteJobConfirmed(typed, "4450471269")).toBe(false)
+    }
+  })
+})
+
+describe("deleteJobRefusalText", () => {
+  it("speaks of deleting, and sends the user to check the Sheet whenever rows may be gone", () => {
+    expect(deleteJobRefusalText("ALREADY_SENT")).toMatch(/excluir/)
+    expect(deleteJobRefusalText("SUBMIT_UNCERTAIN")).toMatch(/excluir/)
+    for (const code of ["DELETE_PARTIAL", "DELETE_UNCERTAIN", "DISPATCHER_UNAVAILABLE"]) {
+      expect(deleteJobRefusalText(code)).toMatch(/confira/)
+    }
+    expect(deleteJobRefusalText("BACKUP_FAILED")).toMatch(/nada foi apagado/i)
+    expect(deleteJobRefusalText("UNAUTHENTICATED")).toBe(refusalText("UNAUTHENTICATED"))
+    expect(deleteJobRefusalText("NOVO_CODIGO")).toBe(refusalText("NOVO_CODIGO"))
   })
 })
 
@@ -251,5 +300,22 @@ describe("refusalText", () => {
     expect(refusalText("GATEWAY_NOT_RUNNING")).toMatch(/Grok/)
     expect(refusalText("XYZ")).toBe("Disparo recusado (XYZ).")
     expect(refusalText("APPLICATION_CDP_DOWN")).toMatch(/CDP 9227/)
+  })
+})
+
+describe("deleteJobResultSchema", () => {
+  const ok = { ok: true, delete_job: { job_id: "4450471269", principal: 1, eventos: 3, dossiers: 0 } }
+
+  it("accepts only the job_id and the three row counts", () => {
+    expect(deleteJobResultSchema.parse(ok)).toEqual(ok)
+    for (const delete_job of [
+      { ...ok.delete_job, job_id: "../x" },
+      { ...ok.delete_job, principal: "1" },
+      { ...ok.delete_job, eventos: -1 },
+      { ...ok.delete_job, dossiers: 1.5 },
+      { job_id: "4450471269", principal: 1 },
+    ]) {
+      expect(deleteJobResultSchema.safeParse({ ok: true, delete_job }).success).toBe(false)
+    }
   })
 })

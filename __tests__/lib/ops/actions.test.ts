@@ -21,6 +21,7 @@ import {
   analyzeJob,
   declineJob,
   deleteDispatch,
+  deleteJob,
   discardDispatch,
   listDispatches,
   refineIntake,
@@ -50,6 +51,7 @@ describe("ops server actions", () => {
     await expect(discardDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(deleteDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(declineJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(deleteJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
@@ -237,6 +239,22 @@ describe("ops server actions", () => {
     // An uncertain write may have landed: the Sheet is re-read on refusals too.
     runDispatcher.mockResolvedValue({ ok: false, code: "DECLINE_UNCERTAIN", detail: "x" })
     await expect(declineJob("fake-1001")).resolves.toEqual({ ok: false, code: "DECLINE_UNCERTAIN" })
+    expect(updateTag).toHaveBeenCalledTimes(2)
+  })
+
+  it("excluir vaga: send only a validated job_id, accept only the fixed counts, re-read the Sheet always", async () => {
+    for (const id of [null, "../x", "--job-id", "a b", ["fake-1001"]]) {
+      await expect(deleteJob(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    const counts = { job_id: "fake-1001", principal: 1, eventos: 3, dossiers: 1 }
+    runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, delete_job: counts } })
+    await expect(deleteJob("fake-1001")).resolves.toEqual({ ok: true, value: counts })
+    expect(runDispatcher.mock.calls[0][0]).toEqual(["delete-job", "fake-1001"])
+    expect(updateTag).toHaveBeenCalledWith("job-search")
+    // Partial or uncertain deletes may have removed rows: the Sheet is re-read on refusals too.
+    runDispatcher.mockResolvedValue({ ok: false, code: "DELETE_PARTIAL", detail: "x" })
+    await expect(deleteJob("fake-1001")).resolves.toEqual({ ok: false, code: "DELETE_PARTIAL" })
     expect(updateTag).toHaveBeenCalledTimes(2)
   })
 })
