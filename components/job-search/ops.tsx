@@ -27,6 +27,7 @@ import {
   analyzeJob,
   discardDispatch,
   listDispatches,
+  refineIntake,
   registerWriteset,
   startDispatch,
   startIntake,
@@ -55,10 +56,12 @@ import {
   analyzeJobBlocker,
   canAnalyzeIntake,
   canDiscard,
+  canRefineIntake,
   canRegisterWriteset,
   isActiveStatus,
   latest,
   persistSummary,
+  refineRoom,
   refusalText,
   withRegistration,
 } from "@/lib/ops/present"
@@ -368,8 +371,7 @@ function IntakeDetails({ progress, analysis }: { progress: DispatchProgress; ana
       )}
       {result && !result.found && (
         <p className="text-xs" data-testid="intake-reason">
-          Não localizada{result.reason ? `: ${result.reason}` : ""}. Indique de novo com mais detalhe (empresa, cargo,
-          link).
+          Não localizada{result.reason ? `: ${result.reason}` : ""}.
         </p>
       )}
       {job && (
@@ -441,6 +443,125 @@ function DiagnosisList({ progress, testId }: { progress: DispatchProgress; testI
         </li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * NEEDS_CONTEXT: pick one of the Lince's candidates or, always last, "Outro" with free text. Either one becomes a
+ * complement of the original indication and the Lince runs again; the candidate goes only as its number. The
+ * candidates are untrusted text from the Lince: rendered as text, links only through `safeHttpUrl`.
+ */
+function IntakeRefine({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () => void }) {
+  const candidates = dispatch.progress.intake?.candidates ?? []
+  const [choice, setChoice] = useState<number | "outro" | null>(candidates.length === 0 ? "outro" : null)
+  const [text, setText] = useState("")
+  const [pending, startTransition] = useTransition()
+  const room = refineRoom(dispatch.progress.intake_text)
+  const other = choice === "outro"
+  const check = normalizeIntake(text)
+  const length = intakeLength(text.trim())
+  const problem =
+    !other || text.trim().length === 0
+      ? null
+      : length > room
+        ? refusalText("INTAKE_TOO_LONG")
+        : check.ok
+          ? null
+          : refusalText(check.code)
+  const ready = choice !== null && (!other || (check.ok && length <= room))
+  const name = `intake-refine-${dispatch.id}`
+
+  const submit = () =>
+    startTransition(async () => {
+      try {
+        const result = await refineIntake(dispatch.id, other ? { text } : { candidate: choice })
+        if (!result.ok) {
+          toast.error(refusalText(result.code))
+          return
+        }
+        toast.success(`${result.value.bot} procurando de novo, com o complemento.`)
+        onChanged()
+      } catch {
+        toast.error(refusalText("UNAUTHENTICATED"))
+      }
+    })
+
+  return (
+    <fieldset className="space-y-2 rounded-lg border border-border p-3 text-sm" data-testid="intake-refine">
+      <legend className="px-1 text-xs font-semibold text-foreground">
+        {candidates.length > 0 ? "Qual destas é a vaga?" : "Acrescentar mais informações"}
+      </legend>
+      {candidates.map((candidate, index) => {
+        const href = safeHttpUrl(candidate.url)
+        return (
+          <label key={index} className="flex items-start gap-2" data-testid="intake-candidate">
+            <input
+              type="radio"
+              name={name}
+              className="mt-1 accent-primary"
+              checked={choice === index + 1}
+              onChange={() => setChoice(index + 1)}
+            />
+            <span>
+              <span className="font-semibold text-foreground">{candidate.title}</span>
+              {candidate.company && <> · {candidate.company}</>}
+              {candidate.location && <span className="text-muted-foreground"> · {candidate.location}</span>}
+              {candidate.source && <span className="text-xs text-muted-foreground"> · {candidate.source}</span>}
+              {href && (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  data-testid="intake-candidate-link"
+                >
+                  Abrir
+                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                </a>
+              )}
+            </span>
+          </label>
+        )
+      })}
+      {candidates.length > 0 && (
+        <label className="flex items-start gap-2" data-testid="intake-candidate-other">
+          <input
+            type="radio"
+            name={name}
+            className="mt-1 accent-primary"
+            checked={other}
+            onChange={() => setChoice("outro")}
+          />
+          <span>Outro</span>
+        </label>
+      )}
+      {other && (
+        <div className="space-y-1">
+          <Textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="Ex.: a vaga é de engenheiro químico, efetivo."
+            rows={3}
+            aria-label="Acrescentar mais informações"
+            aria-describedby={`${name}-hint`}
+            aria-invalid={problem !== null}
+            data-testid="intake-refine-input"
+          />
+          <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground" id={`${name}-hint`}>
+            <span data-testid="intake-refine-problem" className={cn(problem && "text-st-uncertain-fg")}>
+              {problem ?? "Vai junto com a indicação original, como dado para o Lince."}
+            </span>
+            <span className="tabular-nums" data-testid="intake-refine-count">
+              {length}/{room}
+            </span>
+          </div>
+        </div>
+      )}
+      <Button size="sm" disabled={!ready || pending} data-testid="intake-refine-submit" onClick={submit}>
+        {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+        Localizar de novo
+      </Button>
+    </fieldset>
   )
 }
 
@@ -610,6 +731,12 @@ export function DispatchCard({
         ))}
       </ol>
       {intake && <IntakeDetails progress={progress} analysis={dispatch.action === "ANALISAR_INDICADA"} />}
+      {dispatch.refines && (
+        <p className="text-xs text-muted-foreground" data-testid="intake-refines">
+          Complementa uma indicação que o Lince não conseguiu localizar.
+        </p>
+      )}
+      {canRefineIntake(dispatch) && <IntakeRefine key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />}
       {dispatch.action === "ANALISAR_VAGA" && <DiagnosisList progress={progress} testId="analysis-diagnosis" />}
       {(dispatch.action === "BUSCAR_VAGAS" ||
         dispatch.action === "ANALISAR_VAGA" ||
@@ -627,7 +754,9 @@ export function DispatchCard({
                 : dispatch.code === "POSTING_UNAVAILABLE"
                   ? " — o job-search não achou o texto desta vaga (sem publicação salva, sem dossier anterior e fora do LinkedIn)."
                   : " — ação sua necessária (veja o código)."
-              : " — veja o Bot Chat no Hermes Desktop.")}
+              : canRefineIntake(dispatch)
+                ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
+                : " — veja o Bot Chat no Hermes Desktop.")}
           {dispatch.status === "INCERTO" &&
             (dispatch.mode === "host"
               ? " — o processo do job-search caiu; confira o runtime antes de liberar um novo disparo."

@@ -22,6 +22,7 @@ import {
   declineJob,
   discardDispatch,
   listDispatches,
+  refineIntake,
   registerWriteset,
   startDispatch,
   startIntake,
@@ -44,6 +45,7 @@ describe("ops server actions", () => {
     await expect(registerWriteset("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(startIntake("Estágio na Braskem, Camaçari")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeIntake("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(refineIntake("d-20260929T120000Z-abcdef", { candidate: 1 })).rejects.toThrow("UNAUTHENTICATED")
     await expect(discardDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(declineJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
@@ -145,6 +147,43 @@ describe("ops server actions", () => {
       ok: false,
       code: "ALREADY_REGISTERED",
     })
+  })
+
+  it("vaga indicada: a candidate goes as its number, the complement over stdin, never argv", async () => {
+    const id = "d-20260929T120000Z-abcdef"
+    for (const [intakeId, choice, code] of [
+      ["--platform", { candidate: 1 }, "INPUT_INVALID"],
+      [id, null, "INPUT_INVALID"],
+      [id, { candidate: 0 }, "INPUT_INVALID"],
+      [id, { candidate: 6 }, "INPUT_INVALID"],
+      [id, { candidate: 1.5 }, "INPUT_INVALID"],
+      [id, { candidate: "1" }, "INPUT_INVALID"],
+      [id, { candidate: 1, text: "engenheiro químico" }, "INPUT_INVALID"],
+      [id, { text: "x".repeat(6001) }, "INPUT_INVALID"],
+      [id, { text: "curto" }, "INTAKE_INVALID"],
+      [id, { text: "é essa, ok 1a2b3c4d" }, "INTAKE_LOOKS_LIKE_APPROVAL"],
+    ] as const) {
+      await expect(refineIntake(intakeId, choice)).resolves.toEqual({ ok: false, code })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    await refineIntake(id, { candidate: 2 })
+    expect(runDispatcher.mock.calls[0][0]).toEqual([
+      "start",
+      "LOCALIZAR_VAGA",
+      "--platform",
+      "hermes",
+      "--from",
+      id,
+      "--candidate",
+      "2",
+    ])
+    expect(runDispatcher.mock.calls[0][3]).toBeUndefined()
+    await refineIntake(id, { text: "  a vaga é de engenheiro químico --candidate 3\u200b " })
+    const [args, , , options] = runDispatcher.mock.calls[1]
+    expect(args).toEqual(["start", "LOCALIZAR_VAGA", "--platform", "hermes", "--from", id, "--intake-stdin"])
+    expect(options).toEqual({ stdin: "a vaga é de engenheiro químico --candidate 3" })
+    runDispatcher.mockResolvedValue({ ok: false, code: "INTAKE_TOO_LONG", detail: "x" })
+    await expect(refineIntake(id, { candidate: 1 })).resolves.toEqual({ ok: false, code: "INTAKE_TOO_LONG" })
   })
 
   it("analisar: send only a validated job_id that is in the Sheet, sent jobs included", async () => {

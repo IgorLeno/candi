@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
-import { analysisOf, canAnalyzeIntake, canDiscard, refusalText } from "@/lib/ops/present"
+import { analysisOf, canAnalyzeIntake, canDiscard, canRefineIntake, refineRoom, refusalText } from "@/lib/ops/present"
 import { dispatchSchema, startInputSchema, type Dispatch } from "@/lib/ops/schema"
 
 describe("normalizeIntake (mirror of dispatch.py normalize_intake)", () => {
@@ -152,6 +152,51 @@ describe("vaga indicada gating (UX only; the dispatcher decides)", () => {
     expect(startInputSchema.safeParse({ action: "ANALISAR_INDICADA", platform: "hermes" }).success).toBe(false)
     expect(refusalText("PLATFORM_NOT_SUPPORTED")).toMatch(/Hermes/)
     expect(refusalText("INTAKE_LOOKS_LIKE_APPROVAL")).toMatch(/aprovação/)
+  })
+
+  it('offers candidates and "Outro" only on a kept NEEDS_CONTEXT intake that was not refined yet', () => {
+    const candidate = {
+      title: "Engenheiro Químico",
+      company: "Actemium",
+      location: "Cubatão, SP",
+      url: "https://exemplo.gupy.io/jobs/1",
+      source: "Gupy",
+      job_id: null,
+    }
+    const base = intakeRecord()
+    const needs = intakeRecord({
+      status: "PRECISA_HUMANO",
+      code: "NEEDS_CONTEXT",
+      progress: {
+        ...base.progress,
+        intake: { ...base.progress.intake!, found: false, job: null, prefilter: null, candidates: [candidate] },
+      },
+    })
+    expect(needs.progress.intake?.candidates).toEqual([candidate])
+    expect(canRefineIntake(needs)).toBe(true)
+    expect(canRefineIntake({ ...needs, acknowledged: true })).toBe(true)
+    expect(canRefineIntake({ ...needs, discarded: true })).toBe(false)
+    expect(canRefineIntake({ ...needs, refined_by: "d-20260930T130000Z-abcdef" })).toBe(false)
+    expect(canRefineIntake({ ...needs, code: "TIMEOUT" })).toBe(false)
+    expect(canRefineIntake({ ...needs, action: "ANALISAR_INDICADA" })).toBe(false)
+    expect(canRefineIntake(intakeRecord())).toBe(false)
+    // At most 5 candidates, same limits as `job`.
+    const raw = (candidates: unknown[]) => ({
+      ...needs,
+      progress: { ...needs.progress, intake: { ...needs.progress.intake, candidates } },
+    })
+    expect(dispatchSchema.safeParse(raw(Array(6).fill(candidate))).success).toBe(false)
+    expect(dispatchSchema.safeParse(raw([{ ...candidate, title: "x".repeat(201) }])).success).toBe(false)
+    expect(dispatchSchema.safeParse({ ...needs, refines: "../x" }).success).toBe(false)
+  })
+
+  it("counts the room left for the complement (original + separator + complement ≤ 1500)", () => {
+    expect(refineRoom("x".repeat(100))).toBe(INTAKE_MAX - 100 - 15)
+    expect(refineRoom("😀".repeat(10))).toBe(INTAKE_MAX - 10 - 15)
+    expect(refineRoom(null)).toBe(0)
+    expect(refineRoom("x".repeat(INTAKE_MAX))).toBe(0)
+    expect(refusalText("INTAKE_TOO_LONG")).toMatch(/1500/)
+    expect(refusalText("INTAKE_ALREADY_REFINED")).toMatch(/complementada/)
   })
 
   it("rejects a Lince result outside the contract before it reaches the UI", () => {

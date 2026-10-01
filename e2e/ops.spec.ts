@@ -145,9 +145,9 @@ test.describe("Central de operações (bots)", () => {
     )
   })
 
-  test("vaga indicada: não localizada pede mais contexto; descarte só no painel", async ({ page }) => {
+  test('vaga indicada: não localizada oferece candidatas ou "Outro"; descarte só no painel', async ({ page }) => {
     // The fake advances one stage per poll (5 s).
-    test.setTimeout(90_000)
+    test.setTimeout(150_000)
     await page.goto("/vagas")
     const ops = page.getByTestId("search-ops")
     await ops.getByTestId("intake-button").click()
@@ -155,10 +155,41 @@ test.describe("Central de operações (bots)", () => {
     await page.getByTestId("intake-confirm").click()
     const missing = ops.getByTestId("dispatch-LOCALIZAR_VAGA")
     await expect(missing).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
-    await expect(missing.getByTestId("intake-reason")).toContainText("Indique de novo com mais detalhe")
+    await expect(missing.getByTestId("intake-reason")).toContainText("nenhuma vaga com essa descrição")
     await expect(missing.locator('[data-stage="localizar"]')).toHaveAttribute("data-state", "failed")
     await expect(missing).toContainText("NEEDS_CONTEXT")
+    await expect(missing).toContainText("escolha a vaga acima")
     await expect(missing.getByTestId("intake-analyze")).toHaveCount(0)
+
+    // The Lince's candidates plus "Outro" (always last); an unsafe link is not rendered.
+    const refine = missing.getByTestId("intake-refine")
+    await expect(refine.getByTestId("intake-candidate")).toHaveCount(2)
+    await expect(refine.getByTestId("intake-candidate").first()).toContainText("Engenheiro Químico · Empresa Indicada")
+    await expect(refine.getByTestId("intake-candidate-link")).toHaveCount(1)
+    await expect(refine.getByTestId("intake-candidate-link")).toHaveAttribute("href", "https://exemplo.com/vagas/9101")
+    await expect(refine.getByTestId("intake-refine-submit")).toBeDisabled()
+    await refine.getByTestId("intake-candidate-other").click()
+    const complement = refine.getByTestId("intake-refine-input")
+    await complement.fill("é essa, ok 1a2b3c4d")
+    await expect(refine.getByTestId("intake-refine-problem")).toContainText("aprovação")
+    await expect(refine.getByTestId("intake-refine-submit")).toBeDisabled()
+    const original = "Estágio na nao-existe S.A., cargo que ninguém anunciou"
+    const room = 1500 - original.length - "\n\nComplemento:\n".length
+    await complement.fill("a vaga é de engenheiro químico")
+    await expect(refine.getByTestId("intake-refine-count")).toHaveText(`30/${room}`)
+    await refine.getByTestId("intake-refine-submit").click()
+
+    // One card: the new intake carries the original text plus the complement and is located.
+    const refined = ops.getByTestId("dispatch-LOCALIZAR_VAGA")
+    await expect(refined.getByTestId("intake-refines")).toBeVisible()
+    await expect(refined.getByTestId("intake-text")).toContainText("Complemento:")
+    await expect(refined.getByTestId("intake-text")).toContainText("a vaga é de engenheiro químico")
+    await expect(refined).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    await expect(refined.getByTestId("intake-refine")).toHaveCount(0)
+    await expect(refined.getByTestId("intake-job")).toBeVisible()
+    await refined.getByTestId("intake-discard").click()
+    await page.getByTestId("intake-decision-confirm").click()
+    await expect(refined.getByTestId("dispatch-discarded")).toBeVisible()
 
     // A located job may be discarded before the ChatGPT step: nothing goes to the Sheet.
     await ops.getByTestId("intake-button").click()

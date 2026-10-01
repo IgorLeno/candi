@@ -1,5 +1,6 @@
 import type { Tone } from "@/lib/job-search/present"
 import type { JobListItem } from "@/lib/job-search/present"
+import { INTAKE_COMPLEMENT, INTAKE_MAX, intakeLength } from "@/lib/ops/intake"
 import type {
   Dispatch,
   DispatchAction,
@@ -107,6 +108,10 @@ const REFUSAL_TEXT: Record<string, string> = {
   DISCARDED: "A vaga indicada foi descartada.",
   ALREADY_REGISTERED: "A vaga já foi gravada na planilha: não dá mais para descartar pelo painel.",
   SOURCE_REQUIRED: "Falta a vaga indicada de origem.",
+  INTAKE_TOO_LONG: "A indicação com o complemento passa de 1500 caracteres: encurte o complemento.",
+  INTAKE_NOT_REFINABLE: "Só uma indicação que o Lince não conseguiu localizar pode ser complementada.",
+  INTAKE_ALREADY_REFINED: "Esta indicação já foi complementada: acompanhe o card novo.",
+  CANDIDATE_INVALID: "Essa candidata não está mais na lista do Lince.",
   // "Analisar" (dispatch.py start ANALISAR_VAGA).
   CHATGPT_BUSY: "O ChatGPT do job-search já está ocupado com outra busca, currículo ou análise: espere terminar.",
   // "Descartar vaga" (dispatch.py decline → application.py decline).
@@ -228,6 +233,21 @@ export function canAnalyzeIntake(intake: Dispatch, analysis: Dispatch | null): b
   if (intake.action !== "LOCALIZAR_VAGA" || intake.discarded || intake.status !== "CONCLUIDO") return false
   if (!intake.progress.intake?.found) return false
   return !(analysis && !analysis.discarded && (analysis.active || analysis.status === "CONCLUIDO"))
+}
+
+/**
+ * "Escolher candidata / Outro": the Lince could not tell which job (NEEDS_CONTEXT), the intake was kept and no
+ * complement was sent yet. Dismissing the card ("Dispensar") does not block it. The dispatcher checks it again.
+ */
+export function canRefineIntake(intake: Dispatch): boolean {
+  if (intake.action !== "LOCALIZAR_VAGA" || intake.discarded || intake.refined_by) return false
+  return intake.status === "PRECISA_HUMANO" && intake.code === "NEEDS_CONTEXT"
+}
+
+/** Characters left for the complement: the dispatcher refuses original + separator + complement over 1500. */
+export function refineRoom(intakeText: string | null | undefined): number {
+  if (!intakeText) return 0
+  return Math.max(0, INTAKE_MAX - intakeLength(intakeText) - intakeLength(INTAKE_COMPLEMENT))
 }
 
 /**
