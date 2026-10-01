@@ -106,6 +106,7 @@ const REFUSAL_TEXT: Record<string, string> = {
   INTAKE_NOT_FOUND: "O Lince não localizou a vaga: indique de novo com mais detalhe.",
   NOT_AN_INTAKE: "Este disparo não é de uma vaga indicada.",
   DISCARDED: "A vaga indicada foi descartada.",
+  DELETED: "A vaga indicada foi excluída do painel.",
   ALREADY_REGISTERED: "A vaga já foi gravada na planilha: não dá mais para descartar pelo painel.",
   SOURCE_REQUIRED: "Falta a vaga indicada de origem.",
   INTAKE_TOO_LONG: "A indicação com o complemento passa de 1500 caracteres: encurte o complemento.",
@@ -220,6 +221,23 @@ export function latest(dispatches: Dispatch[], action: DispatchAction): Dispatch
   return dispatches.find((dispatch) => dispatch.action === action) ?? null
 }
 
+/**
+ * The "vaga indicada" card under the buttons: the newest intake still in play. Discarded ones go to their own list
+ * and a complemented one (`refined_by`) is carried by the newer card, so neither comes back as the latest.
+ */
+export function activeIntake(dispatches: Dispatch[]): Dispatch | null {
+  return (
+    dispatches.find(
+      (dispatch) => dispatch.action === "LOCALIZAR_VAGA" && !dispatch.discarded && !dispatch.refined_by
+    ) ?? null
+  )
+}
+
+/** Discarded intakes, newest first ("Indicações descartadas"). Deleted ones never reach the panel. */
+export function discardedIntakes(dispatches: Dispatch[]): Dispatch[] {
+  return dispatches.filter((dispatch) => dispatch.action === "LOCALIZAR_VAGA" && dispatch.discarded)
+}
+
 /** The latest analysis of a "vaga indicada" (the dispatcher lists newest first). */
 export function analysisOf(analyses: Dispatch[], intakeId: string): Dispatch | null {
   return analyses.find((dispatch) => dispatch.source_id === intakeId) ?? null
@@ -257,6 +275,17 @@ export function refineRoom(intakeText: string | null | undefined): number {
 export function canDiscard(dispatch: Dispatch): boolean {
   if (dispatch.action !== "LOCALIZAR_VAGA" && dispatch.action !== "ANALISAR_INDICADA") return false
   if (dispatch.discarded || isActiveStatus(dispatch.status)) return false
+  const registration = dispatch.progress.registration
+  return !(registration && (registration.status === "CONCLUIDO" || isActiveStatus(registration.status)))
+}
+
+/**
+ * "Excluir" (panel only, nothing goes to the Sheet): like "Descartar", and also for an intake already discarded.
+ * The dispatcher hides the whole lineage and checks it again.
+ */
+export function canDelete(dispatch: Dispatch): boolean {
+  if (dispatch.action !== "LOCALIZAR_VAGA" && dispatch.action !== "ANALISAR_INDICADA") return false
+  if (isActiveStatus(dispatch.status)) return false
   const registration = dispatch.progress.registration
   return !(registration && (registration.status === "CONCLUIDO" || isActiveStatus(registration.status)))
 }

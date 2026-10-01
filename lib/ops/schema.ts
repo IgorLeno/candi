@@ -188,6 +188,16 @@ export type DispatchList = z.infer<typeof listResultSchema>
 
 export const oneResultSchema = z.object({ ok: z.literal(true), dispatch: dispatchSchema })
 
+/** `dispatch.py delete <id>`: the intake lineage now hidden from `list` (local records only). */
+export const deleteResultSchema = z.object({
+  ok: z.literal(true),
+  delete: z.object({
+    id: z.string().regex(DISPATCH_ID_RE),
+    deleted: z.array(z.string().regex(DISPATCH_ID_RE)).max(200),
+  }),
+})
+export type DeleteResult = z.infer<typeof deleteResultSchema>["delete"]
+
 /** `dispatch.py decline <job_id>`: job-search wrote RETIRADA (USER_DECLINED) to the Sheet. Fixed fields only. */
 export const declineResultSchema = z.object({
   ok: z.literal(true),

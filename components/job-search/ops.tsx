@@ -25,6 +25,7 @@ import {
   ackDispatch,
   analyzeIntake,
   analyzeJob,
+  deleteDispatch,
   discardDispatch,
   listDispatches,
   refineIntake,
@@ -52,12 +53,15 @@ import {
   ACTION_META,
   PLATFORM_LABEL,
   STATUS_META,
+  activeIntake,
   analysisOf,
   analyzeJobBlocker,
   canAnalyzeIntake,
+  canDelete,
   canDiscard,
   canRefineIntake,
   canRegisterWriteset,
+  discardedIntakes,
   isActiveStatus,
   latest,
   persistSummary,
@@ -579,8 +583,10 @@ function IntakeDecisions({
   const [pending, startTransition] = useTransition()
   const analyze = dispatch.action === "LOCALIZAR_VAGA" && canAnalyzeIntake(dispatch, analysis)
   // Once an analysis exists, the decision (register or discard) lives on its card.
-  const discard = canDiscard(dispatch) && !(dispatch.action === "LOCALIZAR_VAGA" && analysis && !analysis.discarded)
-  if (!analyze && !discard) return null
+  const decidedOnAnalysis = dispatch.action === "LOCALIZAR_VAGA" && analysis && !analysis.discarded
+  const discard = canDiscard(dispatch) && !decidedOnAnalysis
+  const remove = canDelete(dispatch) && !decidedOnAnalysis
+  if (!analyze && !discard && !remove) return null
   const blocked = dispatch.progress.intake?.prefilter?.verdict === "BLOQUEIO_GRAVE"
 
   const run = (kind: "analyze" | "discard") =>
@@ -617,6 +623,7 @@ function IntakeDecisions({
           Descartar
         </Button>
       )}
+      {remove && <DeleteIntakeButton dispatch={dispatch} onChanged={onChanged} />}
       <Dialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
         <DialogContent data-testid="intake-decision-dialog">
           <DialogHeader>
@@ -658,6 +665,90 @@ function IntakeDecisions({
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+/** "Excluir": the intake leaves the panel for good (local dispatch records only, nothing goes to the Sheet). */
+function DeleteIntakeButton({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [pending, startTransition] = useTransition()
+  const run = () =>
+    startTransition(async () => {
+      try {
+        const result = await deleteDispatch(dispatch.id)
+        if (!result.ok) {
+          toast.error(refusalText(result.code))
+          return
+        }
+        toast.success("Vaga indicada excluída do painel. Nada foi para a planilha.")
+        setOpen(false)
+        onChanged()
+      } catch {
+        toast.error(refusalText("UNAUTHENTICATED"))
+      }
+    })
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="text-destructive hover:text-destructive"
+        data-testid="intake-delete"
+        onClick={() => setOpen(true)}
+      >
+        <XCircle className="h-4 w-4" aria-hidden="true" />
+        Excluir
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent data-testid="intake-delete-dialog">
+          <DialogHeader>
+            <DialogTitle>Excluir a vaga indicada</DialogTitle>
+            <DialogDescription>
+              Ela some do painel, junto com as análises e os complementos dela. Nada vai para a planilha e não dá para
+              desfazer pelo painel.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)} data-testid="intake-delete-cancel">
+              Cancelar
+            </Button>
+            <Button variant="destructive" disabled={pending} data-testid="intake-delete-confirm" onClick={run}>
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+/** Discarded intakes, collapsed under the active card: what was indicated and when, plus "Excluir". */
+function DiscardedIntakes({ intakes, onChanged }: { intakes: Dispatch[]; onChanged: () => void }) {
+  if (intakes.length === 0) return null
+  return (
+    <details className="rounded-xl border border-border p-3 text-sm" data-testid="intake-discarded-list">
+      <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
+        Indicações descartadas · {intakes.length}
+      </summary>
+      <ul className="mt-2 space-y-2">
+        {intakes.map((dispatch) => {
+          const job = dispatch.progress.intake?.found ? dispatch.progress.intake.job : null
+          const text = dispatch.progress.intake_text
+          return (
+            <li key={dispatch.id} className="flex items-start gap-2" data-testid="intake-discarded-item">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="line-clamp-2 text-xs whitespace-pre-wrap" title={text ?? undefined}>
+                  {job ? `${job.title}${job.company ? ` · ${job.company}` : ""}` : (text ?? "Vaga indicada")}
+                </p>
+                <p className="text-xs text-muted-foreground">{formatTimestamp(dispatch.created_at)}</p>
+              </div>
+              {canDelete(dispatch) && <DeleteIntakeButton dispatch={dispatch} onChanged={onChanged} />}
+            </li>
+          )
+        })}
+      </ul>
+    </details>
   )
 }
 
@@ -1102,7 +1193,8 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   }, [refresh, refreshIntakes, refreshAnalyses])
   const known = useMemo(() => new Set(knownJobIds), [knownJobIds])
   const last = data ? latest(data.dispatches, "BUSCAR_VAGAS") : null
-  const intake = intakes.data ? latest(intakes.data.dispatches, "LOCALIZAR_VAGA") : null
+  const intake = intakes.data ? activeIntake(intakes.data.dispatches) : null
+  const discarded = intakes.data ? discardedIntakes(intakes.data.dispatches) : []
   const analysis = intake && analyses.data ? analysisOf(analyses.data.dispatches, intake.id) : null
   // Search and intake share the Lince's Bot Chat: one at a time (the dispatcher refuses with PROFILE_BUSY).
   const linceBusy = [last, intake, ...(analyses.data?.dispatches ?? [])].some((dispatch) => dispatch?.active)
@@ -1125,6 +1217,7 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
           {analysis && <DispatchCard dispatch={analysis} onChanged={refreshAll} />}
         </div>
       )}
+      <DiscardedIntakes intakes={discarded} onChanged={refreshAll} />
     </section>
   )
 }

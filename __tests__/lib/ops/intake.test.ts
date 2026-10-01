@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest"
 import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
-import { analysisOf, canAnalyzeIntake, canDiscard, canRefineIntake, refineRoom, refusalText } from "@/lib/ops/present"
+import {
+  activeIntake,
+  analysisOf,
+  canAnalyzeIntake,
+  canDelete,
+  canDiscard,
+  canRefineIntake,
+  discardedIntakes,
+  refineRoom,
+  refusalText,
+} from "@/lib/ops/present"
 import { dispatchSchema, startInputSchema, type Dispatch } from "@/lib/ops/schema"
 
 describe("normalizeIntake (mirror of dispatch.py normalize_intake)", () => {
@@ -139,6 +149,30 @@ describe("vaga indicada gating (UX only; the dispatcher decides)", () => {
       true
     )
     expect(canDiscard({ ...analysis, action: "BUSCAR_VAGAS" })).toBe(false)
+  })
+
+  it("allows deleting a kept or discarded intake, not while something runs or after the writeset was recorded", () => {
+    expect(canDelete(intakeRecord())).toBe(true)
+    expect(canDelete(intakeRecord({ discarded: true }))).toBe(true)
+    expect(canDelete(intakeRecord({ status: "RODANDO" }))).toBe(false)
+    const analysis = analysisRecord()
+    expect(canDelete(analysis)).toBe(true)
+    const registration = { id: "d-20260930T122000Z-abcdef", status: "CONCLUIDO" as const, code: null, result: null }
+    expect(canDelete({ ...analysis, progress: { ...analysis.progress, registration } })).toBe(false)
+    expect(canDelete({ ...analysis, action: "BUSCAR_VAGAS" })).toBe(false)
+    expect(refusalText("DELETED")).toMatch(/excluída/)
+  })
+
+  it("keeps discarded and complemented intakes out of the active card; discarded ones get their own list", () => {
+    const newest = intakeRecord({ id: "d-20260930T140000Z-abcdef", discarded: true })
+    const refined = intakeRecord({ id: "d-20260930T130000Z-abcdef", refined_by: "d-20260930T135000Z-abcdef" })
+    const kept = intakeRecord({ id: "d-20260930T120000Z-abcdef" })
+    const older = intakeRecord({ id: "d-20260930T110000Z-abcdef", discarded: true })
+    const all = [newest, refined, kept, older]
+    expect(activeIntake(all)).toBe(kept)
+    expect(activeIntake([newest, older])).toBeNull()
+    expect(discardedIntakes(all)).toEqual([newest, older])
+    expect(discardedIntakes([analysisRecord({ discarded: true })])).toEqual([])
   })
 
   it("links the latest analysis to its intake", () => {
