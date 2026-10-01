@@ -360,4 +360,46 @@ test.describe("Central de operações (bots)", () => {
     await expect(declined).toHaveAttribute("data-state", "descartada")
     await expect(declined.getByTestId("declined-stamp")).toBeVisible()
   })
+
+  test("excluir vaga: confirmação digitando o job_id, some da planilha e volta para a lista", async ({ page }) => {
+    // The fake answers like job-search but cannot change the fixture Sheet (fake-1002 answers DELETE_PARTIAL).
+    await page.goto("/vaga/fake-1004")
+    await page.getByTestId("delete-job").click()
+    const dialog = page.getByTestId("delete-job-dialog")
+    await expect(dialog).toContainText("backup local")
+    await expect(dialog).toContainText("Descartar vaga")
+    await expect(dialog).toContainText("Não dá para desfazer")
+    const input = page.getByTestId("delete-job-input")
+    const confirm = page.getByTestId("delete-job-confirm")
+    await expect(confirm).toBeDisabled()
+    await input.fill("fake-100")
+    await expect(confirm).toBeDisabled()
+    await page.getByTestId("delete-job-cancel").click()
+    await expect(dialog).toBeHidden()
+    await page.getByTestId("delete-job").click()
+    await expect(input).toHaveValue("")
+    await input.fill("fake-1004")
+    await expect(confirm).toBeEnabled()
+    await confirm.click()
+    await expect(page.getByText("Vaga excluída da planilha")).toBeVisible()
+    await expect(page).toHaveURL(/\/vagas$/)
+
+    // A partial delete is never shown as success: the user stays on the job to sync and retry.
+    await page.goto("/vaga/fake-1002")
+    await page.getByTestId("delete-job").click()
+    await page.getByTestId("delete-job-input").fill("fake-1002")
+    await page.getByTestId("delete-job-confirm").click()
+    await expect(page.getByText("Exclusão parcial")).toBeVisible()
+    await expect(page).toHaveURL(/\/vaga\/fake-1002$/)
+
+    // A discarded job can be deleted (and not discarded again); sent, uncertain and archive-only rows cannot.
+    await page.goto("/vaga/fake-1009")
+    await expect(page.getByTestId("delete-job")).toBeVisible()
+    await expect(page.getByTestId("decline-job")).toHaveCount(0)
+    for (const id of ["fake-1006", "fake-1007", "fake-0999"]) {
+      await page.goto(`/vaga/${id}`)
+      await expect(page.getByTestId("job-detail")).toBeVisible()
+      await expect(page.getByTestId("delete-job")).toHaveCount(0)
+    }
+  })
 })

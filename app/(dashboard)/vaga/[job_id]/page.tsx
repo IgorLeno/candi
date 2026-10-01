@@ -11,8 +11,9 @@ import { SectionCard } from "@/components/job-search/overview"
 import { DoneStamp, Flames, JourneyTrail, StateBadge, stateBarClass } from "@/components/job-search/visual"
 import { JobOps } from "@/components/job-search/ops"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
-import { canDeclineJob, jobDispatchBlocker } from "@/lib/ops/present"
+import { canDeclineJob, canDeleteJob, jobDispatchBlocker } from "@/lib/ops/present"
 import { DeclineJobButton } from "@/components/job-search/decline-job"
+import { DeleteJobButton } from "@/components/job-search/delete-job"
 import { cn } from "@/lib/utils"
 import {
   ActivitiesSection,
@@ -122,6 +123,12 @@ function JobDetail({ view }: { view: JobView }) {
               {state === "descartada" && <DoneStamp declined className="self-center text-base lg:mt-2" />}
               {isDispatchEnabled() && canDeclineJob(item) && (
                 <DeclineJobButton
+                  jobId={job.job_id}
+                  label={[job.empresa || "(sem empresa)", job.cargo || "(sem cargo)"].join(" · ")}
+                />
+              )}
+              {isDispatchEnabled() && canDeleteJob(item) && (
+                <DeleteJobButton
                   jobId={job.job_id}
                   label={[job.empresa || "(sem empresa)", job.cargo || "(sem cargo)"].join(" · ")}
                 />

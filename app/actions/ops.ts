@@ -14,10 +14,12 @@ import {
   DISPATCH_ID_RE,
   JOB_ID_RE,
   declineResultSchema,
+  deleteJobResultSchema,
   listResultSchema,
   oneResultSchema,
   startInputSchema,
   type DeclineResult,
+  type DeleteJobResult,
   type Dispatch,
   type DispatchList,
 } from "@/lib/ops/schema"
@@ -178,4 +180,18 @@ export async function declineJob(jobId: unknown): Promise<ActionResult<DeclineRe
   // Uncertain or failed writes may still have landed: re-read the Sheet either way.
   updateTag(JOB_SEARCH_CACHE_TAG)
   return result.ok ? { ok: true, value: result.value.decline } : { ok: false, code: result.code }
+}
+
+/**
+ * "Excluir vaga": the job leaves the Sheet. job-search (`dispatch.py delete-job` → `application.py delete`) backs the
+ * rows up locally, then deletes the main-tab row and its Eventos/Dossiers rows with its own credential; the panel
+ * sends only the job_id. The Sheet snapshot is dropped afterwards whatever the answer. There is no undo.
+ */
+export async function deleteJob(jobId: unknown): Promise<ActionResult<DeleteJobResult>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["delete-job", jobId], deleteJobResultSchema)
+  // A partial or uncertain delete may have removed rows: re-read the Sheet either way.
+  updateTag(JOB_SEARCH_CACHE_TAG)
+  return result.ok ? { ok: true, value: result.value.delete_job } : { ok: false, code: result.code }
 }

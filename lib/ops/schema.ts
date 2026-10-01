@@ -195,6 +195,23 @@ export const declineResultSchema = z.object({
 })
 export type DeclineResult = z.infer<typeof declineResultSchema>["decline"]
 
+const rowCount = z.number().int().nonnegative()
+
+/**
+ * `dispatch.py delete-job <job_id>`: job-search deleted the job's rows from the Sheet (main tab, Eventos de
+ * Candidatura, Dossiers) after a local backup. Fixed fields only: the job_id and how many rows left each tab.
+ */
+export const deleteJobResultSchema = z.object({
+  ok: z.literal(true),
+  delete_job: z.object({
+    job_id: z.string().regex(JOB_ID_RE),
+    principal: rowCount,
+    eventos: rowCount,
+    dossiers: rowCount,
+  }),
+})
+export type DeleteJobResult = z.infer<typeof deleteJobResultSchema>["delete_job"]
+
 export const refusalSchema = z.object({
   ok: z.literal(false),
   code: z.string().max(80),
