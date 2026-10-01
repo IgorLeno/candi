@@ -101,6 +101,8 @@ const diagnosisSchema = z.object({
   empresa: z.string().max(200),
   status_analise: z.string().max(200),
   interesse: z.string().max(200),
+  /** Why the verdict, as the writeset has it (job-search caps it at 400 chars). Untrusted plain text. */
+  motivo_analise: z.string().max(400).optional(),
 })
 export type Diagnosis = z.infer<typeof diagnosisSchema>
 
@@ -130,6 +132,8 @@ const progressSchema = z.object({
   intake: intakeResultSchema.nullable().optional(),
   intake_state: z.enum(["missing", "invalid", "valid"]).optional(),
   diagnosis: z.array(diagnosisSchema).max(50).optional(),
+  /** Who produced the diagnosis: "chatgpt" only on the host pipeline; the Bot path (Threadgist) has no proof. */
+  diagnosis_by: z.enum(["chatgpt", "threadgist"]).optional(),
   /** Host pipelines (2026-09-30): current stage and, for "Preencher vaga", the prompt to paste in Claude in Chrome. */
   stage: z.string().nullable().optional(),
   discovery_code: z.string().nullable().optional(),

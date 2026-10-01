@@ -31,7 +31,7 @@ HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA")
 CHATGPT_HOST = ("BUSCAR_VAGAS", "GERAR_CURRICULO", "ANALISAR_VAGA")
 NO_POSTING = "fake-1008"
 STAGES = {
-    "BUSCAR_VAGAS": [("busca", "Busca ampla e prefilter (Lince)"), ("analise", "Análise no ChatGPT (Threadgist)"),
+    "BUSCAR_VAGAS": [("busca", "Busca ampla e prefilter (Lince)"), ("analise", "Análise (Threadgist)"),
                      ("writeset", "Writeset pronto"), ("registro", "Registro na planilha")],
     "GERAR_CURRICULO": [("cverino", "CVerino + ChatGPT (patch editorial)"),
                         ("curriculinho", "Curriculinho (cópia do MASTER no Claude Design)"),
@@ -39,7 +39,7 @@ STAGES = {
     "PREENCHER_CANDIDATURA": [("claim", "Claim e preflight"), ("preenchimento", "Preenchimento do formulário"),
                               ("revisao", "Revisão e gate"), ("aprovacao", "Aguardando sua aprovação")],
     "LOCALIZAR_VAGA": [("localizar", "Localizar a vaga (Lince)"), ("prefilter", "Análise preliminar (prefilter)")],
-    "ANALISAR_INDICADA": [("analise", "Análise no ChatGPT (Threadgist)"), ("writeset", "Writeset pronto"),
+    "ANALISAR_INDICADA": [("analise", "Análise (Threadgist)"), ("writeset", "Writeset pronto"),
                           ("registro", "Registro na planilha")],
     "ANALISAR_VAGA": [("planilha", "Dados da vaga (planilha, só leitura)"), ("posting", "Texto da vaga"),
                       ("analise", "Análise no ChatGPT (host)"), ("writeset", "Writeset pronto"),
@@ -60,7 +60,8 @@ NOT_FOUND = {"found": False, "reason": "nenhuma vaga com essa descrição", "alr
                              "url": "javascript:alert(1)", "source": "Gupy", "job_id": None}]}
 COMPLEMENT = "\n\nComplemento:\n"
 DIAGNOSIS = [{"job_id": "fake-9002", "cargo": "Estágio em Processos Químicos", "empresa": "Empresa Indicada",
-              "status_analise": "SELECIONADA", "interesse": "ALTO"}]
+              "status_analise": "SELECIONADA", "interesse": "ALTO",
+              "motivo_analise": "Gate 4 aprovado: <b>núcleo</b> de processos químicos com evidência direta"}]
 RESULT = {"jobs": {"INSERTED": 1, "UPDATED": 0, "UNCHANGED": 1}, "coverage": {"appended": 1, "present": 0},
           "dossiers": {"appended": 1, "present": 0}}
 
@@ -158,8 +159,10 @@ def view(rec, recs=()):
         elif rec["action"] == "ANALISAR_VAGA":
             progress["diagnosis"] = [{**DIAGNOSIS[0], "job_id": rec["job_id"], "cargo": "", "empresa": "",
                                       "status_analise": "NÃO PRIORIZADA", "interesse": "MÉDIO"}]
+            progress["diagnosis_by"] = "chatgpt"
         else:
             progress["diagnosis"] = DIAGNOSIS
+            progress["diagnosis_by"] = "threadgist"
     out = {k: rec[k] for k in ("id", "action", "platform", "job_id", "status", "acknowledged", "created_at")}
     if rec["action"] in ("LOCALIZAR_VAGA", "ANALISAR_INDICADA"):
         out.update(source_id=rec.get("source_id"), discarded=bool(rec.get("discarded")))

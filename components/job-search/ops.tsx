@@ -433,17 +433,31 @@ function IntakeDetails({ progress, analysis }: { progress: DispatchProgress; ana
   )
 }
 
-/** The ChatGPT verdict as `writeset.py rows` has it (never recomputed here). */
+const DIAGNOSIS_BY: Record<string, string> = {
+  chatgpt: "Diagnóstico do ChatGPT",
+  threadgist: "Diagnóstico do Threadgist (sem prova de uso do ChatGPT)",
+}
+
+/**
+ * The verdict and its reason as `writeset.py rows` has them (never recomputed here). Only the dispatcher says who
+ * produced it; without that the label names no one. The reason is untrusted text: rendered as text only.
+ */
 function DiagnosisList({ progress, testId }: { progress: DispatchProgress; testId: string }) {
   const diagnosis = progress.diagnosis ?? []
   if (diagnosis.length === 0) return null
+  const label = DIAGNOSIS_BY[progress.diagnosis_by ?? ""] ?? "Diagnóstico"
   return (
     <ul className="space-y-1" data-testid={testId}>
       {diagnosis.map((row, index) => (
         <li key={index} className="text-sm">
-          <span className="text-muted-foreground">Diagnóstico do ChatGPT: </span>
+          <span className="text-muted-foreground">{label}: </span>
           <span className="font-mono font-semibold">{row.status_analise || "sem status"}</span>
           {row.interesse && <span className="text-muted-foreground"> · interesse {row.interesse}</span>}
+          {row.motivo_analise && (
+            <p className="mt-0.5 text-xs whitespace-pre-wrap text-muted-foreground" data-testid="diagnosis-reason">
+              {row.motivo_analise}
+            </p>
+          )}
         </li>
       ))}
     </ul>

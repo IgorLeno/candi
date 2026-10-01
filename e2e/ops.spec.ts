@@ -125,6 +125,12 @@ test.describe("Central de operações (bots)", () => {
     await expect(analysis).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
     await expect(analysis.getByTestId("intake-diagnosis")).toContainText("SELECIONADA")
     await expect(analysis.getByTestId("intake-diagnosis")).toContainText("interesse ALTO")
+    // Bot path: the label never claims ChatGPT; the reason is shown as plain text (no HTML).
+    await expect(analysis.getByTestId("intake-diagnosis")).toContainText("Diagnóstico do Threadgist")
+    await expect(analysis.getByTestId("diagnosis-reason")).toHaveText(
+      "Gate 4 aprovado: <b>núcleo</b> de processos químicos com evidência direta"
+    )
+    await expect(analysis.getByTestId("diagnosis-reason").locator("b")).toHaveCount(0)
     await expect(analysis.locator('[data-stage="registro"]')).toHaveAttribute("data-state", "active")
     await expect(analysis.getByTestId("intake-discard")).toBeVisible()
 
@@ -298,6 +304,7 @@ test.describe("Central de operações (bots)", () => {
       await expect(card.locator(`[data-stage="${stage}"]`)).toHaveAttribute("data-state", "done")
     }
     await expect(card.getByTestId("analysis-diagnosis")).toContainText("NÃO PRIORIZADA")
+    await expect(card.getByTestId("analysis-diagnosis")).toContainText("Diagnóstico do ChatGPT")
     await expect(ops.getByTestId("analyze-button")).toBeEnabled()
 
     // Registration is the existing writeset flow: job-search writes, the panel only asks and re-reads.

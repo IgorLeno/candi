@@ -288,12 +288,16 @@ describe("schema", () => {
             empresa: "Usiminas",
             status_analise: "SELECIONADA",
             interesse: "ALTO",
+            motivo_analise: "Gate 4 aprovado",
           },
         ],
+        diagnosis_by: "chatgpt",
         registration: null,
       },
     })
     expect(parsed.progress.posting_source).toBe("linkedin")
+    expect(parsed.progress.diagnosis?.[0].motivo_analise).toBe("Gate 4 aprovado")
+    expect(parsed.progress.diagnosis_by).toBe("chatgpt")
     expect(canRegisterWriteset(parsed.progress)).toBe(true)
   })
 
