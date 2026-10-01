@@ -14,10 +14,12 @@ import {
   DISPATCH_ID_RE,
   JOB_ID_RE,
   declineResultSchema,
+  deleteResultSchema,
   listResultSchema,
   oneResultSchema,
   startInputSchema,
   type DeclineResult,
+  type DeleteResult,
   type Dispatch,
   type DispatchList,
 } from "@/lib/ops/schema"
@@ -164,6 +166,17 @@ export async function discardDispatch(id: unknown): Promise<ActionResult<Dispatc
   if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["discard", id], oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/**
+ * "Excluir" a vaga indicada: `dispatch.py delete <id>` hides the whole intake lineage from `list`. Local dispatch
+ * records only; nothing goes to the Sheet. The panel has no undo.
+ */
+export async function deleteDispatch(id: unknown): Promise<ActionResult<DeleteResult>> {
+  await requireSession()
+  if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["delete", id], deleteResultSchema)
+  return result.ok ? { ok: true, value: result.value.delete } : { ok: false, code: result.code }
 }
 
 /**

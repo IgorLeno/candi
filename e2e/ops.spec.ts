@@ -145,9 +145,11 @@ test.describe("Central de operações (bots)", () => {
     )
   })
 
-  test('vaga indicada: não localizada oferece candidatas ou "Outro"; descarte só no painel', async ({ page }) => {
+  test('vaga indicada: não localizada oferece candidatas ou "Outro"; descartar e excluir só no painel', async ({
+    page,
+  }) => {
     // The fake advances one stage per poll (5 s).
-    test.setTimeout(150_000)
+    test.setTimeout(210_000)
     await page.goto("/vagas")
     const ops = page.getByTestId("search-ops")
     await ops.getByTestId("intake-button").click()
@@ -189,7 +191,10 @@ test.describe("Central de operações (bots)", () => {
     await expect(refined.getByTestId("intake-job")).toBeVisible()
     await refined.getByTestId("intake-discard").click()
     await page.getByTestId("intake-decision-confirm").click()
-    await expect(refined.getByTestId("dispatch-discarded")).toBeVisible()
+    // Discarded: out of the active area (the complemented original does not come back), into the collapsed list.
+    await expect(ops.getByTestId("dispatch-LOCALIZAR_VAGA")).toHaveCount(0)
+    const shelf = ops.getByTestId("intake-discarded-list")
+    await expect(shelf).toContainText("Indicações descartadas · 1")
 
     // A located job may be discarded before the ChatGPT step: nothing goes to the Sheet.
     await ops.getByTestId("intake-button").click()
@@ -204,10 +209,33 @@ test.describe("Central de operações (bots)", () => {
     await expect(located.getByTestId("dispatch-discarded")).toHaveCount(0)
     await located.getByTestId("intake-discard").click()
     await page.getByTestId("intake-decision-confirm").click()
-    await expect(located.getByTestId("dispatch-discarded")).toBeVisible()
-    await expect(located.getByTestId("intake-discard")).toHaveCount(0)
-    await expect(located.getByTestId("intake-analyze")).toHaveCount(0)
-    await expect(page.getByText("Nada foi para a planilha")).toBeVisible()
+    await expect(page.getByText("Nada foi para a planilha").first()).toBeVisible()
+    await expect(ops.getByTestId("dispatch-LOCALIZAR_VAGA")).toHaveCount(0)
+    await expect(shelf).toContainText("Indicações descartadas · 2")
+    await shelf.locator("summary").click()
+    const items = shelf.getByTestId("intake-discarded-item")
+    await expect(items.first()).toContainText("Estágio em Processos Químicos · Empresa Indicada")
+
+    // "Excluir" from the list: gone from the panel for good (the complemented original goes with it).
+    await items.nth(1).getByTestId("intake-delete").click()
+    await expect(page.getByTestId("intake-delete-dialog")).toContainText("Nada vai para a planilha")
+    await page.getByTestId("intake-delete-cancel").click()
+    await expect(items).toHaveCount(2)
+    await items.nth(1).getByTestId("intake-delete").click()
+    await page.getByTestId("intake-delete-confirm").click()
+    await expect(shelf).toContainText("Indicações descartadas · 1")
+    await expect(ops.getByTestId("dispatch-LOCALIZAR_VAGA")).toHaveCount(0)
+
+    // "Excluir" straight from the active card skips the discarded list.
+    await ops.getByTestId("intake-button").click()
+    await page.getByTestId("intake-input").fill("Estágio em processos químicos na Empresa Indicada, de novo")
+    await page.getByTestId("intake-confirm").click()
+    const again = ops.getByTestId("dispatch-LOCALIZAR_VAGA")
+    await expect(again).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    await again.getByTestId("intake-delete").click()
+    await page.getByTestId("intake-delete-confirm").click()
+    await expect(ops.getByTestId("dispatch-LOCALIZAR_VAGA")).toHaveCount(0)
+    await expect(shelf).toContainText("Indicações descartadas · 1")
   })
 
   test("vaga: gerar currículo antes, depois preencher candidatura", async ({ page }) => {

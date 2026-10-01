@@ -5,7 +5,7 @@ can be exercised deterministically. `persist` records a REGISTRAR_WRITESET that 
 (nothing is written anywhere). Vaga indicada: LOCALIZAR_VAGA reads the text from stdin (an intake mentioning
 "nao-existe" is not found: PRECISA_HUMANO/NEEDS_CONTEXT with two candidates; `LOCALIZAR_VAGA --from <id>` with
 `--candidate N` or a stdin complement locates it), ANALISAR_INDICADA --from produces a writeset, `discard`
-marks the chain. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
+marks the chain and `delete` hides the whole lineage from `list`. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
 the fixture, is refused with ALREADY_SENT). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
 for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
 with ChatGPT refuses another with CHATGPT_BUSY. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
@@ -294,7 +294,7 @@ def main(argv):
                     else:
                         rec["status"] = "CONCLUIDO"
         save(recs)
-        shown = [r for r in recs if (job_id is None or r["job_id"] == job_id)
+        shown = [r for r in recs if not r.get("deleted") and (job_id is None or r["job_id"] == job_id)
                  and (action is None or r["action"] == action)]
         out = {"ok": True, "gateway": "running", "dispatches": [view(r, recs) for r in shown[:5]]}
         if job_id is not None:
@@ -321,6 +321,32 @@ def main(argv):
             r.update(discarded=True, acknowledged=True)
         save(recs)
         print(json.dumps({"ok": True, "dispatch": view(rec, recs)}))
+        return 0
+    if cmd == "delete":
+        rec = next((r for r in recs if r["id"] == argv[1]), None)
+        if rec is None:
+            return refuse("DISPATCH_NOT_FOUND")
+        if rec["action"] not in ("LOCALIZAR_VAGA", "ANALISAR_INDICADA"):
+            return refuse("NOT_AN_INTAKE")
+        # Whole lineage: intakes linked by refines/refined_by, their analyses and registrations.
+        lineage, todo = {}, [intake_of(rec, recs)["id"]]
+        while todo:
+            wanted = todo.pop()
+            current = next((r for r in recs if r["id"] == wanted), None)
+            if current is not None and current["id"] not in lineage:
+                lineage[current["id"]] = current
+                todo += [current.get("refines"), current.get("refined_by")]
+        analyses = [r for r in recs if r["action"] == "ANALISAR_INDICADA" and r["source_id"] in lineage]
+        regs = [r for r in recs if r["action"] == REGISTER and r["source_id"] in {a["id"] for a in analyses}]
+        chain = list(lineage.values()) + analyses + regs
+        if any(r["status"] == "RODANDO" for r in chain):
+            return refuse("DISPATCH_STILL_RUNNING")
+        if any(r["status"] == "CONCLUIDO" for r in regs):
+            return refuse("ALREADY_REGISTERED")
+        for r in chain:
+            r.update(deleted=True, discarded=True, acknowledged=True)
+        save(recs)
+        print(json.dumps({"ok": True, "delete": {"id": rec["id"], "deleted": [r["id"] for r in chain]}}))
         return 0
     if cmd == "decline":
         job_id = argv[1] if len(argv) > 1 else ""

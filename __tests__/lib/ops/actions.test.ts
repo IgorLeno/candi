@@ -20,6 +20,7 @@ import {
   analyzeIntake,
   analyzeJob,
   declineJob,
+  deleteDispatch,
   discardDispatch,
   listDispatches,
   refineIntake,
@@ -47,6 +48,7 @@ describe("ops server actions", () => {
     await expect(analyzeIntake("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(refineIntake("d-20260929T120000Z-abcdef", { candidate: 1 })).rejects.toThrow("UNAUTHENTICATED")
     await expect(discardDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(deleteDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(declineJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     expect(runDispatcher).not.toHaveBeenCalled()
@@ -129,6 +131,7 @@ describe("ops server actions", () => {
     for (const id of [null, "--platform", "d-x; rm", ["d-20260929T120000Z-abcdef"]]) {
       await expect(analyzeIntake(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
       await expect(discardDispatch(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+      await expect(deleteDispatch(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
     }
     expect(runDispatcher).not.toHaveBeenCalled()
     await analyzeIntake("d-20260929T120000Z-abcdef")
@@ -147,6 +150,15 @@ describe("ops server actions", () => {
       ok: false,
       code: "ALREADY_REGISTERED",
     })
+  })
+
+  it("vaga indicada: delete sends only the id and returns the hidden ids", async () => {
+    const id = "d-20260929T120000Z-abcdef"
+    runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, delete: { id, deleted: [id] } } })
+    await expect(deleteDispatch(id)).resolves.toEqual({ ok: true, value: { id, deleted: [id] } })
+    expect(runDispatcher.mock.calls[0][0]).toEqual(["delete", id])
+    runDispatcher.mockResolvedValue({ ok: false, code: "DISPATCH_STILL_RUNNING", detail: "x" })
+    await expect(deleteDispatch(id)).resolves.toEqual({ ok: false, code: "DISPATCH_STILL_RUNNING" })
   })
 
   it("vaga indicada: a candidate goes as its number, the complement over stdin, never argv", async () => {
