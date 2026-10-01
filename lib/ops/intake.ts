@@ -4,6 +4,8 @@
 
 export const INTAKE_MIN = 10
 export const INTAKE_MAX = 1500
+/** job-search `dispatch.INTAKE_COMPLEMENT`: joins the original indication and the complement (1500 in total). */
+export const INTAKE_COMPLEMENT = "\n\nComplemento:\n"
 
 /** Same as job-search `dispatch.APPROVAL_RE` (an approval is `ok|não` + 8 hex typed in the bot chat). */
 const APPROVAL_RE = /\b(ok|n[aã]o)\s+[0-9a-f]{8}\b/i

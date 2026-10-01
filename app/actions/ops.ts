@@ -104,6 +104,36 @@ export async function startIntake(text: unknown): Promise<ActionResult<Dispatch>
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }
 
+// One choice per complement: a candidate the Lince listed (by its position) or the "Outro" text.
+const refineChoiceSchema = z.union([
+  z.object({ candidate: z.number().int().min(1).max(5) }).strict(),
+  z.object({ text: z.string().max(INTAKE_MAX * 4) }).strict(),
+])
+
+/**
+ * "Escolher candidata / Outro" on a NEEDS_CONTEXT intake: job-search writes a new indication made of the original
+ * text plus this complement (still untrusted data) and runs the Lince again. A candidate goes only as its number
+ * (job-search reads the candidate from its own file); the "Outro" text goes over stdin, never argv.
+ */
+export async function refineIntake(intakeId: unknown, choice: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  const parsed = refineChoiceSchema.safeParse(choice)
+  if (typeof intakeId !== "string" || !DISPATCH_ID_RE.test(intakeId) || !parsed.success) {
+    return { ok: false, code: "INPUT_INVALID" }
+  }
+  const args = ["start", "LOCALIZAR_VAGA", "--platform", "hermes", "--from", intakeId]
+  if ("candidate" in parsed.data) {
+    const result = await runDispatcher([...args, "--candidate", String(parsed.data.candidate)], oneResultSchema)
+    return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+  }
+  const complement = normalizeIntake(parsed.data.text)
+  if (!complement.ok) return { ok: false, code: complement.code }
+  const result = await runDispatcher([...args, "--intake-stdin"], oneResultSchema, undefined, {
+    stdin: complement.text,
+  })
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
 /** "Mandar para o ChatGPT": the Lince takes the located job to the Threadgist (Hermes only). Only the id. */
 export async function analyzeIntake(intakeId: unknown): Promise<ActionResult<Dispatch>> {
   await requireSession()

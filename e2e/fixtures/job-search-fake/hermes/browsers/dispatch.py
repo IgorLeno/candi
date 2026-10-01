@@ -3,7 +3,8 @@
 No bots, no gateway, no Sheet: every `list` advances running dispatches one stage, so the panel's progress UI
 can be exercised deterministically. `persist` records a REGISTRAR_WRITESET that finishes on the second `list`
 (nothing is written anywhere). Vaga indicada: LOCALIZAR_VAGA reads the text from stdin (an intake mentioning
-"nao-existe" is not found: PRECISA_HUMANO/NEEDS_CONTEXT), ANALISAR_INDICADA --from produces a writeset, `discard`
+"nao-existe" is not found: PRECISA_HUMANO/NEEDS_CONTEXT with two candidates; `LOCALIZAR_VAGA --from <id>` with
+`--candidate N` or a stdin complement locates it), ANALISAR_INDICADA --from produces a writeset, `discard`
 marks the chain. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
 the fixture, is refused with ALREADY_SENT). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
 for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
@@ -51,7 +52,12 @@ LOCATED = {"found": True, "reason": None, "already_in_registry": False, "posting
                    "url": "https://exemplo.com/vagas/9002", "source": "Gupy", "job_id": "fake-9002"},
            "prefilter": {"verdict": "BLOQUEIO_GRAVE", "reasons": ["pede formatura até 12/2026"]}}
 NOT_FOUND = {"found": False, "reason": "nenhuma vaga com essa descrição", "already_in_registry": False,
-             "job": None, "prefilter": None, "posting": False}
+             "job": None, "prefilter": None, "posting": False,
+             "candidates": [{"title": "Engenheiro Químico", "company": "Empresa Indicada", "location": "Cubatão, SP",
+                             "url": "https://exemplo.com/vagas/9101", "source": "Gupy", "job_id": None},
+                            {"title": "Inspetor Dimensional", "company": "Empresa Indicada", "location": "Cubatão, SP",
+                             "url": "javascript:alert(1)", "source": "Gupy", "job_id": None}]}
+COMPLEMENT = "\n\nComplemento:\n"
 DIAGNOSIS = [{"job_id": "fake-9002", "cargo": "Estágio em Processos Químicos", "empresa": "Empresa Indicada",
               "status_analise": "SELECIONADA", "interesse": "ALTO"}]
 RESULT = {"jobs": {"INSERTED": 1, "UPDATED": 0, "UNCHANGED": 1}, "coverage": {"appended": 1, "present": 0},
@@ -156,6 +162,8 @@ def view(rec, recs=()):
     out = {k: rec[k] for k in ("id", "action", "platform", "job_id", "status", "acknowledged", "created_at")}
     if rec["action"] in ("LOCALIZAR_VAGA", "ANALISAR_INDICADA"):
         out.update(source_id=rec.get("source_id"), discarded=bool(rec.get("discarded")))
+    if rec["action"] == "LOCALIZAR_VAGA":
+        out.update(refines=rec.get("refines"), refined_by=rec.get("refined_by"))
     out.update(code=rec.get("code"), marker=rec.get("code"), turns=step, updated_at=rec["created_at"], delivered_at=rec["created_at"],
                finished_at=None if rec["status"] == "RODANDO" else rec["created_at"],
                bot=BOTS[rec["action"]][1 if rec["platform"] == "grok" else 0],
@@ -196,11 +204,39 @@ def main(argv):
                "created_at": now()}
         if action == "LOCALIZAR_VAGA":
             text = sys.stdin.read() if "--intake-stdin" in argv else ""
+            candidate = flag(argv, "--candidate")
             if APPROVAL_RE.search(text):
                 return refuse("INTAKE_LOOKS_LIKE_APPROVAL")
+            origin = None
+            if source_id:
+                # Complement of a NEEDS_CONTEXT intake: a candidate (1..n) or the "Outro" text.
+                origin = next((r for r in recs if r["id"] == source_id), None)
+                code = ("DISPATCH_NOT_FOUND" if origin is None
+                        else "NOT_AN_INTAKE" if origin["action"] != "LOCALIZAR_VAGA"
+                        else "DISCARDED" if origin.get("discarded")
+                        else "INTAKE_ALREADY_REFINED" if origin.get("refined_by")
+                        else "INTAKE_NOT_REFINABLE" if origin.get("code") != "NEEDS_CONTEXT"
+                        else "INTAKE_INVALID" if (candidate is None) == (text == "")
+                        else "CANDIDATE_INVALID" if candidate is not None
+                        and not 1 <= int(candidate) <= len(NOT_FOUND["candidates"]) else None)
+                if code:
+                    return refuse(code)
+                if candidate is not None:
+                    c = NOT_FOUND["candidates"][int(candidate) - 1]
+                    text = f"Escolhida no painel entre as candidatas: {c['title']} · {c['company']}"
+                elif not 10 <= len(text):
+                    return refuse("INTAKE_INVALID")
+                text = origin["intake_text"] + COMPLEMENT + text
+                if len(text) > 1500:
+                    return refuse("INTAKE_TOO_LONG")
             if not 10 <= len(text) <= 1500:
                 return refuse("INTAKE_INVALID")
-            rec.update(intake_text=text, found="nao-existe" not in text.lower(), discarded=False)
+            # A complement always locates the job in the fake.
+            rec.update(intake_text=text, found=origin is not None or "nao-existe" not in text.lower(),
+                       discarded=False)
+            if origin is not None:
+                rec["refines"] = origin["id"]
+                origin.update(refined_by=rec["id"], acknowledged=True)
         if action == "ANALISAR_INDICADA":
             origin = next((r for r in recs if r["id"] == source_id), None)
             code = ("DISPATCH_NOT_FOUND" if origin is None else "NOT_AN_INTAKE" if origin["action"] != "LOCALIZAR_VAGA"

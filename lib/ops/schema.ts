@@ -69,20 +69,23 @@ const persistResultSchema = z.object({
 })
 export type PersistResult = z.infer<typeof persistResultSchema>
 
+const intakeJobSchema = z.object({
+  title: z.string().max(200).nullable(),
+  company: z.string().max(200).nullable(),
+  location: z.string().max(200).nullable(),
+  url: z.string().max(2000).nullable(),
+  source: z.string().max(100).nullable(),
+  job_id: z.string().max(64).nullable(),
+})
+export type IntakeJob = z.infer<typeof intakeJobSchema>
+
 /** `vaga-indicada.json` as the dispatcher validated it (untrusted text from the Lince: render as plain text). */
 const intakeResultSchema = z.object({
   found: z.boolean(),
   reason: z.string().max(500).nullable(),
-  job: z
-    .object({
-      title: z.string().max(200).nullable(),
-      company: z.string().max(200).nullable(),
-      location: z.string().max(200).nullable(),
-      url: z.string().max(2000).nullable(),
-      source: z.string().max(100).nullable(),
-      job_id: z.string().max(64).nullable(),
-    })
-    .nullable(),
+  job: intakeJobSchema.nullable(),
+  /** NEEDS_CONTEXT: up to 5 plausible jobs the user may pick from (the most likely first). */
+  candidates: z.array(intakeJobSchema).max(5).optional(),
   already_in_registry: z.boolean(),
   prefilter: z
     .object({ verdict: z.enum(["PASSA", "BLOQUEIO_GRAVE"]), reasons: z.array(z.string().max(300)).max(10) })
@@ -159,6 +162,9 @@ export const dispatchSchema = z.object({
   source_id: z.string().nullable().optional(),
   /** Vaga indicada discarded in the panel (nothing goes to the Sheet). */
   discarded: z.boolean().optional(),
+  /** LOCALIZAR_VAGA: the NEEDS_CONTEXT intake this one complements, and the one that complemented it. */
+  refines: z.string().regex(DISPATCH_ID_RE).nullable().optional(),
+  refined_by: z.string().regex(DISPATCH_ID_RE).nullable().optional(),
   result: persistResultSchema.nullable().optional(),
 })
 export type Dispatch = z.infer<typeof dispatchSchema>
