@@ -58,7 +58,10 @@ export function DeclineJobButton({
         size="sm"
         variant="outline"
         data-testid="decline-job"
-        className={cn("relative z-10 border-destructive/50 text-destructive hover:bg-destructive/10", className)}
+        className={cn(
+          "relative z-10 border-destructive/50 text-destructive hover:bg-destructive/10 dark:border-destructive/50 dark:hover:border-destructive dark:hover:bg-destructive/15",
+          className
+        )}
         onClick={() => setOpen(true)}
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />
