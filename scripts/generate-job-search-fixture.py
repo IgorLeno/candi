@@ -131,6 +131,11 @@ main_rows = [
         proximidade_eq="DIRETA", setor="MINERACAO_MINERAIS", interesse="NORMAL", data_primeira_analise="2026-09-20",
         data_ultima_analise="2026-09-20", status_analise="SELECIONADA", status_disponibilidade="ABERTA",
         status_candidatura="RETIRADA"),
+    # Marked ENCERRADA by a wrong automatic read (a Gupy id read as LinkedIn, 2026-10-02): the user may reopen it.
+    job("fake-1010", empresa="Pagamentos Exemplo", familia_funcao="DADOS_BI", tipo_programa="REGULAR",
+        proximidade_eq="CONTEXTUAL", setor="OUTRO", interesse="ALTO", data_primeira_analise="2026-09-23",
+        data_ultima_analise="2026-09-23", status_analise="NÃO PRIORIZADA", status_disponibilidade="ENCERRADA",
+        fonte="Gupy", fonte_descoberta="Gupy", portal_candidatura="Gupy"),
     job("", empresa="Linha sem job_id"),
 ]
 

@@ -114,7 +114,7 @@ describe("filters", () => {
       "RETIRADA",
     ])
     expect(options).toContain(INVALID_BUCKET)
-    expect(facetOptions(items, "fonte_descoberta")).toEqual(["LinkedIn"])
+    expect(facetOptions(items, "fonte_descoberta")).toEqual(["Gupy", "LinkedIn"])
   })
 
   it("builds list links", () => {
@@ -180,6 +180,7 @@ describe("visual state", () => {
       "fake-1007": "incerto",
       "fake-1008": "nao-confirmada",
       "fake-1009": "descartada",
+      "fake-1010": "fora",
       "fake-0999": "encerrada",
     })
   })
