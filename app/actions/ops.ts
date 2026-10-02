@@ -10,6 +10,7 @@ import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
 import { jobDispatchBlocker } from "@/lib/ops/present"
 import {
   ANALYZE_ACTION,
+  CV_RESUME_OPTIONS,
   DISPATCH_ACTIONS,
   DISPATCH_ID_RE,
   JOB_ID_RE,
@@ -30,8 +31,9 @@ import {
 
 // Bot dispatch from the panel. Server Functions are not covered by `proxy.ts`: every action checks the
 // session itself, before touching input or the dispatcher. Nothing typed by the client becomes bot text:
-// the dispatcher sends fixed commands and only receives an action, a platform and a validated job_id. The one
-// exception is the "vaga indicada" text: guarded here, sent over stdin, stored by job-search as untrusted data.
+// the dispatcher sends fixed commands and only receives an action, a platform and a validated job_id. The two
+// exceptions are the "vaga indicada" text and the note that resumes a stuck résumé ("Outro"): guarded here, sent
+// over stdin, stored by job-search as untrusted data.
 
 async function requireSession(): Promise<void> {
   if (!(await getAllowedSession())) throw new Error("UNAUTHENTICATED")
@@ -136,6 +138,36 @@ export async function refineIntake(intakeId: unknown, choice: unknown): Promise<
   if (!complement.ok) return { ok: false, code: complement.code }
   const result = await runDispatcher([...args, "--intake-stdin"], oneResultSchema, undefined, {
     stdin: complement.text,
+  })
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+// One choice per resume: an option job-search offered, or "Outro" = a new ChatGPT patch with the user's note.
+const resumeCvChoiceSchema = z.union([
+  z.object({ option: z.enum(CV_RESUME_OPTIONS) }).strict(),
+  z.object({ note: z.string().max(INTAKE_MAX * 4) }).strict(),
+])
+
+/**
+ * "Tentar de novo" on a stuck "Gerar currículo": job-search starts a new run with the chosen option and retires the
+ * stuck card. "Outro" goes as `--option chatgpt` with the note over stdin, never argv; job-search re-applies the
+ * guards and keeps it as untrusted data that the ChatGPT prompt quotes as the user's guidance.
+ */
+export async function resumeCv(dispatchId: unknown, choice: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  const parsed = resumeCvChoiceSchema.safeParse(choice)
+  if (typeof dispatchId !== "string" || !DISPATCH_ID_RE.test(dispatchId) || !parsed.success) {
+    return { ok: false, code: "INPUT_INVALID" }
+  }
+  const args = ["resume-cv", dispatchId, "--option"]
+  if ("option" in parsed.data) {
+    const result = await runDispatcher([...args, parsed.data.option], oneResultSchema)
+    return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+  }
+  const note = normalizeIntake(parsed.data.note)
+  if (!note.ok) return { ok: false, code: note.code }
+  const result = await runDispatcher([...args, "chatgpt", "--note-stdin"], oneResultSchema, undefined, {
+    stdin: note.text,
   })
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }

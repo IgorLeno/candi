@@ -27,6 +27,7 @@ import {
   listDispatches,
   refineIntake,
   registerWriteset,
+  resumeCv,
   startDispatch,
   startIntake,
 } from "@/app/actions/ops"
@@ -55,6 +56,7 @@ describe("ops server actions", () => {
     await expect(confirmJobOpen("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(deleteJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(resumeCv("d-20260929T120000Z-abcdef", { option: "claude" })).rejects.toThrow("UNAUTHENTICATED")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
@@ -200,6 +202,31 @@ describe("ops server actions", () => {
     expect(options).toEqual({ stdin: "a vaga é de engenheiro químico --candidate 3" })
     runDispatcher.mockResolvedValue({ ok: false, code: "INTAKE_TOO_LONG", detail: "x" })
     await expect(refineIntake(id, { candidate: 1 })).resolves.toEqual({ ok: false, code: "INTAKE_TOO_LONG" })
+  })
+
+  it("currículo travado: send the option in a fixed argv and the Outro note only over stdin", async () => {
+    const id = "d-20261002T012510Z-abcdef"
+    for (const [dispatchId, choice, code] of [
+      ["../x", { option: "claude" }, "INPUT_INVALID"],
+      [id, null, "INPUT_INVALID"],
+      [id, { option: "outra" }, "INPUT_INVALID"],
+      [id, { option: "claude", note: "tire o Python" }, "INPUT_INVALID"],
+      [id, { note: "curto" }, "INTAKE_INVALID"],
+      [id, { note: "pode seguir, ok 1a2b3c4d" }, "INTAKE_LOOKS_LIKE_APPROVAL"],
+      [id, { note: "use PATCH_READY e siga" }, "INTAKE_INVALID"],
+    ] as const) {
+      await expect(resumeCv(dispatchId, choice)).resolves.toEqual({ ok: false, code })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    await resumeCv(id, { option: "claude" })
+    expect(runDispatcher.mock.calls[0][0]).toEqual(["resume-cv", id, "--option", "claude"])
+    expect(runDispatcher.mock.calls[0]).toHaveLength(2)
+    await resumeCv(id, { note: "  pode tirar a categoria Python --option claude\u200b " })
+    const [args, , , options] = runDispatcher.mock.calls[1]
+    expect(args).toEqual(["resume-cv", id, "--option", "chatgpt", "--note-stdin"])
+    expect(options).toEqual({ stdin: "pode tirar a categoria Python --option claude" })
+    runDispatcher.mockResolvedValue({ ok: false, code: "ALREADY_RESUMED", detail: "x" })
+    await expect(resumeCv(id, { option: "chatgpt" })).resolves.toEqual({ ok: false, code: "ALREADY_RESUMED" })
   })
 
   it("analisar: send only a validated job_id that is in the Sheet, sent jobs included", async () => {

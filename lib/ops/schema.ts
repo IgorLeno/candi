@@ -106,6 +106,30 @@ const diagnosisSchema = z.object({
 })
 export type Diagnosis = z.infer<typeof diagnosisSchema>
 
+/** `dispatch.py resume-cv --option`: redo only the Claude edit (same patch) or the whole ChatGPT patch. */
+export const CV_RESUME_OPTIONS = ["claude", "chatgpt"] as const
+export type CvResumeOption = (typeof CV_RESUME_OPTIONS)[number]
+
+/**
+ * GERAR_CURRICULO stuck in PRECISA_HUMANO: why, in job-search's words, and how it can be resumed. Every text is
+ * untrusted plain text (the Claude panel reply and the ChatGPT doubts come from the bots).
+ */
+const cvRecoverySchema = z.object({
+  reason: z.string().max(1000),
+  /** The skill's `MOTIVO:` line, when Claude stopped on purpose. */
+  claude_reason: z.string().max(300).nullable(),
+  /** End of the Claude panel reply, without the panel UI. */
+  claude_reply: z.string().max(600).nullable(),
+  doubts: z.array(z.string().max(300)).max(5),
+  options: z
+    .array(z.object({ key: z.enum(CV_RESUME_OPTIONS), label: z.string().max(100), description: z.string().max(300) }))
+    .min(1)
+    .max(2),
+  /** "Outro": free text that goes with a new ChatGPT patch. */
+  note_allowed: z.boolean(),
+})
+export type CvRecovery = z.infer<typeof cvRecoverySchema>
+
 const progressSchema = z.object({
   percent: z.number().min(0).max(100),
   stages: z.array(stageSchema),
@@ -141,6 +165,8 @@ const progressSchema = z.object({
   claude_url: z.string().max(2000).nullable().optional(),
   /** "Analisar": where job-search found the posting (runtime, dossiers, linkedin). */
   posting_source: z.string().max(40).nullable().optional(),
+  /** "Gerar currículo" stuck in PRECISA_HUMANO (host): reason and resume options. */
+  recovery: cvRecoverySchema.nullable().optional(),
 })
 export type DispatchProgress = z.infer<typeof progressSchema>
 
@@ -169,6 +195,10 @@ export const dispatchSchema = z.object({
   /** LOCALIZAR_VAGA: the NEEDS_CONTEXT intake this one complements, and the one that complemented it. */
   refines: z.string().regex(DISPATCH_ID_RE).nullable().optional(),
   refined_by: z.string().regex(DISPATCH_ID_RE).nullable().optional(),
+  /** GERAR_CURRICULO: the stuck run this one resumes (and how), and the run that resumed this one. */
+  resumes: z.string().regex(DISPATCH_ID_RE).nullable().optional(),
+  resume_option: z.enum(CV_RESUME_OPTIONS).nullable().optional(),
+  retried_by: z.string().regex(DISPATCH_ID_RE).nullable().optional(),
   result: persistResultSchema.nullable().optional(),
 })
 export type Dispatch = z.infer<typeof dispatchSchema>

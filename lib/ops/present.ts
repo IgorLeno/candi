@@ -129,6 +129,12 @@ const REFUSAL_TEXT: Record<string, string> = {
   INTAKE_NOT_REFINABLE: "Só uma indicação que o Lince não conseguiu localizar pode ser complementada.",
   INTAKE_ALREADY_REFINED: "Esta indicação já foi complementada: acompanhe o card novo.",
   CANDIDATE_INVALID: "Essa candidata não está mais na lista do Lince.",
+  // "Tentar de novo" num currículo travado (dispatch.py resume-cv).
+  NOT_RESUMABLE: "Este currículo não está parado esperando você: atualize o painel.",
+  ALREADY_RESUMED: "Este currículo já foi retomado: acompanhe o card novo.",
+  OPTION_INVALID: "Essa opção não vale mais para este bloqueio: atualize o painel.",
+  NOTE_NOT_EXPECTED: "O texto em \u201cOutro\u201d só vai junto com um patch novo no ChatGPT.",
+  HANDOFF_NOT_REUSABLE: "O patch anterior não pode ser reaproveitado: refaça o patch no ChatGPT.",
   // "Analisar" (dispatch.py start ANALISAR_VAGA).
   CHATGPT_BUSY: "O ChatGPT do job-search já está ocupado com outra busca, currículo ou análise: espere terminar.",
   // "Descartar vaga" (dispatch.py decline → application.py decline).
@@ -346,6 +352,28 @@ export function canAnalyzeIntake(intake: Dispatch, analysis: Dispatch | null): b
  * "Escolher candidata / Outro": the Lince could not tell which job (NEEDS_CONTEXT), the intake was kept and no
  * complement was sent yet. Dismissing the card ("Dispensar") does not block it. The dispatcher checks it again.
  */
+/** The guards of the "Outro" note are the intake guards; only the wording changes. */
+const RESUME_CV_REFUSAL_TEXT: Record<string, string> = {
+  INTAKE_INVALID:
+    "O texto precisa ter de 10 a 1500 caracteres e não pode conter marca do painel nem marcador de contrato dos bots.",
+  INTAKE_LOOKS_LIKE_APPROVAL: "O texto não pode parecer uma aprovação (ok ou não seguido de 8 caracteres hex).",
+}
+
+export function resumeCvRefusalText(code: string): string {
+  return RESUME_CV_REFUSAL_TEXT[code] ?? refusalText(code)
+}
+
+/** "Tentar de novo" (UX gating): a host résumé run stuck on the user, not resumed yet, with job-search's options. */
+export function canResumeCv(dispatch: Dispatch): boolean {
+  return (
+    dispatch.action === "GERAR_CURRICULO" &&
+    dispatch.mode === "host" &&
+    dispatch.status === "PRECISA_HUMANO" &&
+    !dispatch.retried_by &&
+    !!dispatch.progress.recovery
+  )
+}
+
 export function canRefineIntake(intake: Dispatch): boolean {
   if (intake.action !== "LOCALIZAR_VAGA" || intake.discarded || intake.refined_by) return false
   return intake.status === "PRECISA_HUMANO" && intake.code === "NEEDS_CONTEXT"

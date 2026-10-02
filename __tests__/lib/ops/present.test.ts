@@ -5,6 +5,7 @@ import {
   canDeclineJob,
   canDeleteJob,
   canRegisterWriteset,
+  canResumeCv,
   confirmOpenRefusalText,
   deleteJobConfirmed,
   deleteJobRefusalText,
@@ -12,6 +13,7 @@ import {
   latest,
   persistSummary,
   refusalText,
+  resumeCvRefusalText,
   statusBadge,
   withRegistration,
 } from "@/lib/ops/present"
@@ -254,6 +256,63 @@ describe("canRegisterWriteset", () => {
     expect(persistSummary({ jobs: { INSERTED: 2, UPDATED: 1, UNCHANGED: 0 }, coverage: null, dossiers: null })).toBe(
       "2 novas, 1 atualizadas, 0 sem mudança"
     )
+  })
+})
+
+describe("canResumeCv", () => {
+  const recovery = {
+    reason: "O Claude in Chrome parou sem exportar o PDF.",
+    claude_reason: null,
+    claude_reply: "posso reduzir o grid?",
+    doubts: [],
+    options: [
+      { key: "claude", label: "Refazer só a edição no Claude", description: "mesmo patch" },
+      { key: "chatgpt", label: "Refazer o patch no ChatGPT", description: "patch novo" },
+    ],
+    note_allowed: true,
+  }
+  const stuck = dispatchSchema.parse({
+    id: "d-20261002T012510Z-abcdef",
+    action: "GERAR_CURRICULO",
+    platform: "hermes",
+    mode: "host",
+    job_id: "1",
+    status: "PRECISA_HUMANO",
+    code: "BLOCKED_CLAUDE_CHROME:CLAUDE_STOPPED_WITHOUT_PDF",
+    marker: null,
+    acknowledged: false,
+    created_at: "2026-10-02T01:25:00Z",
+    finished_at: "2026-10-02T01:29:00Z",
+    bot: "ChatGPT + Claude in Chrome (host)",
+    active: false,
+    progress: { percent: 40, stages: [], recovery },
+    resumes: null,
+    resume_option: null,
+    retried_by: null,
+  })
+
+  it("offers the resume only on a host run stuck on the user, once", () => {
+    expect(canResumeCv(stuck)).toBe(true)
+    expect(canResumeCv({ ...stuck, retried_by: "d-20261002T013000Z-abcdef" })).toBe(false)
+    expect(canResumeCv({ ...stuck, status: "FALHOU" })).toBe(false)
+    expect(canResumeCv({ ...stuck, mode: "bot" })).toBe(false)
+    expect(canResumeCv({ ...stuck, progress: { ...stuck.progress, recovery: null } })).toBe(false)
+  })
+
+  it("rejects options and texts outside the contract", () => {
+    const bad = (patch: object) =>
+      dispatchSchema.safeParse({ ...stuck, progress: { ...stuck.progress, recovery: { ...recovery, ...patch } } })
+    expect(bad({}).success).toBe(true)
+    expect(bad({ options: [{ key: "aprovar", label: "x", description: "y" }] }).success).toBe(false)
+    expect(bad({ options: [] }).success).toBe(false)
+    expect(bad({ claude_reply: "x".repeat(601) }).success).toBe(false)
+    expect(bad({ doubts: ["a", "b", "c", "d", "e", "f"] }).success).toBe(false)
+  })
+
+  it("words the note guards for the résumé and keeps the shared texts", () => {
+    expect(resumeCvRefusalText("INTAKE_INVALID")).toMatch(/^O texto precisa/)
+    expect(resumeCvRefusalText("ALREADY_RESUMED")).toBe(refusalText("ALREADY_RESUMED"))
+    expect(refusalText("ALREADY_RESUMED")).not.toMatch(/recusado/)
   })
 })
 
