@@ -30,7 +30,7 @@ export default async function LoginPage({
           <div className="w-12 h-12 rounded-2xl bg-st-open flex items-center justify-center mb-2">
             <Crosshair className="w-6 h-6 text-st-open-ink" aria-hidden="true" />
           </div>
-          <CardTitle className="font-display text-2xl font-bold">Estágios</CardTitle>
+          <CardTitle className="font-display text-2xl font-bold">Jobusque</CardTitle>
           <CardDescription>Acesso restrito. Entre com a conta Google autorizada.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

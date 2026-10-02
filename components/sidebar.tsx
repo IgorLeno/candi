@@ -37,9 +37,9 @@ export function Sidebar() {
           </div>
           <div>
             <span className="font-display text-sidebar-primary text-lg font-bold tracking-tight block leading-tight">
-              Estágios
+              Jobusque
             </span>
-            <span className="text-sidebar-foreground/80 text-xs">modo caça</span>
+            <span className="text-sidebar-foreground/80 text-xs">central de vagas</span>
           </div>
         </div>
 
@@ -94,7 +94,7 @@ export function Sidebar() {
           <div className="w-7 h-7 rounded-lg bg-st-open flex items-center justify-center -rotate-6">
             <Crosshair className="w-3.5 h-3.5 text-st-open-ink" aria-hidden="true" />
           </div>
-          <span className="font-display text-sidebar-primary text-base font-bold">Estágios</span>
+          <span className="font-display text-sidebar-primary text-base font-bold">Jobusque</span>
           <form action={signOutAction} className="ml-auto">
             <button
               type="submit"
