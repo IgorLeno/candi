@@ -15,8 +15,8 @@ import type {
 
 export const ACTION_META: Record<DispatchAction, { label: string; verb: string; description: string }> = {
   BUSCAR_VAGAS: {
-    label: "Buscar vagas",
-    verb: "Nova busca",
+    label: "Cotação de vagas",
+    verb: "Cotar vagas",
     description:
       "O job-search busca no LinkedIn e na Gupy pelo navegador do portal, remove só o que é objetivamente inelegível e leva o resto (e as vagas pendentes) ao ChatGPT para a análise; o writeset fica pronto para ser gravado na planilha.",
   },
@@ -33,13 +33,13 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
       "O job-search confere a vaga, gera o currículo se faltar, abre a página no Application Browser e prepara o prompt para você colar no Claude in Chrome. O Claude para antes do botão final; o envio é sempre seu.",
   },
   LOCALIZAR_VAGA: {
-    label: "Vaga indicada",
-    verb: "Indicar vaga",
+    label: "Vaga específica",
+    verb: "Buscar vaga específica",
     description:
       "O Lince procura exatamente a vaga que você descrever e faz a análise preliminar (prefilter), sem ChatGPT. Depois você decide se ela vai para a análise no ChatGPT.",
   },
   ANALISAR_INDICADA: {
-    label: "Análise da vaga indicada",
+    label: "Análise da vaga específica",
     verb: "Mandar para o ChatGPT",
     description:
       "O job-search leva a vaga localizada direto ao ChatGPT, sem Bot; o writeset fica pronto e você decide se registra na planilha ou descarta.",
@@ -107,26 +107,27 @@ const REFUSAL_TEXT: Record<string, string> = {
   DISPATCH_STILL_RUNNING: "O disparo ainda está rodando.",
   DISPATCH_NOT_FOUND: "Disparo não encontrado no job-search.",
   DISPATCH_ID_INVALID: "Identificador de disparo inválido.",
-  NOT_A_SEARCH: "Só o writeset de uma busca pode ser registrado.",
-  SEARCH_STILL_RUNNING: "A busca ainda está rodando: espere o writeset ficar pronto.",
+  NOT_A_SEARCH: "Só o writeset de uma cotação pode ser registrado.",
+  SEARCH_STILL_RUNNING: "A cotação ainda está rodando: espere o writeset ficar pronto.",
   WRITESET_NOT_VALID: "O writeset não existe ou não passou no writeset.py check.",
   PERSIST_ACTIVE: "Já há uma gravação de writeset em andamento.",
   WRITESET_ALREADY_REGISTERED: "Este writeset já foi gravado na planilha.",
-  PROFILE_BUSY: "O Lince já está com um disparo em andamento (busca ou vaga indicada).",
-  PLATFORM_NOT_SUPPORTED: "A vaga indicada só roda pelo Hermes.",
+  PROFILE_BUSY: "O Lince já está com um disparo em andamento (cotação ou vaga específica).",
+  PLATFORM_NOT_SUPPORTED: "A vaga específica só roda pelo Hermes.",
   INTAKE_INVALID:
-    "A indicação precisa ter de 10 a 1500 caracteres e não pode conter marca do painel nem marcador de contrato dos bots.",
-  INTAKE_LOOKS_LIKE_APPROVAL: "A indicação não pode parecer uma aprovação (ok ou não seguido de 8 caracteres hex).",
+    "A descrição da vaga precisa ter de 10 a 1500 caracteres e não pode conter marca do painel nem marcador de contrato dos bots.",
+  INTAKE_LOOKS_LIKE_APPROVAL:
+    "A descrição da vaga não pode parecer uma aprovação (ok ou não seguido de 8 caracteres hex).",
   INTAKE_NOT_DONE: "A localização da vaga ainda não concluiu.",
-  INTAKE_NOT_FOUND: "O Lince não localizou a vaga: indique de novo com mais detalhe.",
-  NOT_AN_INTAKE: "Este disparo não é de uma vaga indicada.",
-  DISCARDED: "A vaga indicada foi descartada.",
-  DELETED: "A vaga indicada foi excluída do painel.",
+  INTAKE_NOT_FOUND: "O Lince não localizou a vaga: descreva de novo com mais detalhe.",
+  NOT_AN_INTAKE: "Este disparo não é de uma vaga específica.",
+  DISCARDED: "A vaga específica foi descartada.",
+  DELETED: "A vaga específica foi excluída do painel.",
   ALREADY_REGISTERED: "A vaga já foi gravada na planilha: não dá mais para descartar pelo painel.",
-  SOURCE_REQUIRED: "Falta a vaga indicada de origem.",
-  INTAKE_TOO_LONG: "A indicação com o complemento passa de 1500 caracteres: encurte o complemento.",
-  INTAKE_NOT_REFINABLE: "Só uma indicação que o Lince não conseguiu localizar pode ser complementada.",
-  INTAKE_ALREADY_REFINED: "Esta indicação já foi complementada: acompanhe o card novo.",
+  SOURCE_REQUIRED: "Falta a vaga específica de origem.",
+  INTAKE_TOO_LONG: "A descrição com o complemento passa de 1500 caracteres: encurte o complemento.",
+  INTAKE_NOT_REFINABLE: "Só uma vaga específica que o Lince não conseguiu localizar pode ser complementada.",
+  INTAKE_ALREADY_REFINED: "Esta vaga específica já foi complementada: acompanhe o card novo.",
   CANDIDATE_INVALID: "Essa candidata não está mais na lista do Lince.",
   // "Tentar de novo" num currículo travado (dispatch.py resume-cv).
   NOT_RESUMABLE: "Este currículo não está parado esperando você: atualize o painel.",
@@ -135,7 +136,7 @@ const REFUSAL_TEXT: Record<string, string> = {
   NOTE_NOT_EXPECTED: "O texto em \u201cOutro\u201d só vai junto com um patch novo no ChatGPT.",
   HANDOFF_NOT_REUSABLE: "O patch anterior não pode ser reaproveitado: refaça o patch no ChatGPT.",
   // "Analisar" (dispatch.py start ANALISAR_VAGA).
-  CHATGPT_BUSY: "O ChatGPT do job-search já está ocupado com outra busca, currículo ou análise: espere terminar.",
+  CHATGPT_BUSY: "O ChatGPT do job-search já está ocupado com outra cotação, currículo ou análise: espere terminar.",
   // "Descartar vaga" (dispatch.py decline → application.py decline).
   INVALID_JOB_ID: "Identificador de vaga inválido.",
   JOB_DISPATCH_ACTIVE: "Há um disparo desta vaga em andamento: espere terminar para descartar.",
@@ -291,13 +292,28 @@ export function persistSummary(result: PersistResult | null | undefined): string
   return `${INSERTED} novas, ${UPDATED} atualizadas, ${UNCHANGED} sem mudança`
 }
 
+/** The search button: "Cotar vagas" before the first search, "Nova cotação" once there is one. */
+export function searchVerb(last: Pick<Dispatch, "id"> | null): string {
+  return last ? "Nova cotação" : ACTION_META.BUSCAR_VAGAS.verb
+}
+
+/**
+ * "Cotar vagas" keeps its cards behind a toggle; one that needs the user stays on screen without it: running,
+ * waiting for a human or holding a writeset not yet registered. Pass the search progress `withRegistration()`, so a
+ * writeset already in the Sheet snapshot no longer counts. A discarded card never needs the user.
+ */
+export function needsUser(dispatch: Dispatch | null, progress?: DispatchProgress): boolean {
+  if (!dispatch || dispatch.discarded) return false
+  return dispatch.active || dispatch.status === "PRECISA_HUMANO" || canRegisterWriteset(progress ?? dispatch.progress)
+}
+
 /** Latest dispatch of an action (the dispatcher lists newest first). */
 export function latest(dispatches: Dispatch[], action: DispatchAction): Dispatch | null {
   return dispatches.find((dispatch) => dispatch.action === action) ?? null
 }
 
 /**
- * The "vaga indicada" card under the buttons: the newest intake still in play. Discarded ones go to their own list
+ * The "vaga específica" card under the buttons: the newest intake still in play. Discarded ones go to their own list
  * and a complemented one (`refined_by`) is carried by the newer card, so neither comes back as the latest.
  */
 export function activeIntake(dispatches: Dispatch[]): Dispatch | null {

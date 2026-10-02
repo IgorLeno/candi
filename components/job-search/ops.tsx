@@ -10,6 +10,8 @@ import {
   Copy,
   Crosshair,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileSpreadsheet,
   FileText,
   Loader2,
@@ -70,10 +72,12 @@ import {
   discardedIntakes,
   isActiveStatus,
   latest,
+  needsUser,
   persistSummary,
   refineRoom,
   refusalText,
   resumeCvRefusalText,
+  searchVerb,
   withRegistration,
 } from "@/lib/ops/present"
 import {
@@ -575,7 +579,7 @@ function IntakeRefine({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: 
           />
           <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground" id={`${name}-hint`}>
             <span data-testid="intake-refine-problem" className={cn(problem && "text-st-uncertain-fg")}>
-              {problem ?? "Vai junto com a indicação original, como dado para o Lince."}
+              {problem ?? "Vai junto com a descrição original, como dado para o Lince."}
             </span>
             <span className="tabular-nums" data-testid="intake-refine-count">
               {length}/{room}
@@ -749,7 +753,7 @@ function IntakeDecisions({
           return
         }
         toast.success(
-          kind === "analyze" ? "Análise no ChatGPT iniciada." : "Vaga indicada descartada. Nada foi para a planilha."
+          kind === "analyze" ? "Análise no ChatGPT iniciada." : "Vaga específica descartada. Nada foi para a planilha."
         )
         setConfirm(null)
         onChanged()
@@ -777,7 +781,7 @@ function IntakeDecisions({
         <DialogContent data-testid="intake-decision-dialog">
           <DialogHeader>
             <DialogTitle>
-              {confirm === "analyze" ? ACTION_META.ANALISAR_INDICADA.label : "Descartar a vaga indicada"}
+              {confirm === "analyze" ? ACTION_META.ANALISAR_INDICADA.label : "Descartar a vaga específica"}
             </DialogTitle>
             <DialogDescription>
               {confirm === "analyze"
@@ -829,7 +833,7 @@ function DeleteIntakeButton({ dispatch, onChanged }: { dispatch: Dispatch; onCha
           toast.error(refusalText(result.code))
           return
         }
-        toast.success("Vaga indicada excluída do painel. Nada foi para a planilha.")
+        toast.success("Vaga específica excluída do painel. Nada foi para a planilha.")
         setOpen(false)
         onChanged()
       } catch {
@@ -851,7 +855,7 @@ function DeleteIntakeButton({ dispatch, onChanged }: { dispatch: Dispatch; onCha
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent data-testid="intake-delete-dialog">
           <DialogHeader>
-            <DialogTitle>Excluir a vaga indicada</DialogTitle>
+            <DialogTitle>Excluir a vaga específica</DialogTitle>
             <DialogDescription>
               Ela some do painel, junto com as análises e os complementos dela. Nada vai para a planilha e não dá para
               desfazer pelo painel.
@@ -878,7 +882,7 @@ function DiscardedIntakes({ intakes, onChanged }: { intakes: Dispatch[]; onChang
   return (
     <details className="rounded-xl border border-border p-3 text-sm" data-testid="intake-discarded-list">
       <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
-        Indicações descartadas · {intakes.length}
+        Vagas específicas descartadas · {intakes.length}
       </summary>
       <ul className="mt-2 space-y-2">
         {intakes.map((dispatch) => {
@@ -888,7 +892,7 @@ function DiscardedIntakes({ intakes, onChanged }: { intakes: Dispatch[]; onChang
             <li key={dispatch.id} className="flex items-start gap-2" data-testid="intake-discarded-item">
               <div className="min-w-0 flex-1 space-y-0.5">
                 <p className="line-clamp-2 text-xs whitespace-pre-wrap" title={text ?? undefined}>
-                  {job ? `${job.title}${job.company ? ` · ${job.company}` : ""}` : (text ?? "Vaga indicada")}
+                  {job ? `${job.title}${job.company ? ` · ${job.company}` : ""}` : (text ?? "Vaga específica")}
                 </p>
                 <p className="text-xs text-muted-foreground">{formatTimestamp(dispatch.created_at)}</p>
               </div>
@@ -1017,7 +1021,7 @@ export function DispatchCard({
         {intake && <IntakeDetails progress={progress} analysis={dispatch.action === "ANALISAR_INDICADA"} />}
         {dispatch.refines && (
           <p className="text-xs text-muted-foreground" data-testid="intake-refines">
-            Complementa uma indicação que o Lince não conseguiu localizar.
+            Complementa uma descrição que o Lince não conseguiu localizar.
           </p>
         )}
         {canRefineIntake(dispatch) && <IntakeRefine key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />}
@@ -1088,6 +1092,7 @@ function DispatchButton({
   disabledReason,
   warning,
   primary,
+  verb,
   onStarted,
 }: {
   action: BotAction
@@ -1095,6 +1100,8 @@ function DispatchButton({
   disabledReason: string | null
   warning?: string | null
   primary?: boolean
+  /** Button text when it differs from the action's verb ("Nova cotação"). */
+  verb?: string
   onStarted: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -1118,7 +1125,7 @@ function DispatchButton({
         }}
       >
         <Icon className="h-4 w-4" aria-hidden="true" />
-        {meta.verb}
+        {verb ?? meta.verb}
       </Button>
       {disabledReason && (
         <span className="sr-only" data-testid={`dispatch-disabled-${action}`}>
@@ -1195,7 +1202,7 @@ function DispatchButton({
 }
 
 /**
- * "Indicar vaga": free text for the Lince to find one specific job (Hermes only). The same guards as the
+ * "Buscar vaga específica": free text for the Lince to find one specific job (Hermes only). The same guards as the
  * dispatcher run here only to explain a refusal early; the text becomes data for the Lince, never a command.
  */
 function IntakeButton({ disabledReason, onStarted }: { disabledReason: string | null; onStarted: () => void }) {
@@ -1384,7 +1391,47 @@ function gatewayReason(data: DispatchList | null, platform: string): string | nu
   return "Gateway Hermes parado ou sem inferência. Inicie-o ou troque para Grok."
 }
 
-/** "Buscar vagas" and "Indicar vaga" plus the latest search and intake progress (Hoje and /vagas). */
+/**
+ * "Mostrar"/"Esconder" one card group of "Cotar vagas". Pressed while shown; disabled while the group needs the user,
+ * since it then stays on screen anyway.
+ */
+function CardToggle({
+  label,
+  shown,
+  forced,
+  onToggle,
+  testId,
+}: {
+  label: string
+  shown: boolean
+  forced: boolean
+  onToggle: () => void
+  testId: string
+}) {
+  const Icon = shown ? EyeOff : Eye
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      aria-pressed={shown}
+      className={cn(shown && "bg-muted text-foreground")}
+      disabled={forced}
+      title={forced ? "Precisa de você: fica à mostra até resolver." : undefined}
+      data-testid={testId}
+      data-forced={forced || undefined}
+      onClick={onToggle}
+    >
+      <Icon className="h-4 w-4" aria-hidden="true" />
+      {label}
+    </Button>
+  )
+}
+
+/**
+ * "Cotar vagas" (BUSCAR_VAGAS) and "Buscar vaga específica" (LOCALIZAR_VAGA, then ANALISAR_INDICADA) on /cotar. The
+ * latest cards sit behind "Última cotação" and "Última vaga buscada" (view only, back to hidden on reload); a card
+ * that needs the user (`needsUser()`) shows without them.
+ */
 export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   const { data, error, refresh } = useDispatches({ action: "BUSCAR_VAGAS" })
   const intakes = useDispatches({ action: "LOCALIZAR_VAGA" })
@@ -1396,6 +1443,8 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
     void refreshIntakes()
     void refreshAnalyses()
   }, [refresh, refreshIntakes, refreshAnalyses])
+  const [showSearch, setShowSearch] = useState(false)
+  const [showIntake, setShowIntake] = useState(false)
   const known = useMemo(() => new Set(knownJobIds), [knownJobIds])
   const last = data ? latest(data.dispatches, "BUSCAR_VAGAS") : null
   const intake = intakes.data ? activeIntake(intakes.data.dispatches) : null
@@ -1404,43 +1453,89 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   // "Fechar" hides the intake and its analysis in this browser only; a newer intake shows up as usual.
   const closed = useClosed(intake?.id ?? null)
   const closeIntake = intake && !intake.active && !analysis?.active ? () => writeClosed(intake.id, true) : undefined
+  const searchForced = last !== null && needsUser(last, withRegistration(last.progress, known))
+  const intakeForced = needsUser(intake) || needsUser(analysis)
+  const searchShown = last !== null && (searchForced || showSearch)
+  const hasIntakes = intake !== null || discarded.length > 0
+  const intakeShown = hasIntakes && (intakeForced || showIntake)
   // Search and intake share the Lince's Bot Chat: one at a time (the dispatcher refuses with PROFILE_BUSY). The
   // intake analysis runs on the host and does not hold the Lince, but it holds the ChatGPT the search also uses.
   const linceBusy = [last, intake].some((dispatch) => dispatch?.active)
     ? "O Lince já está com um disparo em andamento."
     : null
   const chatgptBusy = (analyses.data?.dispatches ?? []).some((dispatch) => dispatch.active)
-    ? "A análise da vaga indicada está usando o ChatGPT."
+    ? "A análise da vaga específica está usando o ChatGPT."
     : null
-  const reason = (last?.active ? "Já existe uma busca em andamento." : null) ?? linceBusy ?? chatgptBusy
+  const reason = (last?.active ? "Já existe uma cotação em andamento." : null) ?? linceBusy ?? chatgptBusy
   const intakeReason = linceBusy ?? gatewayReason(data, "hermes")
   const shownError = error ?? intakes.error ?? analyses.error
   return (
-    <section className="space-y-3" data-testid="search-ops" aria-label="Busca de vagas pelos bots">
+    <section className="space-y-4" data-testid="search-ops" aria-label="Cotação de vagas pelos bots">
       <div className="flex flex-wrap items-center gap-2">
-        <DispatchButton action="BUSCAR_VAGAS" disabledReason={reason} primary onStarted={refreshAll} />
-        <IntakeButton disabledReason={intakeReason} onStarted={refreshAll} />
+        <DispatchButton
+          action="BUSCAR_VAGAS"
+          verb={searchVerb(last)}
+          disabledReason={reason}
+          primary
+          onStarted={() => {
+            setShowSearch(true)
+            refreshAll()
+          }}
+        />
+        <IntakeButton
+          disabledReason={intakeReason}
+          onStarted={() => {
+            setShowIntake(true)
+            refreshAll()
+          }}
+        />
+        {last && (
+          <CardToggle
+            label="Última cotação"
+            shown={searchShown}
+            forced={searchForced}
+            onToggle={() => setShowSearch((on) => !on)}
+            testId="toggle-search"
+          />
+        )}
+        {hasIntakes && (
+          <CardToggle
+            label="Última vaga buscada"
+            shown={intakeShown}
+            forced={intakeForced}
+            onToggle={() => {
+              // Showing the group also reopens an intake closed with "Fechar".
+              if (!intakeShown && intake && closed) writeClosed(intake.id, false)
+              setShowIntake((on) => !on)
+            }}
+            testId="toggle-intake"
+          />
+        )}
         {shownError && <span className="text-xs text-muted-foreground">{refusalText(shownError)}</span>}
       </div>
-      {last && <DispatchCard dispatch={last} knownJobIds={known} onChanged={refreshAll} />}
-      {intake && !closed && (
-        <div className="grid gap-3 lg:grid-cols-2" data-testid="intake-ops">
-          <DispatchCard dispatch={intake} analysis={analysis} onChanged={refreshAll} onClose={closeIntake} />
-          {analysis && <DispatchCard dispatch={analysis} onChanged={refreshAll} onClose={closeIntake} />}
+      {searchShown && last && <DispatchCard dispatch={last} knownJobIds={known} onChanged={refreshAll} />}
+      {intakeShown && (
+        <div className="space-y-3" data-testid="intake-group">
+          {intake && !closed && (
+            <div className="grid gap-3 lg:grid-cols-2" data-testid="intake-ops">
+              <DispatchCard dispatch={intake} analysis={analysis} onChanged={refreshAll} onClose={closeIntake} />
+              {analysis && <DispatchCard dispatch={analysis} onChanged={refreshAll} onClose={closeIntake} />}
+            </div>
+          )}
+          {intake && closed && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-xs text-muted-foreground"
+              data-testid="intake-reopen"
+              onClick={() => writeClosed(intake.id, false)}
+            >
+              Mostrar a vaga específica
+            </Button>
+          )}
+          <DiscardedIntakes intakes={discarded} onChanged={refreshAll} />
         </div>
       )}
-      {intake && closed && (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-xs text-muted-foreground"
-          data-testid="intake-reopen"
-          onClick={() => writeClosed(intake.id, false)}
-        >
-          Mostrar a vaga indicada
-        </Button>
-      )}
-      <DiscardedIntakes intakes={discarded} onChanged={refreshAll} />
     </section>
   )
 }

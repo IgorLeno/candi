@@ -2,12 +2,13 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BarChart3, Crosshair, Flame, LayoutGrid, LogOut, Settings2 } from "lucide-react"
+import { BarChart3, Crosshair, Flame, LayoutGrid, LogOut, Radar, Settings2 } from "lucide-react"
 import { signOutAction } from "@/app/actions/auth"
 import { cn } from "@/lib/utils"
 
 const menuItems = [
   { id: "hoje", href: "/", label: "Hoje", icon: Flame },
+  { id: "cotar", href: "/cotar", label: "Cotar vagas", icon: Radar },
   { id: "vagas", href: "/vagas", label: "Vagas", icon: LayoutGrid },
   { id: "analise", href: "/analise", label: "Análise", icon: BarChart3 },
   { id: "configuracoes", href: "/configuracoes", label: "Configurações", icon: Settings2 },

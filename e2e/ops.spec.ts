@@ -15,10 +15,45 @@ test.describe("Central de operações (bots)", () => {
     })
   })
 
-  test("buscar vagas: confirmação, progresso por etapa e registro na planilha pelo job-search", async ({ page }) => {
+  test("cotar vagas: página própria, fora de Hoje e Vagas; card que precisa de você fica à mostra", async ({
+    page,
+  }) => {
+    await page.goto("/")
+    await expect(page.getByTestId("today-hero")).toBeVisible()
+    await expect(page.getByTestId("search-ops")).toHaveCount(0)
+    await page.getByTestId("sidebar-vagas").click()
+    await expect(page.getByTestId("search-input")).toBeVisible()
+    await expect(page.getByTestId("search-ops")).toHaveCount(0)
+
+    await page.getByTestId("sidebar-cotar").click()
+    await expect(page).toHaveURL("/cotar")
+    await expect(page.getByTestId("sidebar-cotar")).toHaveAttribute("aria-current", "page")
+    await expect(page.getByRole("heading", { name: "Cotar vagas", level: 1 })).toBeVisible()
+    const ops = page.getByTestId("search-ops")
+    await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toHaveText("Cotar vagas")
+    await expect(ops.getByTestId("intake-button")).toHaveText("Buscar vaga específica")
+    // Nothing dispatched yet: no card and no toggle.
+    await expect(ops.getByTestId("toggle-search")).toHaveCount(0)
+    await expect(ops.getByTestId("toggle-intake")).toHaveCount(0)
+    await expect(ops.getByTestId("dispatch-BUSCAR_VAGAS")).toHaveCount(0)
+
+    await ops.getByTestId("dispatch-button-BUSCAR_VAGAS").click()
+    await expect(page.getByTestId("dispatch-dialog")).toContainText("Cotação de vagas")
+    await page.getByTestId("dispatch-confirm").click()
+    // Running: the card shows without the toggle, which stays pressed and disabled, also after a reload.
+    await expect(ops.getByTestId("dispatch-BUSCAR_VAGAS")).toBeVisible()
+    await page.reload()
+    await expect(ops.getByTestId("dispatch-BUSCAR_VAGAS")).toBeVisible()
+    const toggle = ops.getByTestId("toggle-search")
+    await expect(toggle).toBeDisabled()
+    await expect(toggle).toHaveAttribute("aria-pressed", "true")
+    await expect(toggle).toHaveAttribute("data-forced", "true")
+  })
+
+  test("cotar vagas: confirmação, progresso por etapa e registro na planilha pelo job-search", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)
-    await page.goto("/")
+    await page.goto("/cotar")
     const ops = page.getByTestId("search-ops")
     await expect(ops.getByTestId("dispatch-BUSCAR_VAGAS")).toHaveCount(0)
 
@@ -64,17 +99,23 @@ test.describe("Central de operações (bots)", () => {
     // The panel reads the Sheet again once the persistence it watched finished.
     await expect(page.getByText("planilha relida")).toBeVisible()
 
-    await page.goto("/vagas")
-    await expect(page.getByTestId("search-ops").getByTestId("dispatch-BUSCAR_VAGAS")).toHaveAttribute(
-      "data-status",
-      "CONCLUIDO"
-    )
+    // Registered and done: after a reload the card waits behind "Última cotação".
+    await page.reload()
+    await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toHaveText("Nova cotação")
+    await expect(ops.getByTestId("dispatch-BUSCAR_VAGAS")).toHaveCount(0)
+    const toggle = ops.getByTestId("toggle-search")
+    await expect(toggle).toHaveAttribute("aria-pressed", "false")
+    await toggle.click()
+    await expect(toggle).toHaveAttribute("aria-pressed", "true")
+    await expect(ops.getByTestId("dispatch-BUSCAR_VAGAS")).toHaveAttribute("data-status", "CONCLUIDO")
+    await toggle.click()
+    await expect(ops.getByTestId("dispatch-BUSCAR_VAGAS")).toHaveCount(0)
   })
 
-  test("vaga indicada: localizar, mandar para o ChatGPT e registrar na planilha", async ({ page }) => {
+  test("vaga específica: localizar, mandar para o ChatGPT e registrar na planilha", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)
-    await page.goto("/")
+    await page.goto("/cotar")
     const ops = page.getByTestId("search-ops")
     await expect(ops.getByTestId("dispatch-LOCALIZAR_VAGA")).toHaveCount(0)
 
@@ -144,18 +185,18 @@ test.describe("Central de operações (bots)", () => {
     // Recorded in the Sheet: no discard any more.
     await expect(analysis.getByTestId("intake-discard")).toHaveCount(0)
 
-    await page.goto("/vagas")
-    await expect(page.getByTestId("search-ops").getByTestId("intake-button")).toBeEnabled()
-    await expect(page.getByTestId("search-ops").getByTestId("dispatch-ANALISAR_INDICADA")).toHaveAttribute(
-      "data-status",
-      "CONCLUIDO"
-    )
+    // Registered: after a reload the pair waits behind "Última vaga buscada".
+    await page.reload()
+    await expect(ops.getByTestId("intake-button")).toBeEnabled()
+    await expect(ops.getByTestId("dispatch-ANALISAR_INDICADA")).toHaveCount(0)
+    await ops.getByTestId("toggle-intake").click()
+    await expect(ops.getByTestId("dispatch-ANALISAR_INDICADA")).toHaveAttribute("data-status", "CONCLUIDO")
   })
 
-  test("vaga indicada: recolher, fechar e reabrir os cards, lembrado após recarregar", async ({ page }) => {
+  test("vaga específica: recolher, fechar e reabrir os cards, lembrado após recarregar", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)
-    await page.goto("/")
+    await page.goto("/cotar")
     const ops = page.getByTestId("search-ops")
     await ops.getByTestId("intake-button").click()
     await page.getByTestId("intake-input").fill("Estágio em processos químicos na Empresa Indicada, Camaçari.")
@@ -175,7 +216,7 @@ test.describe("Central de operações (bots)", () => {
       await expect(toggle).toHaveAttribute("aria-controls", (await details.getAttribute("id")) ?? "missing")
       await expect(details).toBeVisible()
     }
-    await expect(intake.getByTestId("dispatch-collapse")).toHaveAccessibleName("Detalhes: Vaga indicada")
+    await expect(intake.getByTestId("dispatch-collapse")).toHaveAccessibleName("Detalhes: Vaga específica")
 
     // Collapsing hides the details only: title, status and progress stay; nothing goes to the dispatcher.
     await intake.getByTestId("dispatch-collapse").click()
@@ -209,7 +250,7 @@ test.describe("Central de operações (bots)", () => {
     await expect(analysis.getByTestId("dispatch-collapse")).toHaveAttribute("aria-expanded", "true")
 
     // "Fechar" takes both cards off the panel (view only); it stays closed after a reload and can come back.
-    await expect(analysis.getByTestId("dispatch-close")).toHaveAccessibleName("Fechar: Análise da vaga indicada")
+    await expect(analysis.getByTestId("dispatch-close")).toHaveAccessibleName("Fechar: Análise da vaga específica")
     await analysis.getByTestId("dispatch-close").click()
     await expect(intake).toHaveCount(0)
     await expect(analysis).toHaveCount(0)
@@ -225,12 +266,12 @@ test.describe("Central de operações (bots)", () => {
     await expect(ops.getByTestId("intake-reopen")).toBeVisible()
   })
 
-  test('vaga indicada: não localizada oferece candidatas ou "Outro"; descartar e excluir só no painel', async ({
+  test('vaga específica: não localizada oferece candidatas ou "Outro"; descartar e excluir só no painel', async ({
     page,
   }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(210_000)
-    await page.goto("/vagas")
+    await page.goto("/cotar")
     const ops = page.getByTestId("search-ops")
     await ops.getByTestId("intake-button").click()
     await page.getByTestId("intake-input").fill("Estágio na nao-existe S.A., cargo que ninguém anunciou")
@@ -274,7 +315,7 @@ test.describe("Central de operações (bots)", () => {
     // Discarded: out of the active area (the complemented original does not come back), into the collapsed list.
     await expect(ops.getByTestId("dispatch-LOCALIZAR_VAGA")).toHaveCount(0)
     const shelf = ops.getByTestId("intake-discarded-list")
-    await expect(shelf).toContainText("Indicações descartadas · 1")
+    await expect(shelf).toContainText("Vagas específicas descartadas · 1")
 
     // A located job may be discarded before the ChatGPT step: nothing goes to the Sheet.
     await ops.getByTestId("intake-button").click()
@@ -291,7 +332,7 @@ test.describe("Central de operações (bots)", () => {
     await page.getByTestId("intake-decision-confirm").click()
     await expect(page.getByText("Nada foi para a planilha").first()).toBeVisible()
     await expect(ops.getByTestId("dispatch-LOCALIZAR_VAGA")).toHaveCount(0)
-    await expect(shelf).toContainText("Indicações descartadas · 2")
+    await expect(shelf).toContainText("Vagas específicas descartadas · 2")
     await shelf.locator("summary").click()
     const items = shelf.getByTestId("intake-discarded-item")
     await expect(items.first()).toContainText("Estágio em Processos Químicos · Empresa Indicada")
@@ -303,7 +344,7 @@ test.describe("Central de operações (bots)", () => {
     await expect(items).toHaveCount(2)
     await items.nth(1).getByTestId("intake-delete").click()
     await page.getByTestId("intake-delete-confirm").click()
-    await expect(shelf).toContainText("Indicações descartadas · 1")
+    await expect(shelf).toContainText("Vagas específicas descartadas · 1")
     await expect(ops.getByTestId("dispatch-LOCALIZAR_VAGA")).toHaveCount(0)
 
     // "Excluir" straight from the active card skips the discarded list.
@@ -315,7 +356,7 @@ test.describe("Central de operações (bots)", () => {
     await again.getByTestId("intake-delete").click()
     await page.getByTestId("intake-delete-confirm").click()
     await expect(ops.getByTestId("dispatch-LOCALIZAR_VAGA")).toHaveCount(0)
-    await expect(shelf).toContainText("Indicações descartadas · 1")
+    await expect(shelf).toContainText("Vagas específicas descartadas · 1")
   })
 
   test("vaga: gerar currículo antes, depois preencher candidatura", async ({ page }) => {

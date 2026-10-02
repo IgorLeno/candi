@@ -10,9 +10,11 @@ import {
   deleteJobConfirmed,
   deleteJobRefusalText,
   latest,
+  needsUser,
   persistSummary,
   refusalText,
   resumeCvRefusalText,
+  searchVerb,
   statusBadge,
   withRegistration,
 } from "@/lib/ops/present"
@@ -233,6 +235,42 @@ describe("canRegisterWriteset", () => {
     expect(persistSummary({ jobs: { INSERTED: 2, UPDATED: 1, UNCHANGED: 0 }, coverage: null, dossiers: null })).toBe(
       "2 novas, 1 atualizadas, 0 sem mudança"
     )
+  })
+})
+
+describe("Cotar vagas: searchVerb and needsUser", () => {
+  const search = dispatchSchema.parse({
+    id: "d-20261002T120000Z-abcdef",
+    action: "BUSCAR_VAGAS",
+    platform: "hermes",
+    mode: "bot",
+    job_id: null,
+    status: "CONCLUIDO",
+    code: null,
+    marker: null,
+    acknowledged: false,
+    created_at: "2026-10-02T12:00:00Z",
+    finished_at: "2026-10-02T12:30:00Z",
+    bot: "Lince",
+    active: false,
+    progress: { ...searchProgress, writeset_path: null, writeset_job_ids: [] },
+  })
+
+  it('reads "Cotar vagas" before the first search and "Nova cotação" after', () => {
+    expect(searchVerb(null)).toBe("Cotar vagas")
+    expect(searchVerb(search)).toBe("Nova cotação")
+  })
+
+  it("keeps a card on screen while it runs, waits for the user or holds an unregistered writeset", () => {
+    expect(needsUser(null)).toBe(false)
+    expect(needsUser(search)).toBe(false)
+    expect(needsUser({ ...search, status: "RODANDO", active: true })).toBe(true)
+    expect(needsUser({ ...search, status: "PRECISA_HUMANO" })).toBe(true)
+    expect(needsUser({ ...search, progress: searchProgress })).toBe(true)
+    // Already in the Sheet snapshot: the toggle hides it again.
+    expect(needsUser(search, withRegistration(searchProgress, new Set(["a", "b"])))).toBe(false)
+    expect(needsUser({ ...search, status: "FALHOU" })).toBe(false)
+    expect(needsUser({ ...search, status: "PRECISA_HUMANO", discarded: true })).toBe(false)
   })
 })
 
