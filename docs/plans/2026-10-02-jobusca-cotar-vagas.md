@@ -36,6 +36,8 @@ compartilhados.
 - [x] gates: pnpm test, tsc, lint, format:check, e2e completo na cópia 3108; screenshots Hoje, Cotar (fechado e
       aberto), Vagas
 - [ ] push só com OK do usuário
+- [x] marca trocada para **Caçavaga** no mesmo dia (escolha do usuário entre propostas de naming; subtítulo
+      "central de vagas" mantido; chaves `estagios:`, pacote e pastas não mudam) — commit `feat(brand)`
 
 ## Resultado
 
