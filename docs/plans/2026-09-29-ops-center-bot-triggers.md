@@ -172,7 +172,8 @@ Hoje (`2026-09-25-job-search-visual-layer.md`): painel **somente leitura**. Prop
   - texto livre para bots, aprovar candidatura, responder `ok <código>`, enviar candidatura (exceção estreita
     de 2026-09-30: a "vaga indicada", `2026-09-30-vaga-indicada.md` — texto por stdin, guardado no painel e no
     dispatcher, gravado pelo job-search como dado não confiável num arquivo 0600; o comando continua fixo e só
-    aponta para o arquivo; só Hermes);
+    aponta para o arquivo; só Hermes; e, desde 2026-10-02, o "Outro" do currículo travado,
+    `2026-10-02-curriculo-travado.md` — mesmas guardas e transporte, vai ao ChatGPT como orientação do usuário);
   - recalcular regra do job-search: bloqueios no painel são só UX; a autoridade é o dispatcher e o
     próprio bot (`application.py claim`/dedup, gate).
 - O job-search continua autoridade: templates dos comandos, pré-condições e a lista de ações permitidas
