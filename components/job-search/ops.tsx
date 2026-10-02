@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   Bot,
   CheckCircle2,
+  ChevronDown,
   Circle,
   Copy,
   Crosshair,
@@ -16,6 +17,7 @@ import {
   Radar,
   ScanSearch,
   Trash2,
+  X,
   XCircle,
   type LucideIcon,
 } from "lucide-react"
@@ -34,6 +36,7 @@ import {
   startIntake,
 } from "@/app/actions/ops"
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import {
   Dialog,
   DialogContent,
@@ -49,6 +52,7 @@ import { ToneBadge } from "@/components/job-search/tone-badge"
 import { formatTimestamp, safeHttpUrl } from "@/lib/job-search/present"
 import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
 import { usePlatform, writePlatform } from "@/lib/ops/platform-pref"
+import { useClosed, useCollapsed, writeClosed, writeCollapsed } from "@/lib/ops/collapse-pref"
 import {
   ACTION_META,
   PLATFORM_LABEL,
@@ -771,12 +775,15 @@ export function DispatchCard({
   knownJobIds,
   analysis = null,
   onChanged,
+  onClose,
 }: {
   dispatch: Dispatch
   knownJobIds?: ReadonlySet<string>
   /** LOCALIZAR_VAGA: the latest analysis of this intake, if any. */
   analysis?: Dispatch | null
   onChanged: () => void
+  /** "Fechar": takes the card off the panel (view only, the dispatcher is not told). */
+  onClose?: () => void
 }) {
   const intake = dispatch.action === "LOCALIZAR_VAGA" || dispatch.action === "ANALISAR_INDICADA"
   const [pending, startTransition] = useTransition()
@@ -786,8 +793,12 @@ export function DispatchCard({
       : dispatch.progress
   const status = statusBadge(dispatch.status, progress)
   const Icon = ACTION_ICON[dispatch.action]
+  // The "vaga indicada" cards stay on screen until the next intake, so they can be collapsed (view only).
+  const collapsed = useCollapsed(intake ? dispatch.id : null)
   return (
-    <div
+    <Collapsible
+      open={!collapsed}
+      onOpenChange={(open) => writeCollapsed(dispatch.id, !open)}
       className="space-y-3 rounded-2xl border border-border bg-card/60 p-4"
       data-testid={`dispatch-${dispatch.action}`}
       data-status={dispatch.status}
@@ -811,6 +822,36 @@ export function DispatchCard({
             Descartada
           </ToneBadge>
         )}
+        {intake && (
+          <CollapsibleTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              aria-label={`Detalhes: ${ACTION_META[dispatch.action].label}`}
+              title={collapsed ? "Mostrar detalhes" : "Recolher detalhes"}
+              data-testid="dispatch-collapse"
+            >
+              <ChevronDown
+                className={cn("h-4 w-4 transition-transform", !collapsed && "rotate-180")}
+                aria-hidden="true"
+              />
+            </Button>
+          </CollapsibleTrigger>
+        )}
+        {onClose && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            aria-label={`Fechar: ${ACTION_META[dispatch.action].label}`}
+            title="Fechar"
+            data-testid="dispatch-close"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <Progress
@@ -821,77 +862,80 @@ export function DispatchCard({
         />
         <span className="w-10 text-right font-display text-sm font-bold tabular-nums">{progress.percent}%</span>
       </div>
-      <ol className="space-y-1.5">
-        {progress.stages.map((stage) => (
-          <li
-            key={stage.key}
-            className="flex items-start gap-2 text-sm"
-            data-stage={stage.key}
-            data-state={stage.state}
+      {/* forceMount keeps refine text and open dialogs across collapse, so hiding it while closed is up to us. */}
+      <CollapsibleContent forceMount className="space-y-3 data-[state=closed]:hidden" data-testid="dispatch-details">
+        <ol className="space-y-1.5">
+          {progress.stages.map((stage) => (
+            <li
+              key={stage.key}
+              className="flex items-start gap-2 text-sm"
+              data-stage={stage.key}
+              data-state={stage.state}
+            >
+              <StageIcon stage={stage} />
+              <span className={cn(stage.state === "pending" && "text-muted-foreground")}>
+                {stage.label}
+                <span className="sr-only"> ({STAGE_STATE_LABEL[stage.state]})</span>
+                {stage.note && <span className="ml-1.5 text-xs text-muted-foreground">— {stage.note}</span>}
+              </span>
+            </li>
+          ))}
+        </ol>
+        {intake && <IntakeDetails progress={progress} analysis={dispatch.action === "ANALISAR_INDICADA"} />}
+        {dispatch.refines && (
+          <p className="text-xs text-muted-foreground" data-testid="intake-refines">
+            Complementa uma indicação que o Lince não conseguiu localizar.
+          </p>
+        )}
+        {canRefineIntake(dispatch) && <IntakeRefine key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />}
+        {dispatch.action === "ANALISAR_VAGA" && <DiagnosisList progress={progress} testId="analysis-diagnosis" />}
+        {(dispatch.action === "BUSCAR_VAGAS" ||
+          dispatch.action === "ANALISAR_VAGA" ||
+          (dispatch.action === "ANALISAR_INDICADA" && !dispatch.discarded)) && (
+          <WritesetRegistration dispatch={dispatch} progress={progress} onChanged={onChanged} />
+        )}
+        {intake && <IntakeDecisions dispatch={dispatch} analysis={analysis} onChanged={onChanged} />}
+        {(dispatch.code || dispatch.marker) && dispatch.status !== "CONCLUIDO" && (
+          <p className="text-xs text-muted-foreground">
+            Código: <span className="font-mono">{dispatch.code ?? dispatch.marker}</span>
+            {dispatch.status === "PRECISA_HUMANO" &&
+              (dispatch.mode === "host"
+                ? dispatch.code === "PASTE_PROMPT_IN_CLAUDE"
+                  ? " — cole o prompt abaixo no Claude in Chrome."
+                  : dispatch.code === "POSTING_UNAVAILABLE"
+                    ? " — o job-search não achou o texto desta vaga (sem publicação salva, sem dossier anterior e fora do LinkedIn)."
+                    : " — ação sua necessária (veja o código)."
+                : canRefineIntake(dispatch)
+                  ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
+                  : " — veja o Bot Chat no Hermes Desktop.")}
+            {status.recovered && " — a análise foi refeita fora deste disparo e o writeset foi gravado na planilha."}
+            {dispatch.status === "INCERTO" &&
+              (dispatch.mode === "host"
+                ? " — o processo do job-search caiu; confira o runtime antes de liberar um novo disparo."
+                : " — o acompanhamento caiu; confira o Bot Chat no Hermes Desktop antes de liberar um novo disparo.")}
+          </p>
+        )}
+        {dispatch.command && <CommandBox command={dispatch.command} />}
+        {progress.claude_prompt && <ClaudePromptBox prompt={progress.claude_prompt} url={progress.claude_url} />}
+        {ACKABLE.has(dispatch.status) && !dispatch.acknowledged && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={pending}
+            data-testid="dispatch-ack"
+            onClick={() =>
+              startTransition(async () => {
+                const result = await ackDispatch(dispatch.id)
+                if (result.ok) onChanged()
+                else toast.error(refusalText(result.code))
+              })
+            }
           >
-            <StageIcon stage={stage} />
-            <span className={cn(stage.state === "pending" && "text-muted-foreground")}>
-              {stage.label}
-              <span className="sr-only"> ({STAGE_STATE_LABEL[stage.state]})</span>
-              {stage.note && <span className="ml-1.5 text-xs text-muted-foreground">— {stage.note}</span>}
-            </span>
-          </li>
-        ))}
-      </ol>
-      {intake && <IntakeDetails progress={progress} analysis={dispatch.action === "ANALISAR_INDICADA"} />}
-      {dispatch.refines && (
-        <p className="text-xs text-muted-foreground" data-testid="intake-refines">
-          Complementa uma indicação que o Lince não conseguiu localizar.
-        </p>
-      )}
-      {canRefineIntake(dispatch) && <IntakeRefine key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />}
-      {dispatch.action === "ANALISAR_VAGA" && <DiagnosisList progress={progress} testId="analysis-diagnosis" />}
-      {(dispatch.action === "BUSCAR_VAGAS" ||
-        dispatch.action === "ANALISAR_VAGA" ||
-        (dispatch.action === "ANALISAR_INDICADA" && !dispatch.discarded)) && (
-        <WritesetRegistration dispatch={dispatch} progress={progress} onChanged={onChanged} />
-      )}
-      {intake && <IntakeDecisions dispatch={dispatch} analysis={analysis} onChanged={onChanged} />}
-      {(dispatch.code || dispatch.marker) && dispatch.status !== "CONCLUIDO" && (
-        <p className="text-xs text-muted-foreground">
-          Código: <span className="font-mono">{dispatch.code ?? dispatch.marker}</span>
-          {dispatch.status === "PRECISA_HUMANO" &&
-            (dispatch.mode === "host"
-              ? dispatch.code === "PASTE_PROMPT_IN_CLAUDE"
-                ? " — cole o prompt abaixo no Claude in Chrome."
-                : dispatch.code === "POSTING_UNAVAILABLE"
-                  ? " — o job-search não achou o texto desta vaga (sem publicação salva, sem dossier anterior e fora do LinkedIn)."
-                  : " — ação sua necessária (veja o código)."
-              : canRefineIntake(dispatch)
-                ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
-                : " — veja o Bot Chat no Hermes Desktop.")}
-          {status.recovered && " — a análise foi refeita fora deste disparo e o writeset foi gravado na planilha."}
-          {dispatch.status === "INCERTO" &&
-            (dispatch.mode === "host"
-              ? " — o processo do job-search caiu; confira o runtime antes de liberar um novo disparo."
-              : " — o acompanhamento caiu; confira o Bot Chat no Hermes Desktop antes de liberar um novo disparo.")}
-        </p>
-      )}
-      {dispatch.command && <CommandBox command={dispatch.command} />}
-      {progress.claude_prompt && <ClaudePromptBox prompt={progress.claude_prompt} url={progress.claude_url} />}
-      {ACKABLE.has(dispatch.status) && !dispatch.acknowledged && (
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={pending}
-          data-testid="dispatch-ack"
-          onClick={() =>
-            startTransition(async () => {
-              const result = await ackDispatch(dispatch.id)
-              if (result.ok) onChanged()
-              else toast.error(refusalText(result.code))
-            })
-          }
-        >
-          {dispatch.status === "INCERTO" ? "Conferi no Desktop, liberar" : "Dispensar"}
-        </Button>
-      )}
-    </div>
+            {dispatch.status === "INCERTO" ? "Conferi no Desktop, liberar" : "Dispensar"}
+          </Button>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -1214,6 +1258,9 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   const intake = intakes.data ? activeIntake(intakes.data.dispatches) : null
   const discarded = intakes.data ? discardedIntakes(intakes.data.dispatches) : []
   const analysis = intake && analyses.data ? analysisOf(analyses.data.dispatches, intake.id) : null
+  // "Fechar" hides the intake and its analysis in this browser only; a newer intake shows up as usual.
+  const closed = useClosed(intake?.id ?? null)
+  const closeIntake = intake && !intake.active && !analysis?.active ? () => writeClosed(intake.id, true) : undefined
   // Search and intake share the Lince's Bot Chat: one at a time (the dispatcher refuses with PROFILE_BUSY). The
   // intake analysis runs on the host and does not hold the Lince, but it holds the ChatGPT the search also uses.
   const linceBusy = [last, intake].some((dispatch) => dispatch?.active)
@@ -1233,11 +1280,22 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
         {shownError && <span className="text-xs text-muted-foreground">{refusalText(shownError)}</span>}
       </div>
       {last && <DispatchCard dispatch={last} knownJobIds={known} onChanged={refreshAll} />}
-      {intake && (
+      {intake && !closed && (
         <div className="grid gap-3 lg:grid-cols-2" data-testid="intake-ops">
-          <DispatchCard dispatch={intake} analysis={analysis} onChanged={refreshAll} />
-          {analysis && <DispatchCard dispatch={analysis} onChanged={refreshAll} />}
+          <DispatchCard dispatch={intake} analysis={analysis} onChanged={refreshAll} onClose={closeIntake} />
+          {analysis && <DispatchCard dispatch={analysis} onChanged={refreshAll} onClose={closeIntake} />}
         </div>
+      )}
+      {intake && closed && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-xs text-muted-foreground"
+          data-testid="intake-reopen"
+          onClick={() => writeClosed(intake.id, false)}
+        >
+          Mostrar a vaga indicada
+        </Button>
       )}
       <DiscardedIntakes intakes={discarded} onChanged={refreshAll} />
     </section>

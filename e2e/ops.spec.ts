@@ -152,6 +152,79 @@ test.describe("Central de operações (bots)", () => {
     )
   })
 
+  test("vaga indicada: recolher, fechar e reabrir os cards, lembrado após recarregar", async ({ page }) => {
+    // The fake advances one stage per poll (5 s).
+    test.setTimeout(90_000)
+    await page.goto("/")
+    const ops = page.getByTestId("search-ops")
+    await ops.getByTestId("intake-button").click()
+    await page.getByTestId("intake-input").fill("Estágio em processos químicos na Empresa Indicada, Camaçari.")
+    await page.getByTestId("intake-confirm").click()
+    const intake = ops.getByTestId("dispatch-LOCALIZAR_VAGA")
+    await expect(intake).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    await intake.getByTestId("intake-analyze").click()
+    await page.getByTestId("intake-decision-confirm").click()
+    const analysis = ops.getByTestId("dispatch-ANALISAR_INDICADA")
+    await expect(analysis).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+
+    // Cards start open; the toggle names the card and points at its details.
+    for (const card of [intake, analysis]) {
+      const toggle = card.getByTestId("dispatch-collapse")
+      await expect(toggle).toHaveAttribute("aria-expanded", "true")
+      const details = card.getByTestId("dispatch-details")
+      await expect(toggle).toHaveAttribute("aria-controls", (await details.getAttribute("id")) ?? "missing")
+      await expect(details).toBeVisible()
+    }
+    await expect(intake.getByTestId("dispatch-collapse")).toHaveAccessibleName("Detalhes: Vaga indicada")
+
+    // Collapsing hides the details only: title, status and progress stay; nothing goes to the dispatcher.
+    await intake.getByTestId("dispatch-collapse").click()
+    await analysis.getByTestId("dispatch-collapse").click()
+    for (const card of [intake, analysis]) {
+      await expect(card.getByTestId("dispatch-collapse")).toHaveAttribute("aria-expanded", "false")
+      await expect(card.getByTestId("dispatch-details")).toBeHidden()
+      await expect(card.getByTestId("dispatch-status")).toHaveText("Concluído")
+      await expect(card.getByTestId("dispatch-progress")).toBeVisible()
+    }
+    await expect(intake.getByTestId("intake-job")).toBeHidden()
+    await expect(analysis.getByTestId("intake-diagnosis")).toBeHidden()
+
+    // The choice is remembered per card after a reload.
+    await page.reload()
+    await expect(intake.getByTestId("dispatch-collapse")).toHaveAttribute("aria-expanded", "false")
+    await expect(analysis.getByTestId("dispatch-collapse")).toHaveAttribute("aria-expanded", "false")
+    await expect(analysis).toHaveAttribute("data-status", "CONCLUIDO")
+    await expect(analysis.getByTestId("writeset-registration")).toBeHidden()
+
+    // Reopening brings the details (and the pending "Registrar na planilha") back.
+    await analysis.getByTestId("dispatch-collapse").click()
+    await expect(analysis.getByTestId("dispatch-collapse")).toHaveAttribute("aria-expanded", "true")
+    await expect(analysis.getByTestId("intake-diagnosis")).toContainText("SELECIONADA")
+    await expect(analysis.getByTestId("register-writeset")).toBeVisible()
+    await expect(intake.getByTestId("intake-job")).toBeHidden()
+    await intake.getByTestId("dispatch-collapse").click()
+    await expect(intake.getByTestId("intake-job")).toContainText("Estágio em Processos Químicos · Empresa Indicada")
+    await page.reload()
+    await expect(intake.getByTestId("dispatch-collapse")).toHaveAttribute("aria-expanded", "true")
+    await expect(analysis.getByTestId("dispatch-collapse")).toHaveAttribute("aria-expanded", "true")
+
+    // "Fechar" takes both cards off the panel (view only); it stays closed after a reload and can come back.
+    await expect(analysis.getByTestId("dispatch-close")).toHaveAccessibleName("Fechar: Análise da vaga indicada")
+    await analysis.getByTestId("dispatch-close").click()
+    await expect(intake).toHaveCount(0)
+    await expect(analysis).toHaveCount(0)
+    await page.reload()
+    await expect(ops.getByTestId("intake-reopen")).toBeVisible()
+    await expect(intake).toHaveCount(0)
+    await expect(analysis).toHaveCount(0)
+    await ops.getByTestId("intake-reopen").click()
+    await expect(analysis).toHaveAttribute("data-status", "CONCLUIDO")
+    await expect(analysis.getByTestId("register-writeset")).toBeVisible()
+    await intake.getByTestId("dispatch-close").click()
+    await expect(intake).toHaveCount(0)
+    await expect(ops.getByTestId("intake-reopen")).toBeVisible()
+  })
+
   test('vaga indicada: não localizada oferece candidatas ou "Outro"; descartar e excluir só no painel', async ({
     page,
   }) => {
