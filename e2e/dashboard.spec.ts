@@ -12,10 +12,12 @@ test.describe("Painel do job-search", () => {
     await page.getByRole("option", { name: option, exact: true }).click()
   }
 
-  test("hoje: fila, próxima jogada e meta", async ({ page }) => {
+  test("hoje: fila, próxima candidatura e meta", async ({ page }) => {
     await page.goto("/")
     await expect(page.getByTestId("today-hero")).toContainText("4 vagas abertas esperando você")
+    await expect(page.getByTestId("today-hero")).not.toContainText("Comece pela")
     await expect(page.getByTestId("data-source")).toContainText("Fixture local")
+    await expect(page.getByRole("heading", { name: "Próxima candidatura" })).toBeVisible()
     // Queue order: interest, then progress, then most recent analysis.
     await expect(page.getByTestId("next-move")).toHaveAttribute("data-job-id", "fake-1001")
     await expect(page.getByTestId("queue-list").getByTestId("job-row")).toHaveCount(3)

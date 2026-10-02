@@ -120,6 +120,14 @@ export default async function HojePage() {
     hot > 0 && `${hot} com interesse muito alto`,
     review > 0 && plural(review, "pronta pra revisar", "prontas pra revisar"),
   ].filter(Boolean)
+  const heroNote =
+    queue.length > 0
+      ? subline.length > 0
+        ? `${subline.join(", ")}.`
+        : null
+      : data.views.length === 0
+        ? "Assim que o job-search registrar vagas, elas aparecem aqui."
+        : "Tudo que estava aberto e selecionado já saiu da fila. Hora de cotar mais vagas."
 
   return (
     <div className="space-y-8">
@@ -146,13 +154,7 @@ export default async function HojePage() {
                 "Fila zerada. Nenhuma vaga aberta esperando você"
               )}
             </h1>
-            <p className="max-w-2xl text-muted-foreground">
-              {queue.length > 0
-                ? `${subline.length > 0 ? `${subline.join(", ")}. ` : ""}Comece pela próxima jogada.`
-                : data.views.length === 0
-                  ? "Assim que o job-search registrar vagas, elas aparecem aqui."
-                  : "Tudo que estava aberto e selecionado já saiu da fila. Hora de buscar mais vagas."}
-            </p>
+            {heroNote && <p className="max-w-2xl text-muted-foreground">{heroNote}</p>}
             <DataSourceLine data={data} />
           </div>
           <GoalRing sent={sentThisWeek} />
@@ -175,8 +177,8 @@ export default async function HojePage() {
       {uncertain && <UncertainSubmitAlert group={uncertain} />}
 
       {next && (
-        <section aria-labelledby="proxima-jogada">
-          <ShelfTitle id="proxima-jogada">Próxima jogada</ShelfTitle>
+        <section aria-labelledby="proxima-candidatura">
+          <ShelfTitle id="proxima-candidatura">Próxima candidatura</ShelfTitle>
           <NextMoveCard item={next} action={declineAction(next, dispatch)} />
         </section>
       )}
