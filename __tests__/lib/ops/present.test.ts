@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   analyzeJobBlocker,
+  canConfirmOpen,
   canDeclineJob,
   canDeleteJob,
   canRegisterWriteset,
+  confirmOpenRefusalText,
   deleteJobConfirmed,
   deleteJobRefusalText,
   jobDispatchBlocker,
@@ -104,6 +106,43 @@ describe("jobDispatchBlocker", () => {
     expect(jobDispatchBlocker({ ...open, archived: true })).toMatch(/não está aberta/)
     expect(jobDispatchBlocker({ ...open, statusDisponibilidade: cell("ABERTA", true) })).toMatch(/não está aberta/)
     expect(jobDispatchBlocker({ ...open, statusAnalise: cell("DESCARTADA") })).toMatch(/não foi selecionada/)
+  })
+
+  it("points an unconfirmed availability to the user's confirmation", () => {
+    const unconfirmed = { ...open, statusDisponibilidade: cell("NÃO CONFIRMADA") }
+    expect(jobDispatchBlocker(unconfirmed)).toMatch(/Confirmei que está aberta/)
+    expect(jobDispatchBlocker({ ...unconfirmed, archived: true })).toMatch(/não está aberta/)
+    expect(jobDispatchBlocker({ ...unconfirmed, statusCandidatura: cell("ENVIADA") })).toMatch(/enviada/)
+  })
+})
+
+describe("canConfirmOpen", () => {
+  const unconfirmed = { ...open, statusDisponibilidade: cell("NÃO CONFIRMADA") }
+
+  it("allows a NÃO CONFIRMADA job in the main tab not sent, uncertain or withdrawn", () => {
+    expect(canConfirmOpen(unconfirmed)).toBe(true)
+    expect(canConfirmOpen({ ...unconfirmed, statusCandidatura: cell("PRONTA PARA REVISÃO") })).toBe(true)
+  })
+
+  it("refuses open, closed, invalid, archived, sent, uncertain and withdrawn jobs", () => {
+    expect(canConfirmOpen(open)).toBe(false)
+    expect(canConfirmOpen({ ...open, statusDisponibilidade: cell("ENCERRADA") })).toBe(false)
+    expect(canConfirmOpen({ ...open, statusDisponibilidade: cell("NãO CONFIRMADA", true) })).toBe(false)
+    expect(canConfirmOpen({ ...unconfirmed, archived: true })).toBe(false)
+    expect(canConfirmOpen({ ...unconfirmed, uncertainSubmit: true })).toBe(false)
+    for (const status of ["ENVIADA", "ENVIO INCERTO", "RETIRADA"]) {
+      expect(canConfirmOpen({ ...unconfirmed, statusCandidatura: cell(status) })).toBe(false)
+    }
+  })
+})
+
+describe("confirmOpenRefusalText", () => {
+  it("words shared codes for the confirmation and falls back to the common text", () => {
+    expect(confirmOpenRefusalText("JOB_DISPATCH_ACTIVE")).toMatch(/confirmar/)
+    expect(confirmOpenRefusalText("JOB_CLOSED")).toMatch(/ENCERRADA/)
+    expect(confirmOpenRefusalText("OPEN_UNCERTAIN")).toMatch(/confira/)
+    expect(confirmOpenRefusalText("UNAUTHENTICATED")).toBe(refusalText("UNAUTHENTICATED"))
+    expect(confirmOpenRefusalText("NOVO_CODIGO")).toBe(refusalText("NOVO_CODIGO"))
   })
 })
 

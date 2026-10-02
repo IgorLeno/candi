@@ -188,6 +188,39 @@ export function deleteJobConfirmed(typed: string, jobId: string): boolean {
   return typed.trim() === jobId
 }
 
+// "Confirmei que está aberta" (dispatch.py confirm-open). Codes shared with "Descartar" get their own words.
+const CONFIRM_OPEN_REFUSAL_TEXT: Record<string, string> = {
+  JOB_DISPATCH_ACTIVE: "Há um disparo desta vaga em andamento: espere terminar para confirmar.",
+  ALREADY_SENT: "A candidatura já foi enviada: a disponibilidade não muda mais.",
+  SUBMIT_UNCERTAIN: "ENVIO INCERTO: reconcilie a candidatura antes de confirmar a disponibilidade.",
+  ALREADY_DECLINED: "A vaga foi descartada: a disponibilidade não muda mais.",
+  ROW_DUPLICATED: "A vaga aparece duplicada na planilha: corrija antes de confirmar.",
+  ALREADY_OPEN: "A vaga já está ABERTA na planilha e no dossier.",
+  JOB_CLOSED: "A vaga está ENCERRADA: não volta a ABERTA por confirmação.",
+  DOSSIER_NOT_VALID: "A vaga não tem dossier válido no runtime do job-search: rode a análise antes.",
+  WRITESET_NOT_VALID: "O writeset da confirmação não passou no writeset.py check; nada foi gravado.",
+  OPEN_FAILED: "O job-search não conseguiu gravar a confirmação; nada foi gravado.",
+  OPEN_UNCERTAIN: "Sem resposta a tempo do job-search. Sincronize e confira a disponibilidade; repetir é seguro.",
+  DOSSIER_WRITE_FAILED: "A planilha ficou ABERTA, mas o dossier local não foi gravado: confirme de novo para terminar.",
+}
+
+export function confirmOpenRefusalText(code: string): string {
+  return CONFIRM_OPEN_REFUSAL_TEXT[code] ?? refusalText(code)
+}
+
+/**
+ * "Confirmei que está aberta" (UX gating only; job-search re-checks the Sheet and the dossier): a NÃO CONFIRMADA job
+ * in the main tab whose application was not sent, uncertain or withdrawn.
+ */
+export function canConfirmOpen(
+  item: Pick<JobListItem, "statusDisponibilidade" | "statusCandidatura" | "archived" | "uncertainSubmit">
+): boolean {
+  if (item.archived || item.uncertainSubmit || item.statusCandidatura.invalid) return false
+  if (item.statusDisponibilidade.invalid || item.statusDisponibilidade.value !== "NÃO CONFIRMADA") return false
+  const candidatura = item.statusCandidatura.value
+  return candidatura !== "ENVIADA" && candidatura !== "ENVIO INCERTO" && candidatura !== "RETIRADA"
+}
+
 /** Why a per-job button is disabled, from the Sheet row (null = allowed). */
 export function jobDispatchBlocker(
   item: Pick<
@@ -200,6 +233,8 @@ export function jobDispatchBlocker(
     return "ENVIO INCERTO: reconcilie a candidatura antes de qualquer ação."
   if (candidatura === "ENVIADA") return "Candidatura já enviada."
   if (candidatura === "RETIRADA") return "Candidatura retirada."
+  if (!item.archived && !item.statusDisponibilidade.invalid && item.statusDisponibilidade.value === "NÃO CONFIRMADA")
+    return 'A disponibilidade da vaga não está confirmada: confira a página e use "Confirmei que está aberta".'
   if (item.archived || item.statusDisponibilidade.invalid || item.statusDisponibilidade.value !== "ABERTA")
     return "A vaga não está aberta."
   if (item.statusAnalise.invalid || item.statusAnalise.value !== "SELECIONADA") return "A vaga não foi selecionada."

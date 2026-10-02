@@ -7,7 +7,8 @@ can be exercised deterministically. `persist` records a REGISTRAR_WRITESET that 
 `--candidate N` or a stdin complement locates it), ANALISAR_INDICADA --from produces a writeset, `discard`
 marks the chain and `delete` hides the whole lineage from `list`. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
 the fixture, is refused with ALREADY_SENT). `delete-job <job_id>` answers like `application.py delete` without deleting
-anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
+anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). `confirm-open <job_id>` answers ABERTA without
+writing anything (fake-1005 → DOSSIER_NOT_VALID). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
 for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
 with ChatGPT refuses another with CHATGPT_BUSY. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
@@ -361,6 +362,15 @@ def main(argv):
         if job_id == "fake-1006":
             return refuse("ALREADY_SENT")
         print(json.dumps({"ok": True, "decline": {"job_id": job_id, "status_candidatura": "RETIRADA"}}))
+        return 0
+    if cmd == "confirm-open":
+        job_id = argv[1] if len(argv) > 1 else ""
+        if not JOB_ID_RE.match(job_id):
+            return refuse("INVALID_JOB_ID")
+        if job_id == "fake-1005":
+            return refuse("DOSSIER_NOT_VALID")
+        print(json.dumps({"ok": True, "confirm_open": {"job_id": job_id, "status_disponibilidade": "ABERTA",
+                                                       "sheet": "UPDATED"}}))
         return 0
     if cmd == "delete-job":
         job_id = argv[1] if len(argv) > 1 else ""

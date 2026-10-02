@@ -209,6 +209,17 @@ export const declineResultSchema = z.object({
 })
 export type DeclineResult = z.infer<typeof declineResultSchema>["decline"]
 
+/** `dispatch.py confirm-open <job_id>`: job-search wrote ABERTA to the Sheet and the dossier. Fixed fields only. */
+export const confirmOpenResultSchema = z.object({
+  ok: z.literal(true),
+  confirm_open: z.object({
+    job_id: z.string().regex(JOB_ID_RE),
+    status_disponibilidade: z.literal("ABERTA"),
+    sheet: z.enum(["UPDATED", "UNCHANGED"]),
+  }),
+})
+export type ConfirmOpenResult = z.infer<typeof confirmOpenResultSchema>["confirm_open"]
+
 const rowCount = z.number().int().nonnegative()
 
 /**

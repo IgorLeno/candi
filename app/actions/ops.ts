@@ -13,12 +13,14 @@ import {
   DISPATCH_ACTIONS,
   DISPATCH_ID_RE,
   JOB_ID_RE,
+  confirmOpenResultSchema,
   declineResultSchema,
   deleteJobResultSchema,
   deleteResultSchema,
   listResultSchema,
   oneResultSchema,
   startInputSchema,
+  type ConfirmOpenResult,
   type DeclineResult,
   type DeleteJobResult,
   type DeleteResult,
@@ -193,6 +195,21 @@ export async function declineJob(jobId: unknown): Promise<ActionResult<DeclineRe
   // Uncertain or failed writes may still have landed: re-read the Sheet either way.
   updateTag(JOB_SEARCH_CACHE_TAG)
   return result.ok ? { ok: true, value: result.value.decline } : { ok: false, code: result.code }
+}
+
+/**
+ * "Confirmei que está aberta": the user checked the posting page. job-search (`dispatch.py confirm-open`) writes
+ * status_disponibilidade ABERTA to the Sheet (writeset with a USER_CONFIRMED reconciliation) and to the dossier,
+ * with its own credential; the panel sends only the job_id. Only for NÃO CONFIRMADA: job-search reads availability
+ * by itself on LinkedIn only, so a careers-site job would never reach the résumé or the application otherwise.
+ */
+export async function confirmJobOpen(jobId: unknown): Promise<ActionResult<ConfirmOpenResult>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["confirm-open", jobId], confirmOpenResultSchema)
+  // Uncertain or failed writes may still have landed: re-read the Sheet either way.
+  updateTag(JOB_SEARCH_CACHE_TAG)
+  return result.ok ? { ok: true, value: result.value.confirm_open } : { ok: false, code: result.code }
 }
 
 /**

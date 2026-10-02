@@ -11,7 +11,8 @@ import { SectionCard } from "@/components/job-search/overview"
 import { DoneStamp, Flames, JourneyTrail, StateBadge, stateBarClass } from "@/components/job-search/visual"
 import { JobOps } from "@/components/job-search/ops"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
-import { canDeclineJob, canDeleteJob, jobDispatchBlocker } from "@/lib/ops/present"
+import { canConfirmOpen, canDeclineJob, canDeleteJob, jobDispatchBlocker } from "@/lib/ops/present"
+import { ConfirmOpenButton } from "@/components/job-search/confirm-open"
 import { DeclineJobButton } from "@/components/job-search/decline-job"
 import { DeleteJobButton } from "@/components/job-search/delete-job"
 import { cn } from "@/lib/utils"
@@ -142,6 +143,13 @@ function JobDetail({ view }: { view: JobView }) {
             <CellBadge cell={cellDisplay(job.interesse)} testId="badge-interesse" />
             <CellBadge cell={cellDisplay(job.status_analise)} testId="badge-status-analise" />
             <CellBadge cell={cellDisplay(job.status_disponibilidade)} testId="badge-disponibilidade" />
+            {isDispatchEnabled() && canConfirmOpen(item) && (
+              <ConfirmOpenButton
+                jobId={job.job_id}
+                label={[job.empresa || "(sem empresa)", job.cargo || "(sem cargo)"].join(" · ")}
+                postingUrl={postingUrl || null}
+              />
+            )}
             <CellBadge cell={cellDisplay(job.status_candidatura)} testId="badge-candidatura" />
             <AnalysisBadge level={view.analysis} testId="badge-analysis" />
             {job.archived && <ToneBadge tone="muted">Aba Encerradas</ToneBadge>}
