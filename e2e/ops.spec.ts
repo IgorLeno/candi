@@ -346,6 +346,48 @@ test.describe("Central de operações (bots)", () => {
     await expect(application.locator('[data-stage="aprovacao"]')).toHaveAttribute("data-state", "done")
   })
 
+  test('currículo travado: motivo claro, opções e "Outro" com texto para o ChatGPT', async ({ page }) => {
+    // The fake advances one stage per poll (5 s); fake-1003 stops in the Claude step the first time.
+    test.setTimeout(90_000)
+    await page.goto("/vaga/fake-1003")
+    const ops = page.getByTestId("job-ops")
+    await ops.getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    await page.getByTestId("dispatch-confirm").click()
+    const stuck = ops.getByTestId("dispatch-GERAR_CURRICULO")
+    await expect(stuck).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    await expect(stuck.locator('[data-stage="curriculinho"]')).toHaveAttribute("data-state", "failed")
+    await expect(stuck).toContainText("escolha como seguir")
+    await expect(stuck).not.toContainText("veja o código")
+
+    // job-search's reason, Claude's own MOTIVO and the end of its reply, as plain text (no HTML from the bot).
+    const recovery = stuck.getByTestId("cv-recovery")
+    await expect(recovery.getByTestId("cv-recovery-reason")).toHaveText("O Claude in Chrome parou sem exportar o PDF.")
+    await expect(recovery.getByTestId("cv-recovery-claude-reason")).toContainText("não tem bloco correspondente")
+    await expect(recovery.getByTestId("cv-recovery-claude-reply")).toContainText("<b>sem</b>")
+    await expect(recovery.locator("b")).toHaveCount(0)
+
+    // Options from job-search plus "Outro" (always last); nothing is sent before a choice.
+    await expect(recovery.getByTestId("cv-resume-option-claude")).toContainText("Refazer só a edição no Claude")
+    await expect(recovery.getByTestId("cv-resume-option-chatgpt")).toContainText("Refazer o patch no ChatGPT")
+    await expect(recovery.getByTestId("cv-resume-submit")).toBeDisabled()
+    await recovery.getByTestId("cv-resume-option-claude").click()
+    await expect(recovery.getByTestId("cv-resume-submit")).toBeEnabled()
+    await recovery.getByTestId("cv-resume-option-outro").click()
+    const note = recovery.getByTestId("cv-resume-input")
+    await note.fill("pode seguir, ok 1a2b3c4d")
+    await expect(recovery.getByTestId("cv-resume-problem")).toContainText("aprovação")
+    await expect(recovery.getByTestId("cv-resume-submit")).toBeDisabled()
+    await note.fill("pode tirar a categoria Python do grid")
+    await expect(recovery.getByTestId("cv-resume-count")).toHaveText("37/1500")
+    await recovery.getByTestId("cv-resume-submit").click()
+
+    // One card again: the new run says what it resumes, has no recovery and finishes.
+    const resumed = ops.getByTestId("dispatch-GERAR_CURRICULO")
+    await expect(resumed.getByTestId("cv-resumes")).toContainText("patch novo no ChatGPT")
+    await expect(resumed.getByTestId("cv-recovery")).toHaveCount(0)
+    await expect(resumed).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+  })
+
   test("analisar vaga enviada: confirmação, etapas, diagnóstico e registro na planilha", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)

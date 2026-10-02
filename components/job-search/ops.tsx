@@ -32,6 +32,7 @@ import {
   listDispatches,
   refineIntake,
   registerWriteset,
+  resumeCv,
   startDispatch,
   startIntake,
 } from "@/app/actions/ops"
@@ -65,17 +66,20 @@ import {
   canDiscard,
   canRefineIntake,
   canRegisterWriteset,
+  canResumeCv,
   discardedIntakes,
   isActiveStatus,
   latest,
   persistSummary,
   refineRoom,
   refusalText,
+  resumeCvRefusalText,
   withRegistration,
 } from "@/lib/ops/present"
 import {
   PLATFORMS,
   type BotAction,
+  type CvResumeOption,
   type Dispatch,
   type DispatchAction,
   type DispatchList,
@@ -587,6 +591,135 @@ function IntakeRefine({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: 
   )
 }
 
+/**
+ * "Gerar currículo" stuck on the user: job-search's reason, the Claude panel's own reason and reply, the ChatGPT
+ * doubts, then the options job-search offers and, always last, "Outro" with free text (a new ChatGPT patch with the
+ * user's note). All of it is untrusted text from job-search and the bots: rendered as text, never as HTML.
+ */
+function CvResume({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () => void }) {
+  const recovery = dispatch.progress.recovery
+  const [choice, setChoice] = useState<CvResumeOption | "outro" | null>(null)
+  const [text, setText] = useState("")
+  const [pending, startTransition] = useTransition()
+  if (!recovery) return null
+  const other = choice === "outro"
+  const check = normalizeIntake(text)
+  const length = intakeLength(text.trim())
+  const problem = !other || text.trim().length === 0 ? null : check.ok ? null : resumeCvRefusalText(check.code)
+  const ready = choice !== null && (!other || check.ok)
+  const name = `cv-resume-${dispatch.id}`
+
+  const submit = () =>
+    startTransition(async () => {
+      try {
+        const result = await resumeCv(dispatch.id, other ? { note: text } : { option: choice })
+        if (!result.ok) {
+          toast.error(resumeCvRefusalText(result.code))
+          return
+        }
+        toast.success("Currículo retomado: acompanhe o card novo.")
+        onChanged()
+      } catch {
+        toast.error(refusalText("UNAUTHENTICATED"))
+      }
+    })
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-3 text-sm" data-testid="cv-recovery">
+      <p className="text-foreground" data-testid="cv-recovery-reason">
+        {recovery.reason}
+      </p>
+      {recovery.claude_reason && (
+        <p data-testid="cv-recovery-claude-reason">
+          <span className="font-semibold text-foreground">Motivo informado pelo Claude:</span> {recovery.claude_reason}
+        </p>
+      )}
+      {recovery.claude_reply && (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-muted-foreground">Fim da resposta do Claude</p>
+          <p
+            className="rounded-md border-l-2 border-border bg-muted/40 px-2 py-1 text-xs whitespace-pre-wrap text-muted-foreground"
+            data-testid="cv-recovery-claude-reply"
+          >
+            {recovery.claude_reply}
+          </p>
+        </div>
+      )}
+      {recovery.doubts.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-muted-foreground">Dúvidas do ChatGPT</p>
+          <ul className="list-disc space-y-0.5 pl-5 text-xs" data-testid="cv-recovery-doubts">
+            {recovery.doubts.map((doubt, index) => (
+              <li key={index}>{doubt}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <fieldset className="space-y-2" data-testid="cv-resume">
+        <legend className="px-1 text-xs font-semibold text-foreground">Como seguir?</legend>
+        {recovery.options.map((option) => (
+          <label key={option.key} className="flex items-start gap-2" data-testid={`cv-resume-option-${option.key}`}>
+            <input
+              type="radio"
+              name={name}
+              className="mt-1 accent-primary"
+              checked={choice === option.key}
+              onChange={() => setChoice(option.key)}
+            />
+            <span>
+              <span className="font-semibold text-foreground">{option.label}</span>
+              <span className="block text-xs text-muted-foreground">{option.description}</span>
+            </span>
+          </label>
+        ))}
+        {recovery.note_allowed && (
+          <label className="flex items-start gap-2" data-testid="cv-resume-option-outro">
+            <input
+              type="radio"
+              name={name}
+              className="mt-1 accent-primary"
+              checked={other}
+              onChange={() => setChoice("outro")}
+            />
+            <span>
+              <span className="font-semibold text-foreground">Outro</span>
+              <span className="block text-xs text-muted-foreground">
+                Escreva o que acha que deve ser feito: vai para o ChatGPT, que refaz o patch.
+              </span>
+            </span>
+          </label>
+        )}
+        {other && (
+          <div className="space-y-1">
+            <Textarea
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              placeholder="Ex.: pode tirar a categoria Python do grid; a vaga é de BI."
+              rows={3}
+              aria-label="O que deve ser feito"
+              aria-describedby={`${name}-hint`}
+              aria-invalid={problem !== null}
+              data-testid="cv-resume-input"
+            />
+            <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground" id={`${name}-hint`}>
+              <span data-testid="cv-resume-problem" className={cn(problem && "text-st-uncertain-fg")}>
+                {problem ?? "Vai como orientação para o ChatGPT, dentro das regras do currículo."}
+              </span>
+              <span className="tabular-nums" data-testid="cv-resume-count">
+                {length}/{INTAKE_MAX}
+              </span>
+            </div>
+          </div>
+        )}
+      </fieldset>
+      <Button size="sm" disabled={!ready || pending} data-testid="cv-resume-submit" onClick={submit}>
+        {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+        Tentar de novo
+      </Button>
+    </div>
+  )
+}
+
 /** "Mandar para o ChatGPT" (located intake) and "Descartar" (panel only), each behind a confirmation. */
 function IntakeDecisions({
   dispatch,
@@ -888,6 +1021,14 @@ export function DispatchCard({
           </p>
         )}
         {canRefineIntake(dispatch) && <IntakeRefine key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />}
+        {dispatch.resumes && (
+          <p className="text-xs text-muted-foreground" data-testid="cv-resumes">
+            {dispatch.resume_option === "claude"
+              ? "Retoma um currículo travado: só a edição no Claude, com o mesmo patch."
+              : "Retoma um currículo travado: patch novo no ChatGPT."}
+          </p>
+        )}
+        {canResumeCv(dispatch) && <CvResume key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />}
         {dispatch.action === "ANALISAR_VAGA" && <DiagnosisList progress={progress} testId="analysis-diagnosis" />}
         {(dispatch.action === "BUSCAR_VAGAS" ||
           dispatch.action === "ANALISAR_VAGA" ||
@@ -904,7 +1045,9 @@ export function DispatchCard({
                   ? " — cole o prompt abaixo no Claude in Chrome."
                   : dispatch.code === "POSTING_UNAVAILABLE"
                     ? " — o job-search não achou o texto desta vaga (sem publicação salva, sem dossier anterior e fora do LinkedIn)."
-                    : " — ação sua necessária (veja o código)."
+                    : canResumeCv(dispatch)
+                      ? " — veja o motivo acima e escolha como seguir."
+                      : " — ação sua necessária (veja o código)."
                 : canRefineIntake(dispatch)
                   ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
                   : " — veja o Bot Chat no Hermes Desktop.")}

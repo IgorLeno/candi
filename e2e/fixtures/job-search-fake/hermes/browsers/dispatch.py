@@ -10,7 +10,9 @@ the fixture, is refused with ALREADY_SENT). `delete-job <job_id>` answers like `
 anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). `confirm-open <job_id>` answers ABERTA without
 writing anything (fake-1005 → DOSSIER_NOT_VALID). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
 for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
-with ChatGPT refuses another with CHATGPT_BUSY. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
+with ChatGPT refuses another with CHATGPT_BUSY. GERAR_CURRICULO of fake-1003 on Hermes stops in PRECISA_HUMANO with
+`progress.recovery` (Claude stopped without PDF); `resume-cv <id> --option claude|chatgpt [--note-stdin]` starts a new
+run that finishes. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import json
 import os
@@ -31,6 +33,20 @@ WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA", "ANALISAR_VAGA")
 HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA")
 CHATGPT_HOST = ("BUSCAR_VAGAS", "GERAR_CURRICULO", "ANALISAR_VAGA", "ANALISAR_INDICADA")
 NO_POSTING = "fake-1008"
+STUCK_CV = "fake-1003"
+MARKERS_RE = re.compile(r"\b(PATCH_READY|NEEDS_CONTEXT|BLOCKED|WAITING|AWAITING_APPROVAL)\b")
+RECOVERY = {
+    "reason": "O Claude in Chrome parou sem exportar o PDF.",
+    "claude_reason": "o CHANGE 4 (mandatory: yes) não tem bloco correspondente na seção EXPERIÊNCIA.",
+    "claude_reply": "Apliquei os CHANGEs 1 a 9 <b>sem</b> exportar. MOTIVO: o CHANGE 4 (mandatory: yes) não tem bloco "
+                    "correspondente na seção EXPERIÊNCIA. NÃO EXPORTADO",
+    "doubts": [],
+    "options": [{"key": "claude", "label": "Refazer só a edição no Claude",
+                 "description": "Reaproveita o patch do ChatGPT desta tentativa e abre uma tarefa nova no painel."},
+                {"key": "chatgpt", "label": "Refazer o patch no ChatGPT",
+                 "description": "Pede um patch novo ao ChatGPT e depois edita e exporta no Claude."}],
+    "note_allowed": True,
+}
 STAGES = {
     "BUSCAR_VAGAS": [("busca", "Busca ampla e prefilter (Lince)"), ("analise", "Análise (Threadgist)"),
                      ("writeset", "Writeset pronto"), ("registro", "Registro na planilha")],
@@ -174,8 +190,15 @@ def view(rec, recs=()):
                finished_at=None if rec["status"] == "RODANDO" else rec["created_at"],
                bot=BOTS[rec["action"]][1 if rec["platform"] == "grok" else 0],
                active=rec["status"] == "RODANDO", progress=progress)
-    if rec["action"] in ("ANALISAR_VAGA", "ANALISAR_INDICADA"):
+    if rec["action"] in ("ANALISAR_VAGA", "ANALISAR_INDICADA") or rec.get("mode") == "host":
         out["mode"] = "host"
+    if rec["action"] == "GERAR_CURRICULO":
+        out.update(resumes=rec.get("resumes"), resume_option=rec.get("resume_option"),
+                   retried_by=rec.get("retried_by"))
+        stuck = rec["status"] == "PRECISA_HUMANO" and not rec.get("retried_by")
+        progress["recovery"] = RECOVERY if stuck else None
+        if rec["status"] == "PRECISA_HUMANO":
+            out_stages[1].update(state="failed", note="CLAUDE_STOPPED_WITHOUT_PDF")
     if rec["status"] == "MANUAL":
         out["command"] = f"[painel:dispatch {rec['id']} · {rec['action']}]\n\nComando fixo de teste."
     return out
@@ -209,6 +232,8 @@ def main(argv):
         rec = {"id": f"d-20260929T12{n:04d}Z-abcdef", "action": action, "platform": platform, "job_id": job_id,
                "status": "MANUAL" if platform == "grok" else "RODANDO", "step": 0, "acknowledged": False,
                "created_at": now()}
+        if action == "GERAR_CURRICULO" and platform == "hermes":
+            rec["mode"] = "host"
         if action == "LOCALIZAR_VAGA":
             text = sys.stdin.read() if "--intake-stdin" in argv else ""
             candidate = flag(argv, "--candidate")
@@ -295,6 +320,10 @@ def main(argv):
                 rec["step"] += 1
                 if rec["action"] == "ANALISAR_VAGA" and rec["job_id"] == NO_POSTING and rec["step"] >= 1:
                     rec.update(step=1, status="PRECISA_HUMANO", code="POSTING_UNAVAILABLE")
+                elif (rec["action"] == "GERAR_CURRICULO" and rec["job_id"] == STUCK_CV and rec.get("mode") == "host"
+                      and not rec.get("resumes") and rec["step"] >= 1):
+                    rec.update(step=1, status="PRECISA_HUMANO",
+                               code="BLOCKED_CLAUDE_CHROME:CLAUDE_STOPPED_WITHOUT_PDF")
                 elif rec["step"] >= last_step(rec["action"]):
                     if rec["action"] == "LOCALIZAR_VAGA" and not rec["found"]:
                         rec.update(status="PRECISA_HUMANO", code="NEEDS_CONTEXT")
@@ -310,6 +339,29 @@ def main(argv):
             out["job"] = {"job_id": job_id, "dossier": "VALID", "actionable": True,
                           "cv": "VALID" if cv_done else "MISSING", "application_state": None}
         print(json.dumps(out))
+        return 0
+    if cmd == "resume-cv":
+        origin = next((r for r in recs if r["id"] == argv[1]), None)
+        option = flag(argv, "--option")
+        note = sys.stdin.read().strip() if "--note-stdin" in argv else None
+        code = ("OPTION_INVALID" if option not in ("claude", "chatgpt")
+                else "NOTE_NOT_EXPECTED" if note is not None and option != "chatgpt"
+                else "INTAKE_LOOKS_LIKE_APPROVAL" if note and APPROVAL_RE.search(note)
+                else "INTAKE_INVALID" if note is not None and (not 10 <= len(note) <= 1500 or MARKERS_RE.search(note))
+                else "DISPATCH_NOT_FOUND" if origin is None
+                else "ALREADY_RESUMED" if origin.get("retried_by")
+                else "NOT_RESUMABLE" if origin["action"] != "GERAR_CURRICULO" or origin["status"] != "PRECISA_HUMANO"
+                else None)
+        if code:
+            return refuse(code)
+        rec = {"id": f"d-20260929T14{len(recs) + 1:04d}Z-abcdef", "action": "GERAR_CURRICULO", "platform": "hermes",
+               "job_id": origin["job_id"], "status": "RODANDO", "step": 0, "acknowledged": False,
+               "created_at": now(), "mode": "host", "resumes": origin["id"], "resume_option": option,
+               "note": note}
+        origin.update(retried_by=rec["id"], acknowledged=True)
+        recs.insert(0, rec)
+        save(recs)
+        print(json.dumps({"ok": True, "dispatch": view(rec, recs)}))
         return 0
     if cmd == "discard":
         rec = next((r for r in recs if r["id"] == argv[1]), None)
