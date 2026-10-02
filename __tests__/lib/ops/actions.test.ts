@@ -77,30 +77,17 @@ describe("ops server actions", () => {
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
-  it("check the job against the Sheet snapshot for per-job actions", async () => {
+  it("check only that the job is in the Sheet snapshot: its state never blocks (the user chooses)", async () => {
     await expect(
       startDispatch({ action: "GERAR_CURRICULO", platform: "hermes", jobId: "nao-existe" })
     ).resolves.toEqual({ ok: false, code: "JOB_NOT_FOUND" })
-    // fake-1006 is ENVIADA in the fixture: no bot action on it.
-    await expect(
-      startDispatch({ action: "PREENCHER_CANDIDATURA", platform: "hermes", jobId: "fake-1006" })
-    ).resolves.toEqual({ ok: false, code: "JOB_BLOCKED" })
-    await expect(startDispatch({ action: "GERAR_CURRICULO", platform: "hermes", jobId: "fake-1006" })).resolves.toEqual(
-      { ok: false, code: "JOB_BLOCKED" }
-    )
-    // fake-1008 is NÃO CONFIRMADA: no application, but the résumé goes to job-search (dossier check).
-    await expect(
-      startDispatch({ action: "PREENCHER_CANDIDATURA", platform: "hermes", jobId: "fake-1008" })
-    ).resolves.toEqual({ ok: false, code: "JOB_BLOCKED" })
     expect(runDispatcher).not.toHaveBeenCalled()
+    // fake-1008 is NÃO CONFIRMADA and fake-1006 ENVIADA: both go to job-search, which checks the analysis.
     await startDispatch({ action: "GERAR_CURRICULO", platform: "hermes", jobId: "fake-1008" })
-    expect(runDispatcher.mock.calls[0][0]).toEqual([
-      "start",
-      "GERAR_CURRICULO",
-      "--platform",
-      "hermes",
-      "--job-id",
-      "fake-1008",
+    await startDispatch({ action: "PREENCHER_CANDIDATURA", platform: "hermes", jobId: "fake-1006" })
+    expect(runDispatcher.mock.calls.map((call) => call[0])).toEqual([
+      ["start", "GERAR_CURRICULO", "--platform", "hermes", "--job-id", "fake-1008"],
+      ["start", "PREENCHER_CANDIDATURA", "--platform", "hermes", "--job-id", "fake-1006"],
     ])
   })
 

@@ -1445,30 +1445,17 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   )
 }
 
-/** Bot actions of one job: "Analisar", "Gerar currículo", then "Preencher candidatura". */
-export function JobOps({
-  jobId,
-  cvBlocker,
-  blocker,
-  analyzed,
-}: {
-  jobId: string
-  /** Blocks the résumé only from the application state: any done analysis can get one. */
-  cvBlocker: string | null
-  /** Blocks the application ("Analisar" works on any job in the Sheet, sent ones included). */
-  blocker: string | null
-  analyzed: boolean
-}) {
+/**
+ * Bot actions of one job: "Analisar", "Gerar currículo", then "Preencher candidatura". No verdict, availability or
+ * application state disables them (the user chooses, decision 2026-10-02); only the same action already running does.
+ * job-search refuses with a code when it cannot run (no analysis, browser closed), shown in a toast.
+ */
+export function JobOps({ jobId, analyzed }: { jobId: string; analyzed: boolean }) {
   const { data, error, refresh } = useDispatches({ jobId })
   const analysis = latest(data?.dispatches ?? [], "ANALISAR_VAGA")
   const cv = latest(data?.dispatches ?? [], "GERAR_CURRICULO")
   const application = latest(data?.dispatches ?? [], "PREENCHER_CANDIDATURA")
   const job = data?.job
-  const cvBase = cvBlocker ?? (job && !job.cv_allowed ? "Sem dossier válido no runtime do job-search." : null)
-  const base =
-    blocker ?? (job && !job.actionable ? "Sem dossier válido (SELECIONADA e ABERTA) no runtime do job-search." : null)
-  // One line per distinct reason; the application's names its button when the résumé is still allowed.
-  const notes = cvBase === base ? [base] : [cvBase && `Gerar currículo: ${cvBase}`, base && `Preencher vaga: ${base}`]
   const cvReady = job?.cv === "VALID"
   return (
     <section
@@ -1487,14 +1474,14 @@ export function JobOps({
         <DispatchButton
           action="GERAR_CURRICULO"
           jobId={jobId}
-          disabledReason={cvBase ?? (cv?.active ? "Geração de currículo em andamento." : null)}
+          disabledReason={cv?.active ? "Geração de currículo em andamento." : null}
           onStarted={refresh}
         />
         <DispatchButton
           action="PREENCHER_CANDIDATURA"
           jobId={jobId}
           primary
-          disabledReason={base ?? (application?.active ? "Candidatura em andamento." : null)}
+          disabledReason={application?.active ? "Candidatura em andamento." : null}
           warning={cvReady ? null : "O currículo desta vaga ainda não está pronto. O recomendado é gerar antes."}
           onStarted={refresh}
         />
@@ -1505,14 +1492,6 @@ export function JobOps({
         )}
       </div>
       {error && <p className="text-xs text-muted-foreground">{refusalText(error)}</p>}
-      {notes.map(
-        (note) =>
-          note && (
-            <p key={note} className="text-xs text-muted-foreground">
-              {note}
-            </p>
-          )
-      )}
       {(analysis || cv || application) && (
         <div className="grid gap-3 lg:grid-cols-2">
           {analysis && <DispatchCard dispatch={analysis} onChanged={refresh} />}

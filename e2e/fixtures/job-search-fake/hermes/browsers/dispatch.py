@@ -8,7 +8,8 @@ can be exercised deterministically. `persist` records a REGISTRAR_WRITESET that 
 marks the chain and `delete` hides the whole lineage from `list`. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
 the fixture, is refused with ALREADY_SENT). `delete-job <job_id>` answers like `application.py delete` without deleting
 anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). `confirm-open <job_id>` answers ABERTA without
-writing anything (fake-1005 → DOSSIER_NOT_VALID). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
+writing anything (fake-1005 → DOSSIER_NOT_VALID, also for GERAR_CURRICULO/PREENCHER_CANDIDATURA: never analysed;
+the job's verdict, availability or application never refuse, like job-search on the host). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
 for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
 with ChatGPT refuses another with CHATGPT_BUSY. GERAR_CURRICULO of fake-1003 on Hermes stops in PRECISA_HUMANO with
 `progress.recovery` (Claude stopped without PDF); `resume-cv <id> --option claude|chatgpt [--note-stdin]` starts a new
@@ -228,6 +229,8 @@ def main(argv):
             return refuse("CHATGPT_BUSY")
         if action in LINCE and any(r["action"] in LINCE and r["status"] == "RODANDO" for r in recs):
             return refuse("PROFILE_BUSY")
+        if action in ("GERAR_CURRICULO", "PREENCHER_CANDIDATURA") and job_id == "fake-1005":
+            return refuse("DOSSIER_NOT_VALID")   # nunca analisada: nem dossier local nem análise salva
         n = len(recs) + 1
         rec = {"id": f"d-20260929T12{n:04d}Z-abcdef", "action": action, "platform": platform, "job_id": job_id,
                "status": "MANUAL" if platform == "grok" else "RODANDO", "step": 0, "acknowledged": False,

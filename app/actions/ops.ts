@@ -4,10 +4,8 @@ import { updateTag } from "next/cache"
 import { z } from "zod"
 import { getAllowedSession } from "@/lib/auth/session"
 import { JOB_SEARCH_CACHE_TAG, getJobSearchData } from "@/lib/job-search/source"
-import { toListItem } from "@/lib/job-search/present"
 import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
 import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
-import { jobCvBlocker, jobDispatchBlocker } from "@/lib/ops/present"
 import {
   ANALYZE_ACTION,
   CV_RESUME_OPTIONS,
@@ -51,13 +49,10 @@ export async function startDispatch(input: unknown): Promise<ActionResult<Dispat
   if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
   const { action, platform, jobId } = parsed.data
   if (jobId !== undefined) {
-    // The job must exist in the current (read-only) Sheet snapshot and not be sent or uncertain; the application
-    // also needs it SELECIONADA and ABERTA, the résumé does not (job-search checks the dossier).
+    // The job must exist in the current (read-only) Sheet snapshot. Its verdict, availability and application state
+    // never block (the user chooses, decision 2026-10-02); job-search checks the analysis (dossier) itself.
     const data = await getJobSearchData()
-    const view = data.views.find((item) => item.job.job_id === jobId)
-    if (!view) return { ok: false, code: "JOB_NOT_FOUND" }
-    const blocker = action === "GERAR_CURRICULO" ? jobCvBlocker : jobDispatchBlocker
-    if (blocker(toListItem(view))) return { ok: false, code: "JOB_BLOCKED" }
+    if (!data.views.some((item) => item.job.job_id === jobId)) return { ok: false, code: "JOB_NOT_FOUND" }
   }
   const args = ["start", action, "--platform", platform, ...(jobId ? ["--job-id", jobId] : [])]
   const result = await runDispatcher(args, oneResultSchema)

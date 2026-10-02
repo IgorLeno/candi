@@ -94,17 +94,16 @@ const REFUSAL_TEXT: Record<string, string> = {
   DISPATCHER_UNAVAILABLE: "Não foi possível falar com o dispatcher do job-search.",
   INPUT_INVALID: "Pedido inválido.",
   JOB_NOT_FOUND: "Vaga não encontrada na planilha.",
-  JOB_BLOCKED: "Esta vaga não aceita disparo no estado atual.",
   GATEWAY_NOT_RUNNING: "O gateway Hermes está parado ou sem inferência. Inicie-o ou use o Grok.",
   DISPATCH_ACTIVE: "Já existe um disparo igual em andamento.",
   APPLICATION_DISPATCH_ACTIVE: "Outra candidatura está em andamento: uma por vez.",
   APPLICATION_CDP_DOWN: "O Application Browser (Chrome com o Claude, CDP 9227) está fechado. Abra-o e tente de novo.",
   CLOUDDESIGN_CDP_DOWN: "O Chrome do Cloud Design (CDP 9226) está fechado: abra-o e faça login no Claude.",
   CLAUDE_PANEL_CLOSED: "Abra o painel do Claude nas abas de currículo PT e EN do Cloud Design e tente de novo.",
-  APPLICATION_STATE_BLOCKS: "O estado da candidatura no runtime impede um novo disparo.",
+  APPLICATION_STATE_BLOCKS: "O estado da candidatura no runtime do Grok impede um novo disparo: use o Hermes.",
   APPLICATION_LOCK_HELD: "Outra candidatura segura o lock do Application Operator.",
-  DOSSIER_NOT_VALID: "A vaga não tem dossier válido no runtime do job-search.",
-  JOB_NOT_ACTIONABLE: "O dossier da vaga não está SELECIONADA e ABERTA.",
+  DOSSIER_NOT_VALID: 'A vaga ainda não foi analisada no job-search: use "Analisar" antes.',
+  JOB_NOT_ACTIONABLE: "Pelo Grok, a vaga precisa estar SELECIONADA e ABERTA: use o Hermes.",
   DISPATCH_STILL_RUNNING: "O disparo ainda está rodando.",
   DISPATCH_NOT_FOUND: "Disparo não encontrado no job-search.",
   DISPATCH_ID_INVALID: "Identificador de disparo inválido.",
@@ -226,38 +225,6 @@ export function canConfirmOpen(
   if (disponibilidade !== "NÃO CONFIRMADA" && disponibilidade !== "ENCERRADA") return false
   const candidatura = item.statusCandidatura.value
   return candidatura !== "ENVIADA" && candidatura !== "ENVIO INCERTO" && candidatura !== "RETIRADA"
-}
-
-/**
- * Why "Gerar currículo" is disabled, from the Sheet row (null = allowed). Only the application blocks it: the résumé
- * needs a done analysis (job-search checks the dossier), whatever the verdict and the availability.
- */
-export function jobCvBlocker(item: Pick<JobListItem, "statusCandidatura" | "uncertainSubmit">): string | null {
-  const candidatura = item.statusCandidatura.invalid ? null : item.statusCandidatura.value
-  if (item.uncertainSubmit || candidatura === "ENVIO INCERTO")
-    return "ENVIO INCERTO: reconcilie a candidatura antes de qualquer ação."
-  if (candidatura === "ENVIADA") return "Candidatura já enviada."
-  if (candidatura === "RETIRADA") return "Candidatura retirada."
-  return null
-}
-
-/** Why "Preencher vaga" is disabled, from the Sheet row (null = allowed): it needs SELECIONADA and ABERTA. */
-export function jobDispatchBlocker(
-  item: Pick<
-    JobListItem,
-    "statusAnalise" | "statusDisponibilidade" | "statusCandidatura" | "archived" | "uncertainSubmit"
-  >
-): string | null {
-  const application = jobCvBlocker(item)
-  if (application) return application
-  if (canConfirmOpen(item) && item.statusDisponibilidade.value === "NÃO CONFIRMADA")
-    return 'A disponibilidade da vaga não está confirmada: confira a página e use "Confirmei que está aberta".'
-  if (canConfirmOpen(item))
-    return 'A vaga está marcada como ENCERRADA: se você conferiu que está aberta, use "Confirmei que está aberta".'
-  if (item.archived || item.statusDisponibilidade.invalid || item.statusDisponibilidade.value !== "ABERTA")
-    return "A vaga não está aberta."
-  if (item.statusAnalise.invalid || item.statusAnalise.value !== "SELECIONADA") return "A vaga não foi selecionada."
-  return null
 }
 
 /**

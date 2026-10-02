@@ -391,10 +391,10 @@ test.describe("Central de operações (bots)", () => {
   test("analisar vaga enviada: confirmação, etapas, diagnóstico e registro na planilha", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)
-    // fake-1006 is ENVIADA and has no dossier: résumé and application are blocked, the analysis is not.
+    // fake-1006 is ENVIADA: the analysis, like every action, is still offered (the user chooses).
     await page.goto("/vaga/fake-1006")
     const ops = page.getByTestId("job-ops")
-    await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeDisabled()
+    await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeEnabled()
     const button = ops.getByTestId("analyze-button")
     await expect(button).toBeEnabled()
     await expect(button).toHaveText("Analisar")
@@ -468,14 +468,20 @@ test.describe("Central de operações (bots)", () => {
     await expect(page.getByTestId("platform-grok")).toHaveAttribute("aria-checked", "true")
   })
 
-  test("ENVIO INCERTO e vaga enviada não aceitam disparo", async ({ page }) => {
-    for (const id of ["fake-1007", "fake-1006"]) {
+  test("nenhum estado da vaga desativa currículo e candidatura; sem análise o job-search explica", async ({ page }) => {
+    // ENVIO INCERTO, ENVIADA, NÃO CONFIRMADA and ENCERRADA + NÃO PRIORIZADA: the user chooses (decision 2026-10-02).
+    for (const id of ["fake-1007", "fake-1006", "fake-1008", "fake-1010"]) {
       await page.goto(`/vaga/${id}`)
       const ops = page.getByTestId("job-ops")
-      await expect(ops.getByTestId("dispatch-button-GERAR_CURRICULO")).toBeDisabled()
-      await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeDisabled()
+      await expect(ops.getByTestId("dispatch-button-GERAR_CURRICULO")).toBeEnabled()
+      await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeEnabled()
     }
-    await expect(page.getByTestId("job-ops")).toContainText("Candidatura já enviada.")
+    // fake-1005 was never analysed: the button works and job-search's refusal says what to do.
+    await page.goto("/vaga/fake-1005")
+    await page.getByTestId("job-ops").getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
+    await page.getByTestId("dispatch-dialog").getByTestId("platform-hermes").click()
+    await page.getByTestId("dispatch-confirm").click()
+    await expect(page.getByText('A vaga ainda não foi analisada no job-search: use "Analisar" antes.')).toBeVisible()
   })
 
   test("descartar vaga: confirmação, carimbo vermelho DESCARTADA e a vaga continua listada", async ({ page }) => {
@@ -512,16 +518,14 @@ test.describe("Central de operações (bots)", () => {
     await expect(declined.getByTestId("declined-stamp")).toBeVisible()
   })
 
-  test("confirmar vaga aberta: em NÃO CONFIRMADA e ENCERRADA, com confirmação; o currículo não depende disso", async ({
+  test("confirmar vaga aberta: em NÃO CONFIRMADA e ENCERRADA, com confirmação; currículo e candidatura não dependem disso", async ({
     page,
   }) => {
     // The fake answers like job-search but cannot change the fixture Sheet: fake-1008 stays NÃO CONFIRMADA.
     await page.goto("/vaga/fake-1008")
     const ops = page.getByTestId("job-ops")
     await expect(ops.getByTestId("dispatch-button-GERAR_CURRICULO")).toBeEnabled()
-    await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeDisabled()
-    await expect(ops).toContainText("Preencher vaga: A disponibilidade da vaga não está confirmada")
-    await expect(ops).toContainText("Confirmei que está aberta")
+    await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeEnabled()
     await page.getByTestId("confirm-open").click()
     const dialog = page.getByTestId("confirm-open-dialog")
     await expect(dialog).toContainText("só confere sozinho as vagas do LinkedIn")
@@ -535,8 +539,7 @@ test.describe("Central de operações (bots)", () => {
     // available; the application waits for the user to reopen it, behind a dialog that says it reopens a closed job.
     await page.goto("/vaga/fake-1010")
     await expect(ops.getByTestId("dispatch-button-GERAR_CURRICULO")).toBeEnabled()
-    await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeDisabled()
-    await expect(ops).toContainText("Preencher vaga: A vaga está marcada como ENCERRADA")
+    await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeEnabled()
     await page.getByTestId("confirm-open").click()
     await expect(dialog).toContainText("Reabrir uma vaga marcada como ENCERRADA?")
     await expect(dialog).toContainText("guarda o valor antigo")
