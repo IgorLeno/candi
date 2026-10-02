@@ -148,6 +148,7 @@ function JobDetail({ view }: { view: JobView }) {
                 jobId={job.job_id}
                 label={[job.empresa || "(sem empresa)", job.cargo || "(sem cargo)"].join(" · ")}
                 postingUrl={postingUrl || null}
+                closed={item.statusDisponibilidade.value === "ENCERRADA"}
               />
             )}
             <CellBadge cell={cellDisplay(job.status_candidatura)} testId="badge-candidatura" />

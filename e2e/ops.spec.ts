@@ -512,7 +512,7 @@ test.describe("Central de operações (bots)", () => {
     await expect(declined.getByTestId("declined-stamp")).toBeVisible()
   })
 
-  test("confirmar vaga aberta: só em NÃO CONFIRMADA, com confirmação; o currículo não depende disso", async ({
+  test("confirmar vaga aberta: em NÃO CONFIRMADA e ENCERRADA, com confirmação; o currículo não depende disso", async ({
     page,
   }) => {
     // The fake answers like job-search but cannot change the fixture Sheet: fake-1008 stays NÃO CONFIRMADA.
@@ -531,7 +531,19 @@ test.describe("Central de operações (bots)", () => {
     await page.getByTestId("confirm-open-confirm").click()
     await expect(page.getByText("Disponibilidade gravada como ABERTA na planilha e no dossier.")).toBeVisible()
 
-    // Open, closed, sent and withdrawn jobs have no confirmation button.
+    // fake-1010: NÃO PRIORIZADA and marked ENCERRADA by a wrong automatic read (like Gupy 12478822). The résumé is
+    // available; the application waits for the user to reopen it, behind a dialog that says it reopens a closed job.
+    await page.goto("/vaga/fake-1010")
+    await expect(ops.getByTestId("dispatch-button-GERAR_CURRICULO")).toBeEnabled()
+    await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeDisabled()
+    await expect(ops).toContainText("Preencher vaga: A vaga está marcada como ENCERRADA")
+    await page.getByTestId("confirm-open").click()
+    await expect(dialog).toContainText("Reabrir uma vaga marcada como ENCERRADA?")
+    await expect(dialog).toContainText("guarda o valor antigo")
+    await page.getByTestId("confirm-open-confirm").click()
+    await expect(page.getByText("Disponibilidade gravada como ABERTA na planilha e no dossier.").last()).toBeVisible()
+
+    // Open, archived closed, sent and withdrawn jobs have no confirmation button.
     for (const id of ["fake-1002", "fake-0999", "fake-1006", "fake-1009"]) {
       await page.goto(`/vaga/${id}`)
       await expect(page.getByTestId("job-detail")).toBeVisible()

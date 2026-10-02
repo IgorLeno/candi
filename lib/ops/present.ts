@@ -202,7 +202,6 @@ const CONFIRM_OPEN_REFUSAL_TEXT: Record<string, string> = {
   ALREADY_DECLINED: "A vaga foi descartada: a disponibilidade não muda mais.",
   ROW_DUPLICATED: "A vaga aparece duplicada na planilha: corrija antes de confirmar.",
   ALREADY_OPEN: "A vaga já está ABERTA na planilha e no dossier.",
-  JOB_CLOSED: "A vaga está ENCERRADA: não volta a ABERTA por confirmação.",
   DOSSIER_NOT_VALID: "A vaga não tem dossier válido no runtime do job-search: rode a análise antes.",
   WRITESET_NOT_VALID: "O writeset da confirmação não passou no writeset.py check; nada foi gravado.",
   OPEN_FAILED: "O job-search não conseguiu gravar a confirmação; nada foi gravado.",
@@ -215,14 +214,16 @@ export function confirmOpenRefusalText(code: string): string {
 }
 
 /**
- * "Confirmei que está aberta" (UX gating only; job-search re-checks the Sheet and the dossier): a NÃO CONFIRMADA job
- * in the main tab whose application was not sent, uncertain or withdrawn.
+ * "Confirmei que está aberta" (UX gating only; job-search re-checks the Sheet and the dossier): a NÃO CONFIRMADA or
+ * ENCERRADA job (the automatic read can be wrong) in the main tab whose application was not sent, uncertain or
+ * withdrawn.
  */
 export function canConfirmOpen(
   item: Pick<JobListItem, "statusDisponibilidade" | "statusCandidatura" | "archived" | "uncertainSubmit">
 ): boolean {
   if (item.archived || item.uncertainSubmit || item.statusCandidatura.invalid) return false
-  if (item.statusDisponibilidade.invalid || item.statusDisponibilidade.value !== "NÃO CONFIRMADA") return false
+  const disponibilidade = item.statusDisponibilidade.invalid ? null : item.statusDisponibilidade.value
+  if (disponibilidade !== "NÃO CONFIRMADA" && disponibilidade !== "ENCERRADA") return false
   const candidatura = item.statusCandidatura.value
   return candidatura !== "ENVIADA" && candidatura !== "ENVIO INCERTO" && candidatura !== "RETIRADA"
 }
@@ -249,8 +250,10 @@ export function jobDispatchBlocker(
 ): string | null {
   const application = jobCvBlocker(item)
   if (application) return application
-  if (!item.archived && !item.statusDisponibilidade.invalid && item.statusDisponibilidade.value === "NÃO CONFIRMADA")
+  if (canConfirmOpen(item) && item.statusDisponibilidade.value === "NÃO CONFIRMADA")
     return 'A disponibilidade da vaga não está confirmada: confira a página e use "Confirmei que está aberta".'
+  if (canConfirmOpen(item))
+    return 'A vaga está marcada como ENCERRADA: se você conferiu que está aberta, use "Confirmei que está aberta".'
   if (item.archived || item.statusDisponibilidade.invalid || item.statusDisponibilidade.value !== "ABERTA")
     return "A vaga não está aberta."
   if (item.statusAnalise.invalid || item.statusAnalise.value !== "SELECIONADA") return "A vaga não foi selecionada."
