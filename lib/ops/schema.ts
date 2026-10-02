@@ -206,7 +206,10 @@ export type Dispatch = z.infer<typeof dispatchSchema>
 export const jobArtifactsSchema = z.object({
   job_id: z.string(),
   dossier: z.enum(["VALID", "MISSING"]),
+  /** SELECIONADA and ABERTA: "Preencher vaga". */
   actionable: z.boolean(),
+  /** A VALID dossier, any verdict and availability: "Gerar currículo" on the host. */
+  cv_allowed: z.boolean(),
   cv: z.enum(["VALID", "MISSING", "INVALID"]),
   application_state: z.string().nullable(),
 })

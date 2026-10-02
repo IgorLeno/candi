@@ -1448,11 +1448,14 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
 /** Bot actions of one job: "Analisar", "Gerar currículo", then "Preencher candidatura". */
 export function JobOps({
   jobId,
+  cvBlocker,
   blocker,
   analyzed,
 }: {
   jobId: string
-  /** Blocks résumé and application only: "Analisar" works on any job in the Sheet, sent ones included. */
+  /** Blocks the résumé only from the application state: any done analysis can get one. */
+  cvBlocker: string | null
+  /** Blocks the application ("Analisar" works on any job in the Sheet, sent ones included). */
   blocker: string | null
   analyzed: boolean
 }) {
@@ -1461,8 +1464,11 @@ export function JobOps({
   const cv = latest(data?.dispatches ?? [], "GERAR_CURRICULO")
   const application = latest(data?.dispatches ?? [], "PREENCHER_CANDIDATURA")
   const job = data?.job
+  const cvBase = cvBlocker ?? (job && !job.cv_allowed ? "Sem dossier válido no runtime do job-search." : null)
   const base =
     blocker ?? (job && !job.actionable ? "Sem dossier válido (SELECIONADA e ABERTA) no runtime do job-search." : null)
+  // One line per distinct reason; the application's names its button when the résumé is still allowed.
+  const notes = cvBase === base ? [base] : [cvBase && `Gerar currículo: ${cvBase}`, base && `Preencher vaga: ${base}`]
   const cvReady = job?.cv === "VALID"
   return (
     <section
@@ -1481,7 +1487,7 @@ export function JobOps({
         <DispatchButton
           action="GERAR_CURRICULO"
           jobId={jobId}
-          disabledReason={base ?? (cv?.active ? "Geração de currículo em andamento." : null)}
+          disabledReason={cvBase ?? (cv?.active ? "Geração de currículo em andamento." : null)}
           onStarted={refresh}
         />
         <DispatchButton
@@ -1499,7 +1505,14 @@ export function JobOps({
         )}
       </div>
       {error && <p className="text-xs text-muted-foreground">{refusalText(error)}</p>}
-      {base && <p className="text-xs text-muted-foreground">{base}</p>}
+      {notes.map(
+        (note) =>
+          note && (
+            <p key={note} className="text-xs text-muted-foreground">
+              {note}
+            </p>
+          )
+      )}
       {(analysis || cv || application) && (
         <div className="grid gap-3 lg:grid-cols-2">
           {analysis && <DispatchCard dispatch={analysis} onChanged={refresh} />}

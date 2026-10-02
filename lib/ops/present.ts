@@ -227,18 +227,28 @@ export function canConfirmOpen(
   return candidatura !== "ENVIADA" && candidatura !== "ENVIO INCERTO" && candidatura !== "RETIRADA"
 }
 
-/** Why a per-job button is disabled, from the Sheet row (null = allowed). */
+/**
+ * Why "Gerar currículo" is disabled, from the Sheet row (null = allowed). Only the application blocks it: the résumé
+ * needs a done analysis (job-search checks the dossier), whatever the verdict and the availability.
+ */
+export function jobCvBlocker(item: Pick<JobListItem, "statusCandidatura" | "uncertainSubmit">): string | null {
+  const candidatura = item.statusCandidatura.invalid ? null : item.statusCandidatura.value
+  if (item.uncertainSubmit || candidatura === "ENVIO INCERTO")
+    return "ENVIO INCERTO: reconcilie a candidatura antes de qualquer ação."
+  if (candidatura === "ENVIADA") return "Candidatura já enviada."
+  if (candidatura === "RETIRADA") return "Candidatura retirada."
+  return null
+}
+
+/** Why "Preencher vaga" is disabled, from the Sheet row (null = allowed): it needs SELECIONADA and ABERTA. */
 export function jobDispatchBlocker(
   item: Pick<
     JobListItem,
     "statusAnalise" | "statusDisponibilidade" | "statusCandidatura" | "archived" | "uncertainSubmit"
   >
 ): string | null {
-  const candidatura = item.statusCandidatura.invalid ? null : item.statusCandidatura.value
-  if (item.uncertainSubmit || candidatura === "ENVIO INCERTO")
-    return "ENVIO INCERTO: reconcilie a candidatura antes de qualquer ação."
-  if (candidatura === "ENVIADA") return "Candidatura já enviada."
-  if (candidatura === "RETIRADA") return "Candidatura retirada."
+  const application = jobCvBlocker(item)
+  if (application) return application
   if (!item.archived && !item.statusDisponibilidade.invalid && item.statusDisponibilidade.value === "NÃO CONFIRMADA")
     return 'A disponibilidade da vaga não está confirmada: confira a página e use "Confirmei que está aberta".'
   if (item.archived || item.statusDisponibilidade.invalid || item.statusDisponibilidade.value !== "ABERTA")

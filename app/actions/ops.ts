@@ -7,7 +7,7 @@ import { JOB_SEARCH_CACHE_TAG, getJobSearchData } from "@/lib/job-search/source"
 import { toListItem } from "@/lib/job-search/present"
 import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
 import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
-import { jobDispatchBlocker } from "@/lib/ops/present"
+import { jobCvBlocker, jobDispatchBlocker } from "@/lib/ops/present"
 import {
   ANALYZE_ACTION,
   CV_RESUME_OPTIONS,
@@ -51,11 +51,13 @@ export async function startDispatch(input: unknown): Promise<ActionResult<Dispat
   if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
   const { action, platform, jobId } = parsed.data
   if (jobId !== undefined) {
-    // The job must exist in the current (read-only) Sheet snapshot and not be closed, sent or uncertain.
+    // The job must exist in the current (read-only) Sheet snapshot and not be sent or uncertain; the application
+    // also needs it SELECIONADA and ABERTA, the résumé does not (job-search checks the dossier).
     const data = await getJobSearchData()
     const view = data.views.find((item) => item.job.job_id === jobId)
     if (!view) return { ok: false, code: "JOB_NOT_FOUND" }
-    if (jobDispatchBlocker(toListItem(view))) return { ok: false, code: "JOB_BLOCKED" }
+    const blocker = action === "GERAR_CURRICULO" ? jobCvBlocker : jobDispatchBlocker
+    if (blocker(toListItem(view))) return { ok: false, code: "JOB_BLOCKED" }
   }
   const args = ["start", action, "--platform", platform, ...(jobId ? ["--job-id", jobId] : [])]
   const result = await runDispatcher(args, oneResultSchema)

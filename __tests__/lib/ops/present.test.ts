@@ -9,6 +9,7 @@ import {
   confirmOpenRefusalText,
   deleteJobConfirmed,
   deleteJobRefusalText,
+  jobCvBlocker,
   jobDispatchBlocker,
   latest,
   persistSummary,
@@ -115,6 +116,27 @@ describe("jobDispatchBlocker", () => {
     expect(jobDispatchBlocker(unconfirmed)).toMatch(/Confirmei que está aberta/)
     expect(jobDispatchBlocker({ ...unconfirmed, archived: true })).toMatch(/não está aberta/)
     expect(jobDispatchBlocker({ ...unconfirmed, statusCandidatura: cell("ENVIADA") })).toMatch(/enviada/)
+  })
+})
+
+describe("jobCvBlocker", () => {
+  it("allows any analysed job whatever the verdict and the availability", () => {
+    // Same rows that block the application (12478822: NÃO PRIORIZADA and ENCERRADA, archived NÃO CONFIRMADA).
+    const closedUnselected = {
+      ...open,
+      statusDisponibilidade: cell("ENCERRADA"),
+      statusAnalise: cell("NÃO PRIORIZADA"),
+    }
+    const archivedUnconfirmed = { ...open, statusDisponibilidade: cell("NÃO CONFIRMADA"), archived: true }
+    for (const item of [open, closedUnselected, archivedUnconfirmed]) expect(jobCvBlocker(item)).toBeNull()
+    expect(jobDispatchBlocker(closedUnselected)).not.toBeNull()
+    expect(jobDispatchBlocker(archivedUnconfirmed)).not.toBeNull()
+  })
+
+  it("blocks only sent, uncertain and withdrawn applications", () => {
+    expect(jobCvBlocker({ ...open, uncertainSubmit: true })).toMatch(/ENVIO INCERTO/)
+    expect(jobCvBlocker({ ...open, statusCandidatura: cell("ENVIADA") })).toMatch(/enviada/)
+    expect(jobCvBlocker({ ...open, statusCandidatura: cell("RETIRADA") })).toMatch(/retirada/)
   })
 })
 

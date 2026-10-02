@@ -336,7 +336,7 @@ def main(argv):
         if job_id is not None:
             cv_done = any(r["job_id"] == job_id and r["action"] == "GERAR_CURRICULO" and r["status"] == "CONCLUIDO"
                           for r in recs)
-            out["job"] = {"job_id": job_id, "dossier": "VALID", "actionable": True,
+            out["job"] = {"job_id": job_id, "dossier": "VALID", "actionable": True, "cv_allowed": True,
                           "cv": "VALID" if cv_done else "MISSING", "application_state": None}
         print(json.dumps(out))
         return 0

@@ -512,14 +512,15 @@ test.describe("Central de operações (bots)", () => {
     await expect(declined.getByTestId("declined-stamp")).toBeVisible()
   })
 
-  test("confirmar vaga aberta: só em NÃO CONFIRMADA, com confirmação, e explica por que o currículo trava", async ({
+  test("confirmar vaga aberta: só em NÃO CONFIRMADA, com confirmação; o currículo não depende disso", async ({
     page,
   }) => {
     // The fake answers like job-search but cannot change the fixture Sheet: fake-1008 stays NÃO CONFIRMADA.
     await page.goto("/vaga/fake-1008")
     const ops = page.getByTestId("job-ops")
-    await expect(ops.getByTestId("dispatch-button-GERAR_CURRICULO")).toBeDisabled()
+    await expect(ops.getByTestId("dispatch-button-GERAR_CURRICULO")).toBeEnabled()
     await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeDisabled()
+    await expect(ops).toContainText("Preencher vaga: A disponibilidade da vaga não está confirmada")
     await expect(ops).toContainText("Confirmei que está aberta")
     await page.getByTestId("confirm-open").click()
     const dialog = page.getByTestId("confirm-open-dialog")

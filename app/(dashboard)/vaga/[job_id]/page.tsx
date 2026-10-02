@@ -11,7 +11,7 @@ import { SectionCard } from "@/components/job-search/overview"
 import { DoneStamp, Flames, JourneyTrail, StateBadge, stateBarClass } from "@/components/job-search/visual"
 import { JobOps } from "@/components/job-search/ops"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
-import { canConfirmOpen, canDeclineJob, canDeleteJob, jobDispatchBlocker } from "@/lib/ops/present"
+import { canConfirmOpen, canDeclineJob, canDeleteJob, jobCvBlocker, jobDispatchBlocker } from "@/lib/ops/present"
 import { ConfirmOpenButton } from "@/components/job-search/confirm-open"
 import { DeclineJobButton } from "@/components/job-search/decline-job"
 import { DeleteJobButton } from "@/components/job-search/delete-job"
@@ -159,7 +159,12 @@ function JobDetail({ view }: { view: JobView }) {
           </div>
           {isDispatchEnabled() && (
             <div className="mt-4">
-              <JobOps jobId={job.job_id} blocker={jobDispatchBlocker(item)} analyzed={view.dossier?.valid === true} />
+              <JobOps
+                jobId={job.job_id}
+                cvBlocker={jobCvBlocker(item)}
+                blocker={jobDispatchBlocker(item)}
+                analyzed={view.dossier?.valid === true}
+              />
             </div>
           )}
         </header>

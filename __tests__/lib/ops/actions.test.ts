@@ -85,7 +85,23 @@ describe("ops server actions", () => {
     await expect(
       startDispatch({ action: "PREENCHER_CANDIDATURA", platform: "hermes", jobId: "fake-1006" })
     ).resolves.toEqual({ ok: false, code: "JOB_BLOCKED" })
+    await expect(startDispatch({ action: "GERAR_CURRICULO", platform: "hermes", jobId: "fake-1006" })).resolves.toEqual(
+      { ok: false, code: "JOB_BLOCKED" }
+    )
+    // fake-1008 is NÃO CONFIRMADA: no application, but the résumé goes to job-search (dossier check).
+    await expect(
+      startDispatch({ action: "PREENCHER_CANDIDATURA", platform: "hermes", jobId: "fake-1008" })
+    ).resolves.toEqual({ ok: false, code: "JOB_BLOCKED" })
     expect(runDispatcher).not.toHaveBeenCalled()
+    await startDispatch({ action: "GERAR_CURRICULO", platform: "hermes", jobId: "fake-1008" })
+    expect(runDispatcher.mock.calls[0][0]).toEqual([
+      "start",
+      "GERAR_CURRICULO",
+      "--platform",
+      "hermes",
+      "--job-id",
+      "fake-1008",
+    ])
   })
 
   it("send only the fixed argv to the dispatcher", async () => {
