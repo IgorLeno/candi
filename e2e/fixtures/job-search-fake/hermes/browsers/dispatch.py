@@ -13,7 +13,9 @@ the job's verdict, availability or application never refuse, like job-search on 
 for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
 with ChatGPT refuses another with CHATGPT_BUSY. GERAR_CURRICULO of fake-1003 on Hermes stops in PRECISA_HUMANO with
 `progress.recovery` (Claude stopped without PDF); `resume-cv <id> --option claude|chatgpt [--note-stdin]` starts a new
-run that finishes. `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
+run that finishes. A finished BUSCAR_VAGAS lists the jobs it left out (`LEFT_OUT`);
+`ANALISAR_DESCOBERTA --from <search> --job-id` walks posting → ChatGPT → writeset for one of them (fake-1001:
+ALREADY_IN_RUNTIME, fake-9104: LEFT_OUT_WITHOUT_CARD). `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
 CV_JSON_MISSING before). State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import hashlib
@@ -31,12 +33,32 @@ JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 APPROVAL_RE = re.compile(r"(?i)\b(ok|n[aã]o)\s+[0-9a-f]{8}\b")
 BOTS = {"BUSCAR_VAGAS": ("Lince", "Job Scout"), "GERAR_CURRICULO": ("CVerino", "CV Strategist"),
         "PREENCHER_CANDIDATURA": ("Candidatinho", "Application Operator"), "LOCALIZAR_VAGA": ("Lince", "Job Scout"),
-        "ANALISAR_INDICADA": ("ChatGPT (host)", "Job Scout"), "ANALISAR_VAGA": ("ChatGPT (host)", "Job Scout")}
+        "ANALISAR_INDICADA": ("ChatGPT (host)", "Job Scout"), "ANALISAR_VAGA": ("ChatGPT (host)", "Job Scout"),
+        "ANALISAR_DESCOBERTA": ("ChatGPT (host)", "Job Scout")}
 LINCE = ("BUSCAR_VAGAS", "LOCALIZAR_VAGA")
 # Actions whose last stage is "registro na planilha" (a writeset the panel may persist).
-WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA", "ANALISAR_VAGA")
-HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA")
-CHATGPT_HOST = ("BUSCAR_VAGAS", "GERAR_CURRICULO", "ANALISAR_VAGA", "ANALISAR_INDICADA")
+WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA")
+HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA")
+CHATGPT_HOST = ("BUSCAR_VAGAS", "GERAR_CURRICULO", "ANALISAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_DESCOBERTA")
+HOST_ANALYSES = ("ANALISAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_DESCOBERTA")
+
+
+def left_out(job_id, kind, motivo, cargo, *, url=True, in_runtime=False):
+    return {"job_id": job_id, "empresa": "Empresa de Fora", "cargo": cargo, "local": "Belo Horizonte, MG",
+            "url": f"https://www.linkedin.com/jobs/view/{job_id}" if url else "", "fonte": "LinkedIn",
+            "motivo": motivo, "kind": kind, "data": "2026-10-01", "has_card": url, "in_runtime": in_runtime}
+
+
+# What a finished search left out (decision 2026-10-03): fake-1001 was analysed some other way (already in the Sheet)
+# and fake-9104 comes from an older search without the card.
+LEFT_OUT = {"excluded": [left_out("fake-9101", "PREFILTRO", "estágio/aprendiz (job-preferences: não elegível)",
+                                  "Estagiário de Processos"),
+                         left_out("fake-1001", "ENCERRADA", "ENCERRADA", "Analista de Processos Júnior",
+                                  in_runtime=True)],
+            "deferred": [left_out("fake-9103", "LIMITE", "acima do limite de 12 análises por rodada",
+                                  "Analista de Dados Júnior"),
+                         left_out("fake-9104", "LIMITE", "acima do limite de 12 análises por rodada",
+                                  "Engenheiro de Processos", url=False)]}
 NO_POSTING = "fake-1008"
 STUCK_CV = "fake-1003"
 MARKERS_RE = re.compile(r"\b(PATCH_READY|NEEDS_CONTEXT|BLOCKED|WAITING|AWAITING_APPROVAL)\b")
@@ -64,6 +86,8 @@ STAGES = {
     "ANALISAR_INDICADA": [("posting", "Texto da vaga e planilha (só leitura)"),
                           ("analise", "Análise no ChatGPT (host)"), ("writeset", "Writeset pronto"),
                           ("registro", "Registro na planilha")],
+    "ANALISAR_DESCOBERTA": [("posting", "Texto da vaga"), ("analise", "Análise no ChatGPT (host)"),
+                            ("writeset", "Writeset pronto"), ("registro", "Registro na planilha")],
     "ANALISAR_VAGA": [("planilha", "Dados da vaga (planilha, só leitura)"), ("posting", "Texto da vaga"),
                       ("analise", "Análise no ChatGPT (host)"), ("writeset", "Writeset pronto"),
                       ("registro", "Registro na planilha")],
@@ -142,7 +166,7 @@ def view(rec, recs=()):
     out_stages = []
     for i, (key, label) in enumerate(stages):
         state = "done" if i < step else "active" if i == step and rec["status"] == "RODANDO" else "pending"
-        if i == step and rec["status"] in ("PRECISA_HUMANO", "FALHOU") and rec["action"] == "ANALISAR_VAGA":
+        if i == step and rec["status"] in ("PRECISA_HUMANO", "FALHOU") and rec["action"] in HOST_ANALYSES:
             state = "failed"
         if rec["action"] in WRITESET_ACTIONS and key == "registro" and step >= last:
             state = "active"
@@ -174,14 +198,21 @@ def view(rec, recs=()):
         done = sum(1 for s in out_stages if s["state"] == "done")
         progress.update(percent=5 + round(95 * done / len(stages)),
                         writeset_job_ids=WRITESET_JOB_IDS.get(rec["action"]) or [rec["job_id"]],
-                        writeset_path=f"runtime/operations/{rec.get('source_id') or rec['id']}/writeset.md",
+                        writeset_path=f"runtime/operations/"
+                                      f"{rec['source_id'] if rec['action'] == 'ANALISAR_INDICADA' else rec['id']}/writeset.md",
                         registration={"id": reg["id"], "status": reg["status"], "code": None,
                                       "result": RESULT if reg["status"] == "CONCLUIDO" else None} if reg else None)
         if rec["action"] == "BUSCAR_VAGAS":
-            progress.update(candidates=2, excluded=1)
+            progress.update(candidates=2, excluded=len(LEFT_OUT["excluded"]), excluded_jobs=LEFT_OUT["excluded"],
+                            deferred_jobs=LEFT_OUT["deferred"])
         elif rec["action"] == "ANALISAR_VAGA":
             progress["diagnosis"] = [{**DIAGNOSIS[0], "job_id": rec["job_id"], "cargo": "", "empresa": "",
                                       "status_analise": "NÃO PRIORIZADA", "interesse": "MÉDIO"}]
+            progress["diagnosis_by"] = "chatgpt"
+        elif rec["action"] == "ANALISAR_DESCOBERTA":
+            progress["diagnosis"] = [{**DIAGNOSIS[0], "job_id": rec["job_id"], "cargo": "Estagiário de Processos",
+                                      "empresa": "Empresa de Fora", "status_analise": "DESCARTADA",
+                                      "interesse": "BAIXO", "motivo_analise": "Gate 1: vaga de estágio."}]
             progress["diagnosis_by"] = "chatgpt"
         else:
             progress["diagnosis"] = DIAGNOSIS
@@ -189,13 +220,15 @@ def view(rec, recs=()):
     out = {k: rec[k] for k in ("id", "action", "platform", "job_id", "status", "acknowledged", "created_at")}
     if rec["action"] in ("LOCALIZAR_VAGA", "ANALISAR_INDICADA"):
         out.update(source_id=rec.get("source_id"), discarded=bool(rec.get("discarded")))
+    if rec["action"] == "ANALISAR_DESCOBERTA":
+        out["source_id"] = rec.get("source_id")
     if rec["action"] == "LOCALIZAR_VAGA":
         out.update(refines=rec.get("refines"), refined_by=rec.get("refined_by"))
     out.update(code=rec.get("code"), marker=rec.get("code"), turns=step, updated_at=rec["created_at"], delivered_at=rec["created_at"],
                finished_at=None if rec["status"] == "RODANDO" else rec["created_at"],
                bot=BOTS[rec["action"]][1 if rec["platform"] == "grok" else 0],
                active=rec["status"] == "RODANDO", progress=progress)
-    if rec["action"] in ("ANALISAR_VAGA", "ANALISAR_INDICADA") or rec.get("mode") == "host":
+    if rec["action"] in HOST_ANALYSES or rec.get("mode") == "host":
         out["mode"] = "host"
     if rec["action"] == "GERAR_CURRICULO":
         out.update(resumes=rec.get("resumes"), resume_option=rec.get("resume_option"),
@@ -228,7 +261,7 @@ def main(argv):
             return refuse("PLATFORM_NOT_SUPPORTED")
         if any(r["action"] == action and r["job_id"] == job_id and r["status"] == "RODANDO" for r in recs):
             return refuse("DISPATCH_ACTIVE")
-        if action in ("ANALISAR_VAGA", "ANALISAR_INDICADA") and any(
+        if action in HOST_ANALYSES and any(
                 r["action"] in CHATGPT_HOST and r["status"] == "RODANDO" for r in recs):
             return refuse("CHATGPT_BUSY")
         if action in LINCE and any(r["action"] in LINCE and r["status"] == "RODANDO" for r in recs):
@@ -276,6 +309,16 @@ def main(argv):
             if origin is not None:
                 rec["refines"] = origin["id"]
                 origin.update(refined_by=rec["id"], acknowledged=True)
+        if action == "ANALISAR_DESCOBERTA":
+            search = next((r for r in recs if r["id"] == source_id), None)
+            card = next((e for e in LEFT_OUT["excluded"] + LEFT_OUT["deferred"] if e["job_id"] == job_id), None)
+            code = ("SOURCE_REQUIRED" if not source_id else "DISPATCH_NOT_FOUND" if search is None
+                    else "SOURCE_NOT_A_SEARCH" if search["action"] != "BUSCAR_VAGAS"
+                    else "NOT_LEFT_OUT" if card is None else "LEFT_OUT_WITHOUT_CARD" if not card["has_card"]
+                    else "ALREADY_IN_RUNTIME" if card["in_runtime"] else None)
+            if code:
+                return refuse(code)
+            rec.update(source_id=source_id)
         if action == "ANALISAR_INDICADA":
             origin = next((r for r in recs if r["id"] == source_id), None)
             code = ("DISPATCH_NOT_FOUND" if origin is None else "NOT_AN_INTAKE" if origin["action"] != "LOCALIZAR_VAGA"

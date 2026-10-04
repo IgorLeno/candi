@@ -6,6 +6,7 @@ import type {
   DispatchAction,
   DispatchProgress,
   DispatchStatus,
+  LeftOutJob,
   PersistResult,
   RecordPlatform,
 } from "@/lib/ops/schema"
@@ -49,6 +50,12 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     verb: "Analisar",
     description:
       "O job-search lê esta vaga na planilha (só leitura), acha o texto da publicação e leva ao ChatGPT para a análise completa. O writeset fica pronto e você decide se registra na planilha.",
+  },
+  ANALISAR_DESCOBERTA: {
+    label: "Análise de vaga que ficou de fora",
+    verb: "Mandar ao ChatGPT",
+    description:
+      "O job-search pega o texto completo desta vaga, que a cotação deixou de fora, e leva ao ChatGPT para a análise completa. O veredito do pré-filtro não impede: o writeset fica pronto e você decide se registra na planilha.",
   },
   REGISTRAR_WRITESET: {
     label: "Registrar na planilha",
@@ -137,6 +144,12 @@ const REFUSAL_TEXT: Record<string, string> = {
   HANDOFF_NOT_REUSABLE: "O patch anterior não pode ser reaproveitado: refaça o patch no ChatGPT.",
   // "Analisar" (dispatch.py start ANALISAR_VAGA).
   CHATGPT_BUSY: "O ChatGPT do job-search já está ocupado com outra cotação, currículo ou análise: espere terminar.",
+  // "Mandar ao ChatGPT" uma vaga que a cotação deixou de fora (dispatch.py start ANALISAR_DESCOBERTA).
+  SOURCE_NOT_A_SEARCH: "Esse disparo não é uma cotação de vagas.",
+  NOT_LEFT_OUT: "A vaga não está entre as que esta cotação deixou de fora: atualize o painel.",
+  LEFT_OUT_WITHOUT_CARD:
+    "Cotação antiga: o job-search não guardou os dados desta vaga. Ela volta numa próxima cotação.",
+  ALREADY_IN_RUNTIME: "Esta vaga já está no job-search (analisada por outro caminho): procure-a na lista de vagas.",
   // "Descartar vaga" (dispatch.py decline → application.py decline).
   INVALID_JOB_ID: "Identificador de vaga inválido.",
   JOB_DISPATCH_ACTIVE: "Há um disparo desta vaga em andamento: espere terminar para descartar.",
@@ -150,6 +163,23 @@ const REFUSAL_TEXT: Record<string, string> = {
   READBACK_MISMATCH: "A planilha não confirmou a gravação. Sincronize e confira a vaga.",
   DECLINE_UNCERTAIN: "Sem resposta a tempo do job-search. Sincronize e confira se a vaga ficou descartada.",
   DECLINE_FAILED: "O job-search não conseguiu descartar a vaga.",
+}
+
+/** Short label of why the search left a job out (`LeftOutJob.kind`). */
+export function leftOutKindLabel(kind: string): string {
+  if (kind === "PREFILTRO") return "Pré-filtro"
+  if (kind === "LIMITE") return "Acima do limite da rodada"
+  if (kind === "ENCERRADA") return "Encerrada"
+  if (kind.startsWith("BLOCKED_")) return "Página não lida"
+  return kind || "Fora da rodada"
+}
+
+/** Technical reasons only (never the verdict): already running, already analysed, or no card saved. */
+export function leftOutBlocker(job: LeftOutJob, analysis: Dispatch | null): string | null {
+  if (analysis?.active) return "Análise desta vaga em andamento."
+  if (job.in_runtime) return "Já está no job-search (analisada por outro caminho)."
+  if (!job.has_card) return "Cotação antiga: sem os dados desta vaga."
+  return null
 }
 
 export function refusalText(code: string): string {

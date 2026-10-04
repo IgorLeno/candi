@@ -10,6 +10,8 @@ import {
   deleteJobConfirmed,
   deleteJobRefusalText,
   latest,
+  leftOutBlocker,
+  leftOutKindLabel,
   needsUser,
   persistSummary,
   refusalText,
@@ -465,5 +467,63 @@ describe("deleteJobResultSchema", () => {
     ]) {
       expect(deleteJobResultSchema.safeParse({ ok: true, delete_job }).success).toBe(false)
     }
+  })
+})
+
+describe("vagas que ficaram de fora da cotação", () => {
+  const job = {
+    job_id: "4470000020",
+    empresa: "ACME",
+    cargo: "Estagiário",
+    local: "BH",
+    url: "https://www.linkedin.com/jobs/view/4470000020",
+    fonte: "LinkedIn",
+    motivo: "estágio/aprendiz",
+    kind: "PREFILTRO",
+    data: "",
+    has_card: true,
+    in_runtime: false,
+  }
+
+  it("o veredito nunca trava; só motivo técnico", () => {
+    expect(leftOutBlocker(job, null)).toBeNull()
+    expect(leftOutBlocker({ ...job, kind: "ENCERRADA" }, null)).toBeNull()
+    expect(leftOutBlocker({ ...job, in_runtime: true }, null)).toMatch(/Já está no job-search/)
+    expect(leftOutBlocker({ ...job, has_card: false }, null)).toMatch(/Cotação antiga/)
+    const running = { active: true } as Dispatch
+    expect(leftOutBlocker(job, running)).toMatch(/em andamento/)
+  })
+
+  it("rótulo do motivo", () => {
+    expect(leftOutKindLabel("PREFILTRO")).toBe("Pré-filtro")
+    expect(leftOutKindLabel("LIMITE")).toBe("Acima do limite da rodada")
+    expect(leftOutKindLabel("BLOCKED_EXTRACTION")).toBe("Página não lida")
+  })
+
+  it("o schema aceita a lista no progresso da cotação e registros antigos sem ela", () => {
+    const base = {
+      id: "d-20261003T120000Z-abcdef",
+      action: "BUSCAR_VAGAS",
+      platform: "hermes",
+      job_id: null,
+      status: "CONCLUIDO",
+      code: null,
+      marker: null,
+      bot: "x",
+      active: false,
+      acknowledged: false,
+      created_at: "2026-10-03T12:00:00Z",
+      finished_at: null,
+    }
+    const progress = { percent: 100, stages: [] }
+    expect(dispatchSchema.safeParse({ ...base, progress }).success).toBe(true)
+    const parsed = dispatchSchema.safeParse({
+      ...base,
+      progress: { ...progress, excluded_jobs: [job], deferred_jobs: [] },
+    })
+    expect(parsed.success && parsed.data.progress.excluded_jobs?.[0].kind).toBe("PREFILTRO")
+    expect(dispatchSchema.safeParse({ ...base, action: "ANALISAR_DESCOBERTA", job_id: "1", progress }).success).toBe(
+      true
+    )
   })
 })

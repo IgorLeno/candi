@@ -21,10 +21,23 @@ export type IntakeAction = (typeof INTAKE_ACTIONS)[number]
 export const ANALYZE_ACTION = "ANALISAR_VAGA"
 
 /**
+ * "Mandar ao ChatGPT" (Hermes only, host pipeline, decision 2026-10-03): a job the search left out (prefilter, over
+ * the 12-analyses budget, closed or unreadable) goes to the ChatGPT analysis only when the user asks
+ * (`analyzeLeftOut`, `--from <search> --job-id`). Its writeset is registered like the others.
+ */
+export const LEFT_OUT_ACTION = "ANALISAR_DESCOBERTA"
+
+/**
  * Every record kind in the dispatcher's list. REGISTRAR_WRITESET is not a bot: it is `dispatch.py persist`,
  * where job-search runs `writeset.py persist` with its own write credential at the user's request.
  */
-export const DISPATCH_ACTIONS = [...BOT_ACTIONS, ...INTAKE_ACTIONS, ANALYZE_ACTION, "REGISTRAR_WRITESET"] as const
+export const DISPATCH_ACTIONS = [
+  ...BOT_ACTIONS,
+  ...INTAKE_ACTIONS,
+  ANALYZE_ACTION,
+  LEFT_OUT_ACTION,
+  "REGISTRAR_WRITESET",
+] as const
 export type DispatchAction = (typeof DISPATCH_ACTIONS)[number]
 
 export const PER_JOB_ACTIONS: readonly BotAction[] = ["GERAR_CURRICULO", "PREENCHER_CANDIDATURA"]
@@ -130,11 +143,34 @@ const cvRecoverySchema = z.object({
 })
 export type CvRecovery = z.infer<typeof cvRecoverySchema>
 
+/**
+ * One job the search did not analyse (`progress.excluded_jobs`/`deferred_jobs`). Card fields are the advertiser's
+ * untrusted plain text. `kind`: PREFILTRO, LIMITE, ENCERRADA or a BLOCKED_* code of the posting read. `has_card` is
+ * false for older searches (no card saved: cannot be sent); `in_runtime` = already analysed some other way.
+ */
+const leftOutJobSchema = z.object({
+  job_id: z.string().max(64),
+  empresa: z.string().max(200),
+  cargo: z.string().max(200),
+  local: z.string().max(200),
+  url: z.string().max(2000),
+  fonte: z.string().max(40),
+  motivo: z.string().max(300),
+  kind: z.string().max(40),
+  data: z.string().max(40),
+  has_card: z.boolean(),
+  in_runtime: z.boolean(),
+})
+export type LeftOutJob = z.infer<typeof leftOutJobSchema>
+
 const progressSchema = z.object({
   percent: z.number().min(0).max(100),
   stages: z.array(stageSchema),
   candidates: z.number().nullable().optional(),
   excluded: z.number().nullable().optional(),
+  /** Search only (host, since 2026-10-03): the jobs it left out, with their card. Older records omit them. */
+  excluded_jobs: z.array(leftOutJobSchema).max(200).optional(),
+  deferred_jobs: z.array(leftOutJobSchema).max(200).optional(),
   writeset_job_ids: z.array(z.string()).optional(),
   writeset_path: z.string().nullable().optional(),
   handoff: z.string().nullable().optional(),
@@ -188,7 +224,10 @@ export const dispatchSchema = z.object({
   progress: progressSchema,
   /** Only for Grok (manual paste): the fixed command text. */
   command: z.string().optional(),
-  /** REGISTRAR_WRITESET: the search or analysis it persists; ANALISAR_INDICADA: the LOCALIZAR_VAGA it analyses. */
+  /**
+   * REGISTRAR_WRITESET: the search or analysis it persists; ANALISAR_INDICADA: the LOCALIZAR_VAGA it analyses;
+   * ANALISAR_DESCOBERTA: the BUSCAR_VAGAS that left the job out.
+   */
   source_id: z.string().nullable().optional(),
   /** Vaga indicada discarded in the panel (nothing goes to the Sheet). */
   discarded: z.boolean().optional(),

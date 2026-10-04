@@ -29,6 +29,7 @@ import {
   ackDispatch,
   analyzeIntake,
   analyzeJob,
+  analyzeLeftOut,
   deleteDispatch,
   discardDispatch,
   getCvFile,
@@ -74,6 +75,8 @@ import {
   discardedIntakes,
   isActiveStatus,
   latest,
+  leftOutBlocker,
+  leftOutKindLabel,
   needsUser,
   persistSummary,
   refineRoom,
@@ -83,6 +86,7 @@ import {
   withRegistration,
 } from "@/lib/ops/present"
 import {
+  LEFT_OUT_ACTION,
   PLATFORMS,
   type BotAction,
   type CvFileInfo,
@@ -102,6 +106,7 @@ const ACTION_ICON: Record<DispatchAction, LucideIcon> = {
   LOCALIZAR_VAGA: Crosshair,
   ANALISAR_INDICADA: MessagesSquare,
   ANALISAR_VAGA: ScanSearch,
+  ANALISAR_DESCOBERTA: ScanSearch,
   REGISTRAR_WRITESET: FileSpreadsheet,
 }
 
@@ -908,17 +913,139 @@ function DiscardedIntakes({ intakes, onChanged }: { intakes: Dispatch[]; onChang
   )
 }
 
+/**
+ * Jobs this search did not analyse (prefilter, over the budget, closed or unreadable), with why. The prefilter verdict
+ * never blocks (decision 2026-10-03): each one can go to the ChatGPT analysis ("Mandar ao ChatGPT"); nothing goes there
+ * or to the Sheet by default. Card text is the advertiser's untrusted plain text; links only through `safeHttpUrl`.
+ */
+function LeftOutJobs({
+  search,
+  progress,
+  analyses,
+  onChanged,
+}: {
+  search: Dispatch
+  progress: DispatchProgress
+  analyses: Dispatch[]
+  onChanged: () => void
+}) {
+  const jobs = [...(progress.excluded_jobs ?? []), ...(progress.deferred_jobs ?? [])]
+  const [pending, startTransition] = useTransition()
+  const [sending, setSending] = useState<string | null>(null)
+  if (jobs.length === 0) return null
+  const ofJob = (jobId: string) =>
+    latest(
+      analyses.filter((dispatch) => dispatch.job_id === jobId),
+      LEFT_OUT_ACTION
+    )
+  return (
+    <Collapsible className="rounded-xl border border-border/70 p-3" data-testid="left-out">
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7 px-1 text-sm font-semibold" data-testid="left-out-toggle">
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          Ficaram de fora · {jobs.length}
+        </Button>
+      </CollapsibleTrigger>
+      <p className="mt-1 text-xs text-muted-foreground">
+        O pré-filtro e o limite da rodada não impedem nada: mande ao ChatGPT a vaga que quiser analisar.
+      </p>
+      <CollapsibleContent>
+        <ul className="mt-3 space-y-3">
+          {jobs.map((job) => {
+            const analysis = ofJob(job.job_id)
+            const blocker = leftOutBlocker(job, analysis)
+            const url = safeHttpUrl(job.url)
+            return (
+              <li key={job.job_id} className="space-y-2" data-testid="left-out-job" data-job-id={job.job_id}>
+                <div className="flex flex-wrap items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">
+                      {job.cargo || "(sem cargo)"}
+                      {job.empresa && <span className="font-normal text-muted-foreground"> · {job.empresa}</span>}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {[job.local, job.fonte].filter(Boolean).join(" · ")}
+                      {url && (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-2 inline-flex items-center gap-0.5 hover:text-foreground"
+                        >
+                          <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                          publicação
+                        </a>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground" data-testid="left-out-reason">
+                      <ToneBadge tone="muted" className="mr-1.5">
+                        {leftOutKindLabel(job.kind)}
+                      </ToneBadge>
+                      {job.motivo}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={blocker !== null || pending}
+                    title={blocker ?? undefined}
+                    data-testid="left-out-send"
+                    onClick={() => {
+                      setSending(job.job_id)
+                      startTransition(async () => {
+                        try {
+                          const result = await analyzeLeftOut(search.id, job.job_id)
+                          if (!result.ok) {
+                            toast.error(refusalText(result.code))
+                            return
+                          }
+                          toast.success("Vaga mandada ao ChatGPT pelo job-search.")
+                          onChanged()
+                        } catch {
+                          toast.error(refusalText("UNAUTHENTICATED"))
+                        } finally {
+                          setSending(null)
+                        }
+                      })
+                    }}
+                  >
+                    {pending && sending === job.job_id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <MessagesSquare className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {analysis ? "Mandar de novo" : ACTION_META.ANALISAR_DESCOBERTA.verb}
+                  </Button>
+                </div>
+                {blocker && (
+                  <p className="text-xs text-muted-foreground" data-testid="left-out-blocker">
+                    {blocker}
+                  </p>
+                )}
+                {analysis && <DispatchCard dispatch={analysis} onChanged={onChanged} />}
+              </li>
+            )
+          })}
+        </ul>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
 const ACKABLE = new Set(["INCERTO", "FALHOU", "PRECISA_HUMANO", "PARADO", "MANUAL"])
 
 export function DispatchCard({
   dispatch,
   knownJobIds,
   analysis = null,
+  leftOutAnalyses,
   onChanged,
   onClose,
 }: {
   dispatch: Dispatch
   knownJobIds?: ReadonlySet<string>
+  /** BUSCAR_VAGAS: the ANALISAR_DESCOBERTA runs of jobs this search left out. */
+  leftOutAnalyses?: Dispatch[]
   /** LOCALIZAR_VAGA: the latest analysis of this intake, if any. */
   analysis?: Dispatch | null
   onChanged: () => void
@@ -1036,13 +1163,19 @@ export function DispatchCard({
           </p>
         )}
         {canResumeCv(dispatch) && <CvResume key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />}
-        {dispatch.action === "ANALISAR_VAGA" && <DiagnosisList progress={progress} testId="analysis-diagnosis" />}
+        {(dispatch.action === "ANALISAR_VAGA" || dispatch.action === "ANALISAR_DESCOBERTA") && (
+          <DiagnosisList progress={progress} testId="analysis-diagnosis" />
+        )}
         {(dispatch.action === "BUSCAR_VAGAS" ||
           dispatch.action === "ANALISAR_VAGA" ||
+          dispatch.action === "ANALISAR_DESCOBERTA" ||
           (dispatch.action === "ANALISAR_INDICADA" && !dispatch.discarded)) && (
           <WritesetRegistration dispatch={dispatch} progress={progress} onChanged={onChanged} />
         )}
         {intake && <IntakeDecisions dispatch={dispatch} analysis={analysis} onChanged={onChanged} />}
+        {dispatch.action === "BUSCAR_VAGAS" && (
+          <LeftOutJobs search={dispatch} progress={progress} analyses={leftOutAnalyses ?? []} onChanged={onChanged} />
+        )}
         {(dispatch.code || dispatch.marker) && dispatch.status !== "CONCLUIDO" && (
           <p className="text-xs text-muted-foreground">
             Código: <span className="font-mono">{dispatch.code ?? dispatch.marker}</span>
@@ -1050,11 +1183,13 @@ export function DispatchCard({
               (dispatch.mode === "host"
                 ? dispatch.code === "PASTE_PROMPT_IN_CLAUDE"
                   ? " — cole o prompt abaixo no Claude in Chrome."
-                  : dispatch.code === "POSTING_UNAVAILABLE"
-                    ? " — o job-search não achou o texto desta vaga (sem publicação salva, sem dossier anterior e fora do LinkedIn)."
-                    : canResumeCv(dispatch)
-                      ? " — veja o motivo acima e escolha como seguir."
-                      : " — ação sua necessária (veja o código)."
+                  : dispatch.code === "POSTING_UNAVAILABLE" && dispatch.action === "ANALISAR_DESCOBERTA"
+                    ? " — o job-search não conseguiu ler o texto desta vaga (página fora do ar ou sem descrição); abra a publicação e use \u201cBuscar vaga específica\u201d."
+                    : dispatch.code === "POSTING_UNAVAILABLE"
+                      ? " — o job-search não achou o texto desta vaga (sem publicação salva, sem dossier anterior e fora do LinkedIn)."
+                      : canResumeCv(dispatch)
+                        ? " — veja o motivo acima e escolha como seguir."
+                        : " — ação sua necessária (veja o código)."
                 : canRefineIntake(dispatch)
                   ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
                   : " — veja o Bot Chat no Hermes Desktop.")}
@@ -1439,13 +1574,16 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   const { data, error, refresh } = useDispatches({ action: "BUSCAR_VAGAS" })
   const intakes = useDispatches({ action: "LOCALIZAR_VAGA" })
   const analyses = useDispatches({ action: "ANALISAR_INDICADA" })
+  const leftOut = useDispatches({ action: LEFT_OUT_ACTION })
   const { refresh: refreshIntakes } = intakes
   const { refresh: refreshAnalyses } = analyses
+  const { refresh: refreshLeftOut } = leftOut
   const refreshAll = useCallback(() => {
     void refresh()
     void refreshIntakes()
     void refreshAnalyses()
-  }, [refresh, refreshIntakes, refreshAnalyses])
+    void refreshLeftOut()
+  }, [refresh, refreshIntakes, refreshAnalyses, refreshLeftOut])
   const [showSearch, setShowSearch] = useState(false)
   const [showIntake, setShowIntake] = useState(false)
   const known = useMemo(() => new Set(knownJobIds), [knownJobIds])
@@ -1456,7 +1594,11 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   // "Fechar" hides the intake and its analysis in this browser only; a newer intake shows up as usual.
   const closed = useClosed(intake?.id ?? null)
   const closeIntake = intake && !intake.active && !analysis?.active ? () => writeClosed(intake.id, true) : undefined
-  const searchForced = last !== null && needsUser(last, withRegistration(last.progress, known))
+  const leftOutOfLast = (leftOut.data?.dispatches ?? []).filter((dispatch) => dispatch.source_id === last?.id)
+  // A left-out job's analysis lives inside the search card: running, waiting or unregistered keeps the card shown.
+  const searchForced =
+    last !== null &&
+    (needsUser(last, withRegistration(last.progress, known)) || leftOutOfLast.some((dispatch) => needsUser(dispatch)))
   const intakeForced = needsUser(intake) || needsUser(analysis)
   const searchShown = last !== null && (searchForced || showSearch)
   const hasIntakes = intake !== null || discarded.length > 0
@@ -1468,7 +1610,9 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
     : null
   const chatgptBusy = (analyses.data?.dispatches ?? []).some((dispatch) => dispatch.active)
     ? "A análise da vaga específica está usando o ChatGPT."
-    : null
+    : (leftOut.data?.dispatches ?? []).some((dispatch) => dispatch.active)
+      ? "A análise de uma vaga que ficou de fora está usando o ChatGPT."
+      : null
   const reason = (last?.active ? "Já existe uma cotação em andamento." : null) ?? linceBusy ?? chatgptBusy
   const intakeReason = linceBusy ?? gatewayReason(data, "hermes")
   const shownError = error ?? intakes.error ?? analyses.error
@@ -1516,7 +1660,9 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
         )}
         {shownError && <span className="text-xs text-muted-foreground">{refusalText(shownError)}</span>}
       </div>
-      {searchShown && last && <DispatchCard dispatch={last} knownJobIds={known} onChanged={refreshAll} />}
+      {searchShown && last && (
+        <DispatchCard dispatch={last} knownJobIds={known} leftOutAnalyses={leftOutOfLast} onChanged={refreshAll} />
+      )}
       {intakeShown && (
         <div className="space-y-3" data-testid="intake-group">
           {intake && !closed && (

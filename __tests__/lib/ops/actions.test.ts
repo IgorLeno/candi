@@ -20,6 +20,7 @@ import {
   analyzeIntake,
   confirmJobOpen,
   analyzeJob,
+  analyzeLeftOut,
   declineJob,
   deleteDispatch,
   deleteJob,
@@ -230,6 +231,37 @@ describe("ops server actions", () => {
     expect(options).toEqual({ stdin: "pode tirar a categoria Python --option claude" })
     runDispatcher.mockResolvedValue({ ok: false, code: "ALREADY_RESUMED", detail: "x" })
     await expect(resumeCv(id, { option: "chatgpt" })).resolves.toEqual({ ok: false, code: "ALREADY_RESUMED" })
+  })
+
+  it("mandar ao ChatGPT uma vaga de fora: só o id da cotação e o job_id validados, nada mais", async () => {
+    const search = "d-20261003T120000Z-abcdef"
+    session.current = null
+    await expect(analyzeLeftOut(search, "4470000020")).rejects.toThrow("UNAUTHENTICATED")
+    session.current = { user: { email: "owner@e2e.test" } }
+    for (const [id, job] of [
+      ["x", "4470000020"],
+      [search, "../x"],
+      [search, "--platform"],
+      [null, "4470000020"],
+      [search, ["4470000020"]],
+    ] as const) {
+      await expect(analyzeLeftOut(id, job)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    // Not in the Sheet on purpose: job-search checks it against the search's left-out jobs.
+    await expect(analyzeLeftOut(search, "4470000020")).resolves.toEqual({ ok: true, value: { id: "d" } })
+    expect(runDispatcher.mock.calls[0][0]).toEqual([
+      "start",
+      "ANALISAR_DESCOBERTA",
+      "--platform",
+      "hermes",
+      "--from",
+      search,
+      "--job-id",
+      "4470000020",
+    ])
+    runDispatcher.mockResolvedValue({ ok: false, code: "ALREADY_IN_RUNTIME", detail: "x" })
+    await expect(analyzeLeftOut(search, "4470000020")).resolves.toEqual({ ok: false, code: "ALREADY_IN_RUNTIME" })
   })
 
   it("analisar: send only a validated job_id that is in the Sheet, sent jobs included", async () => {

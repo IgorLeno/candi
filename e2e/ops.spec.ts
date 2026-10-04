@@ -112,6 +112,55 @@ test.describe("Central de operações (bots)", () => {
     await expect(ops.getByTestId("dispatch-BUSCAR_VAGAS")).toHaveCount(0)
   })
 
+  test("cotar vagas: as que ficaram de fora aparecem com o motivo e vão ao ChatGPT só a pedido", async ({ page }) => {
+    // The fake advances one stage per poll (5 s).
+    test.setTimeout(120_000)
+    await page.goto("/cotar")
+    const ops = page.getByTestId("search-ops")
+    await ops.getByTestId("dispatch-button-BUSCAR_VAGAS").click()
+    await page.getByTestId("dispatch-confirm").click()
+    const card = ops.getByTestId("dispatch-BUSCAR_VAGAS")
+    await expect(card).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+
+    // Collapsed by default; the verdict is shown, never a gate.
+    const leftOut = card.getByTestId("left-out")
+    await expect(leftOut.getByTestId("left-out-toggle")).toHaveText("Ficaram de fora · 4")
+    await expect(leftOut.getByTestId("left-out-job")).toHaveCount(0)
+    await leftOut.getByTestId("left-out-toggle").click()
+    await expect(leftOut.getByTestId("left-out-job")).toHaveCount(4)
+    const job = (id: string) => leftOut.locator(`[data-testid="left-out-job"][data-job-id="${id}"]`)
+    await expect(job("fake-9101").getByTestId("left-out-reason")).toContainText("Pré-filtro")
+    await expect(job("fake-9101").getByTestId("left-out-reason")).toContainText("estágio/aprendiz")
+    await expect(job("fake-9103").getByTestId("left-out-reason")).toContainText("Acima do limite da rodada")
+    await expect(job("fake-9101").getByTestId("left-out-send")).toBeEnabled()
+    await expect(job("fake-9103").getByTestId("left-out-send")).toBeEnabled()
+    // Only technical reasons disable: analysed some other way, or an older search without the card.
+    await expect(job("fake-1001").getByTestId("left-out-send")).toBeDisabled()
+    await expect(job("fake-1001").getByTestId("left-out-blocker")).toContainText("Já está no job-search")
+    await expect(job("fake-9104").getByTestId("left-out-send")).toBeDisabled()
+    await expect(job("fake-9104").getByTestId("left-out-blocker")).toContainText("Cotação antiga")
+
+    await job("fake-9101").getByTestId("left-out-send").click()
+    const analysis = job("fake-9101").getByTestId("dispatch-ANALISAR_DESCOBERTA")
+    await expect(analysis).toBeVisible()
+    await expect(analysis).toContainText("ChatGPT (host) · Hermes")
+    await expect(job("fake-9101").getByTestId("left-out-send")).toBeDisabled()
+    // One ChatGPT pipeline at a time: a new search waits.
+    await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toBeDisabled()
+    await expect(analysis).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    for (const stage of ["posting", "analise", "writeset"]) {
+      await expect(analysis.locator(`[data-stage="${stage}"]`)).toHaveAttribute("data-state", "done")
+    }
+    await expect(analysis.getByTestId("analysis-diagnosis")).toContainText("DESCARTADA")
+    // Registering is the user's choice, with the existing flow; nothing went to the Sheet.
+    const registration = analysis.getByTestId("writeset-registration")
+    await expect(registration).toHaveAttribute("data-registration", "none")
+    await registration.getByTestId("register-writeset").click()
+    await page.getByTestId("register-confirm").click()
+    await expect(registration).toHaveAttribute("data-registration", "CONCLUIDO", { timeout: 20_000 })
+    await expect(job("fake-9101").getByTestId("left-out-send")).toHaveText("Mandar de novo")
+  })
+
   test("vaga específica: localizar, mandar para o ChatGPT e registrar na planilha", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)

@@ -13,6 +13,7 @@ import {
   DISPATCH_ACTIONS,
   DISPATCH_ID_RE,
   JOB_ID_RE,
+  LEFT_OUT_ACTION,
   confirmOpenResultSchema,
   declineResultSchema,
   deleteJobResultSchema,
@@ -191,6 +192,20 @@ export async function analyzeJob(jobId: unknown): Promise<ActionResult<Dispatch>
   const data = await getJobSearchData()
   if (!data.views.some((item) => item.job.job_id === jobId)) return { ok: false, code: "JOB_NOT_FOUND" }
   const args = ["start", ANALYZE_ACTION, "--platform", "hermes", "--job-id", jobId]
+  const result = await runDispatcher(args, oneResultSchema)
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/**
+ * "Mandar ao ChatGPT" a job the search left out (prefilter, budget, closed): the prefilter verdict never blocks
+ * (decision 2026-10-03). Only the search id and the job_id leave the panel: job-search checks the job is among that
+ * search's left-out jobs, fetches the full text itself and leaves a writeset to register ("Registrar na planilha").
+ */
+export async function analyzeLeftOut(searchId: unknown, jobId: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (typeof searchId !== "string" || !DISPATCH_ID_RE.test(searchId)) return { ok: false, code: "INPUT_INVALID" }
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const args = ["start", LEFT_OUT_ACTION, "--platform", "hermes", "--from", searchId, "--job-id", jobId]
   const result = await runDispatcher(args, oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }
