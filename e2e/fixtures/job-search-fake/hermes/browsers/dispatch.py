@@ -17,7 +17,7 @@ run that finishes. A finished BUSCAR_VAGAS lists the jobs it left out (`LEFT_OUT
 `ANALISAR_DESCOBERTA --from <search> --job-id` walks posting → ChatGPT → writeset for one of them (fake-1001:
 ALREADY_IN_RUNTIME, fake-9104: LEFT_OUT_WITHOUT_CARD). EDITAR_CURRICULO (stdin) needs a finished GERAR_CURRICULO of the
 job (CV_NOT_READY) and no résumé run (CV_DOC_BUSY); once done, `cv-file` answers the `-v2` PDF. `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
-CV_JSON_MISSING before). State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
+CV_JSON_MISSING before). `open-browser clouddesign` opens nothing and answers already_open false. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import hashlib
 import json
@@ -516,6 +516,12 @@ def main(argv):
             return refuse("DOSSIER_NOT_VALID")
         print(json.dumps({"ok": True, "confirm_open": {"job_id": job_id, "status_disponibilidade": "ABERTA",
                                                        "sheet": "UPDATED"}}))
+        return 0
+    if cmd == "open-browser":
+        # Opens nothing: says the Cloud Design Chrome is up, like `native_profiles.sh open` + `check` on the host.
+        if (argv[1] if len(argv) > 1 else "") != "clouddesign":
+            return refuse("BROWSER_INVALID")
+        print(json.dumps({"ok": True, "open_browser": {"browser": "clouddesign", "already_open": False}}))
         return 0
     if cmd == "delete-job":
         job_id = argv[1] if len(argv) > 1 else ""

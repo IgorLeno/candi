@@ -111,7 +111,8 @@ const REFUSAL_TEXT: Record<string, string> = {
   DISPATCH_ACTIVE: "Já existe um disparo igual em andamento.",
   APPLICATION_DISPATCH_ACTIVE: "Outra candidatura está em andamento: uma por vez.",
   APPLICATION_CDP_DOWN: "O Application Browser (Chrome com o Claude, CDP 9227) está fechado. Abra-o e tente de novo.",
-  CLOUDDESIGN_CDP_DOWN: "O Chrome do Cloud Design (CDP 9226) está fechado: abra-o e faça login no Claude.",
+  CLOUDDESIGN_CDP_DOWN:
+    "O Chrome do Cloud Design (CDP 9226) está fechado: abra o navegador do currículo e faça login no Claude.",
   CLAUDE_PANEL_CLOSED: "Abra o painel do Claude nas abas de currículo PT e EN do Cloud Design e tente de novo.",
   APPLICATION_STATE_BLOCKS: "O estado da candidatura no runtime do Grok impede um novo disparo: use o Hermes.",
   APPLICATION_LOCK_HELD: "Outra candidatura segura o lock do Application Operator.",
@@ -148,6 +149,14 @@ const REFUSAL_TEXT: Record<string, string> = {
   OPTION_INVALID: "Essa opção não vale mais para este bloqueio: atualize o painel.",
   NOTE_NOT_EXPECTED: "O texto em \u201cOutro\u201d só vai junto com um patch novo no ChatGPT.",
   HANDOFF_NOT_REUSABLE: "O patch anterior não pode ser reaproveitado: refaça o patch no ChatGPT.",
+  // "Abrir navegador do currículo" (dispatch.py open-browser clouddesign).
+  BROWSER_INVALID: "Navegador fora da lista do job-search.",
+  NO_GRAPHICAL_SESSION:
+    "O job-search não achou a sessão gráfica (DISPLAY/Wayland): abra pelo atalho Cloud Design Browser.",
+  CLOUDDESIGN_OPEN_NO_CDP:
+    "O Chrome do Cloud Design está aberto sem CDP: feche essa janela e clique em Abrir navegador do currículo de novo.",
+  CLOUDDESIGN_OPEN_FAILED:
+    "O job-search não conseguiu abrir o Chrome do Cloud Design: tente o atalho Cloud Design Browser (log em native-clouddesign.log).",
   // "Analisar" (dispatch.py start ANALISAR_VAGA).
   CHATGPT_BUSY: "O ChatGPT do job-search já está ocupado com outra cotação, currículo ou análise: espere terminar.",
   // "Pedir edição" do currículo (dispatch.py start EDITAR_CURRICULO).

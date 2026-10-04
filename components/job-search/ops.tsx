@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
+  AppWindow,
   Bot,
   CheckCircle2,
   ChevronDown,
@@ -36,6 +37,7 @@ import {
   discardDispatch,
   getCvFile,
   listDispatches,
+  openCvBrowser,
   refineIntake,
   registerWriteset,
   resumeCv,
@@ -99,6 +101,7 @@ import {
   type DispatchList,
   type DispatchProgress,
   type DispatchStage,
+  type OpenBrowserResult,
 } from "@/lib/ops/schema"
 import { cn } from "@/lib/utils"
 
@@ -1236,6 +1239,91 @@ export function DispatchCard({
   )
 }
 
+/** After the Chrome opens: what is still on the user (never automated: no credentials go through the panel). */
+function openBrowserText(value: OpenBrowserResult): string {
+  return value.already_open
+    ? "O Chrome do Cloud Design já estava aberto. Confira o login no Claude e o painel do Claude nas abas de currículo PT e EN."
+    : "Chrome do Cloud Design aberto. Falta você: fazer login no Claude e abrir o painel do Claude nas abas de currículo PT e EN."
+}
+
+/** "Abrir navegador do currículo" from a toast: job-search opens the Chrome; the outcome is another toast. */
+async function openCvBrowserToast(): Promise<void> {
+  try {
+    const result = await openCvBrowser()
+    if (result.ok) toast.success(openBrowserText(result.value), { duration: 10_000 })
+    else toast.error(refusalText(result.code))
+  } catch {
+    toast.error(refusalText("UNAUTHENTICATED"))
+  }
+}
+
+/** A refusal toast; CLOUDDESIGN_CDP_DOWN also offers to open the Cloud Design Chrome right there. */
+function toastRefusal(code: string): void {
+  if (code === "CLOUDDESIGN_CDP_DOWN") {
+    toast.error(refusalText(code), {
+      duration: 15_000,
+      action: { label: "Abrir navegador", onClick: () => void openCvBrowserToast() },
+    })
+    return
+  }
+  toast.error(refusalText(code))
+}
+
+/**
+ * "Abrir navegador do currículo" (Hermes): job-search opens the Cloud Design Chrome (CDP 9226) the way the desktop
+ * shortcut does. Only the Chrome: signing in to Claude and the Claude panel on the PT/EN tabs stay with the user.
+ */
+function OpenCvBrowserButton() {
+  const [pending, startTransition] = useTransition()
+  const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null)
+  return (
+    <div className="space-y-2" data-testid="open-cv-browser">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={pending}
+        data-testid="open-cv-browser-button"
+        onClick={() =>
+          startTransition(async () => {
+            setOutcome(null)
+            try {
+              const result = await openCvBrowser()
+              setOutcome(
+                result.ok
+                  ? { ok: true, text: openBrowserText(result.value) }
+                  : { ok: false, text: refusalText(result.code) }
+              )
+            } catch {
+              setOutcome({ ok: false, text: refusalText("UNAUTHENTICATED") })
+            }
+          })
+        }
+      >
+        {pending ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <AppWindow className="h-4 w-4" aria-hidden="true" />
+        )}
+        {pending ? "Abrindo o navegador…" : "Abrir navegador do currículo"}
+      </Button>
+      {outcome && (
+        <p
+          className={cn("flex items-start gap-1.5 text-xs", outcome.ok ? "text-st-open-fg" : "text-st-review-fg")}
+          role={outcome.ok ? "status" : "alert"}
+          data-testid="open-cv-browser-outcome"
+        >
+          {outcome.ok ? (
+            <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          ) : (
+            <XCircle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          )}
+          <span>{outcome.text}</span>
+        </p>
+      )}
+    </div>
+  )
+}
+
 function DispatchButton({
   action,
   jobId,
@@ -1301,6 +1389,7 @@ function DispatchButton({
                 <span className="text-muted-foreground">Plataforma:</span>
                 <PlatformToggle />
               </div>
+              {action === "GERAR_CURRICULO" && platform === "hermes" && <OpenCvBrowserButton />}
               {warning && (
                 <p className="rounded-lg border border-st-review/45 bg-st-review/15 p-2 text-st-review-fg" role="note">
                   {warning}
@@ -1324,7 +1413,9 @@ function DispatchButton({
                     try {
                       const result = await startDispatch({ action, platform, ...(jobId ? { jobId } : {}) })
                       if (!result.ok) {
-                        toast.error(refusalText(result.code))
+                        toastRefusal(result.code)
+                        // The modal blocks clicks outside it: close it so the toast's "Abrir navegador" is reachable.
+                        if (result.code === "CLOUDDESIGN_CDP_DOWN") setOpen(false)
                         return
                       }
                       onStarted()
@@ -1897,7 +1988,7 @@ function CvEditForm({
               try {
                 const result = await editCv(jobId, { platform, text: check.text })
                 if (!result.ok) {
-                  toast.error(refusalText(result.code))
+                  toastRefusal(result.code)
                   return
                 }
                 toast.success(

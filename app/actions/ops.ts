@@ -22,6 +22,7 @@ import {
   deleteResultSchema,
   listResultSchema,
   oneResultSchema,
+  openBrowserResultSchema,
   startInputSchema,
   type ConfirmOpenResult,
   type CvFileInfo,
@@ -30,6 +31,7 @@ import {
   type DeleteResult,
   type Dispatch,
   type DispatchList,
+  type OpenBrowserResult,
 } from "@/lib/ops/schema"
 
 // Bot dispatch from the panel. Server Functions are not covered by `proxy.ts`: every action checks the
@@ -279,6 +281,17 @@ export async function confirmJobOpen(jobId: unknown): Promise<ActionResult<Confi
   // Uncertain or failed writes may still have landed: re-read the Sheet either way.
   updateTag(JOB_SEARCH_CACHE_TAG)
   return result.ok ? { ok: true, value: result.value.confirm_open } : { ok: false, code: result.code }
+}
+
+/**
+ * "Abrir navegador do currículo": job-search (`dispatch.py open-browser clouddesign`) runs the same command as the
+ * Cloud Design Browser shortcut and checks the CDP. No input from the client: the browser name is fixed here. Signing
+ * in to Claude and opening its panel on the PT/EN tabs stay with the user.
+ */
+export async function openCvBrowser(): Promise<ActionResult<OpenBrowserResult>> {
+  await requireSession()
+  const result = await runDispatcher(["open-browser", "clouddesign"], openBrowserResultSchema)
+  return result.ok ? { ok: true, value: result.value.open_browser } : { ok: false, code: result.code }
 }
 
 /**

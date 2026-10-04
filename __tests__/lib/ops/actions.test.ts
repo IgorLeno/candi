@@ -27,6 +27,7 @@ import {
   discardDispatch,
   editCv,
   listDispatches,
+  openCvBrowser,
   refineIntake,
   registerWriteset,
   resumeCv,
@@ -56,6 +57,7 @@ describe("ops server actions", () => {
     await expect(deleteDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(declineJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(confirmJobOpen("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(openCvBrowser()).rejects.toThrow("UNAUTHENTICATED")
     await expect(deleteJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(resumeCv("d-20260929T120000Z-abcdef", { option: "claude" })).rejects.toThrow("UNAUTHENTICATED")
@@ -363,6 +365,21 @@ describe("ops server actions", () => {
     runDispatcher.mockResolvedValue({ ok: false, code: "OPEN_UNCERTAIN", detail: "x" })
     await expect(confirmJobOpen("fake-1001")).resolves.toEqual({ ok: false, code: "OPEN_UNCERTAIN" })
     expect(updateTag).toHaveBeenCalledTimes(2)
+  })
+
+  it("abrir navegador do currículo: fixed argv with no client input, accept only the fixed fields", async () => {
+    runDispatcher.mockResolvedValue({
+      ok: true,
+      value: { ok: true, open_browser: { browser: "clouddesign", already_open: false } },
+    })
+    await expect(openCvBrowser()).resolves.toEqual({ ok: true, value: { browser: "clouddesign", already_open: false } })
+    expect(runDispatcher.mock.calls[0][0]).toEqual(["open-browser", "clouddesign"])
+    // Any argument the client might send is ignored: the action takes none.
+    await (openCvBrowser as (...args: unknown[]) => Promise<unknown>)("application", "--evil")
+    expect(runDispatcher.mock.calls[1][0]).toEqual(["open-browser", "clouddesign"])
+    runDispatcher.mockResolvedValue({ ok: false, code: "CLOUDDESIGN_OPEN_NO_CDP", detail: "x" })
+    await expect(openCvBrowser()).resolves.toEqual({ ok: false, code: "CLOUDDESIGN_OPEN_NO_CDP" })
+    expect(updateTag).not.toHaveBeenCalled()
   })
 
   it("excluir vaga: send only a validated job_id, accept only the fixed counts, re-read the Sheet always", async () => {

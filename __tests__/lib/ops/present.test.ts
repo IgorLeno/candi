@@ -119,6 +119,16 @@ describe("canConfirmOpen", () => {
   })
 })
 
+describe("open-browser refusals", () => {
+  it("word every open-browser code and point the closed Chrome to the button", () => {
+    expect(refusalText("CLOUDDESIGN_CDP_DOWN")).toMatch(/abra o navegador do currículo/)
+    expect(refusalText("CLOUDDESIGN_OPEN_NO_CDP")).toMatch(/feche essa janela/)
+    expect(refusalText("CLOUDDESIGN_OPEN_FAILED")).toMatch(/Cloud Design Browser/)
+    expect(refusalText("NO_GRAPHICAL_SESSION")).toMatch(/sessão gráfica/)
+    expect(refusalText("BROWSER_INVALID")).toMatch(/Navegador/)
+  })
+})
+
 describe("confirmOpenRefusalText", () => {
   it("words shared codes for the confirmation and falls back to the common text", () => {
     expect(confirmOpenRefusalText("JOB_DISPATCH_ACTIVE")).toMatch(/confirmar/)

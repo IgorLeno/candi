@@ -303,6 +303,16 @@ export const confirmOpenResultSchema = z.object({
 })
 export type ConfirmOpenResult = z.infer<typeof confirmOpenResultSchema>["confirm_open"]
 
+/**
+ * `dispatch.py open-browser clouddesign`: job-search opened the Cloud Design Chrome (CDP 9226), as the desktop
+ * shortcut does, or found it already open. Only the browser name and whether it was already open.
+ */
+export const openBrowserResultSchema = z.object({
+  ok: z.literal(true),
+  open_browser: z.object({ browser: z.literal("clouddesign"), already_open: z.boolean() }),
+})
+export type OpenBrowserResult = z.infer<typeof openBrowserResultSchema>["open_browser"]
+
 const rowCount = z.number().int().nonnegative()
 
 /**
