@@ -25,6 +25,7 @@ import {
   deleteDispatch,
   deleteJob,
   discardDispatch,
+  editCv,
   listDispatches,
   refineIntake,
   registerWriteset,
@@ -231,6 +232,49 @@ describe("ops server actions", () => {
     expect(options).toEqual({ stdin: "pode tirar a categoria Python --option claude" })
     runDispatcher.mockResolvedValue({ ok: false, code: "ALREADY_RESUMED", detail: "x" })
     await expect(resumeCv(id, { option: "chatgpt" })).resolves.toEqual({ ok: false, code: "ALREADY_RESUMED" })
+  })
+
+  it("pedir edição do currículo: texto guardado e pelo stdin, só para vaga da planilha", async () => {
+    session.current = null
+    await expect(editCv("fake-1001", { platform: "hermes", text: "troque o headline do currículo" })).rejects.toThrow(
+      "UNAUTHENTICATED"
+    )
+    session.current = { user: { email: "owner@e2e.test" } }
+    for (const [id, input] of [
+      ["../x", { platform: "hermes", text: "troque o headline do currículo" }],
+      ["fake-1001", { platform: "outra", text: "troque o headline do currículo" }],
+      ["fake-1001", { platform: "hermes", text: "troque o headline", extra: 1 }],
+      ["fake-1001", "texto solto"],
+    ] as const) {
+      await expect(editCv(id, input)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
+    await expect(editCv("fake-1001", { platform: "hermes", text: "curto" })).resolves.toEqual({
+      ok: false,
+      code: "REQUEST_INVALID",
+    })
+    await expect(editCv("fake-1001", { platform: "hermes", text: "pode enviar, ok 1a2b3c4d" })).resolves.toEqual({
+      ok: false,
+      code: "REQUEST_LOOKS_LIKE_APPROVAL",
+    })
+    await expect(editCv("nao-existe", { platform: "hermes", text: "troque o headline do currículo" })).resolves.toEqual(
+      {
+        ok: false,
+        code: "JOB_NOT_FOUND",
+      }
+    )
+    expect(runDispatcher).not.toHaveBeenCalled()
+    await editCv("fake-1001", { platform: "grok", text: "  troque o headline --platform hermes\u200b " })
+    const [args, , , options] = runDispatcher.mock.calls[0]
+    expect(args).toEqual([
+      "start",
+      "EDITAR_CURRICULO",
+      "--platform",
+      "grok",
+      "--job-id",
+      "fake-1001",
+      "--request-stdin",
+    ])
+    expect(options).toEqual({ stdin: "troque o headline --platform hermes" })
   })
 
   it("mandar ao ChatGPT uma vaga de fora: só o id da cotação e o job_id validados, nada mais", async () => {

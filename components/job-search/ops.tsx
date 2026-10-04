@@ -16,6 +16,7 @@ import {
   FileText,
   Loader2,
   MessagesSquare,
+  PencilLine,
   Radar,
   ScanSearch,
   Trash2,
@@ -31,6 +32,7 @@ import {
   analyzeJob,
   analyzeLeftOut,
   deleteDispatch,
+  editCv,
   discardDispatch,
   getCvFile,
   listDispatches,
@@ -86,6 +88,7 @@ import {
   withRegistration,
 } from "@/lib/ops/present"
 import {
+  CV_EDIT_ACTION,
   LEFT_OUT_ACTION,
   PLATFORMS,
   type BotAction,
@@ -107,6 +110,7 @@ const ACTION_ICON: Record<DispatchAction, LucideIcon> = {
   ANALISAR_INDICADA: MessagesSquare,
   ANALISAR_VAGA: ScanSearch,
   ANALISAR_DESCOBERTA: ScanSearch,
+  EDITAR_CURRICULO: PencilLine,
   REGISTRAR_WRITESET: FileSpreadsheet,
 }
 
@@ -1163,6 +1167,12 @@ export function DispatchCard({
           </p>
         )}
         {canResumeCv(dispatch) && <CvResume key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />}
+        {dispatch.action === "EDITAR_CURRICULO" && progress.edit_request && (
+          <div className="rounded-lg bg-muted/40 p-2 text-sm" data-testid="cv-edit-request">
+            <span className="text-xs text-muted-foreground">Seu pedido</span>
+            <p className="whitespace-pre-wrap break-words">{progress.edit_request}</p>
+          </div>
+        )}
         {(dispatch.action === "ANALISAR_VAGA" || dispatch.action === "ANALISAR_DESCOBERTA") && (
           <DiagnosisList progress={progress} testId="analysis-diagnosis" />
         )}
@@ -1189,7 +1199,9 @@ export function DispatchCard({
                       ? " — o job-search não achou o texto desta vaga (sem publicação salva, sem dossier anterior e fora do LinkedIn)."
                       : canResumeCv(dispatch)
                         ? " — veja o motivo acima e escolha como seguir."
-                        : " — ação sua necessária (veja o código)."
+                        : dispatch.action === "EDITAR_CURRICULO"
+                          ? " — o Claude parou sem PDF novo: veja a resposta no painel do Claude e peça a edição de novo, se quiser."
+                          : " — ação sua necessária (veja o código)."
                 : canRefineIntake(dispatch)
                   ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
                   : " — veja o Bot Chat no Hermes Desktop.")}
@@ -1749,6 +1761,7 @@ export function JobAnalysisOps({ analyzed }: { analyzed: boolean }) {
 export function JobCvOps() {
   const { jobId, data, refresh } = useJobOps()
   const cv = latest(data?.dispatches ?? [], "GERAR_CURRICULO")
+  const edit = latest(data?.dispatches ?? [], CV_EDIT_ACTION)
   const job = data?.job
   const cvReady = job?.cv === "VALID"
   return (
@@ -1772,7 +1785,21 @@ export function JobCvOps() {
         )}
       </OpsBar>
       {/* Re-read the file whenever job-search's verdict on the résumé changes (a new PDF was just recorded). */}
-      <CvPreview key={`${job?.cv ?? "?"}:${cv?.finished_at ?? ""}`} jobId={jobId} />
+      <CvPreview key={`${job?.cv ?? "?"}:${cv?.finished_at ?? ""}:${edit?.finished_at ?? ""}`} jobId={jobId} />
+      <CvEditForm
+        jobId={jobId}
+        disabledReason={
+          edit?.active
+            ? "Edição em andamento."
+            : cv?.active
+              ? "Geração de currículo em andamento."
+              : job && !cvReady
+                ? "Gere o currículo desta vaga antes de pedir edição."
+                : null
+        }
+        onStarted={refresh}
+      />
+      {edit && <DispatchCard dispatch={edit} onChanged={refresh} />}
     </div>
   )
 }
@@ -1798,6 +1825,103 @@ export function JobApplicationOps() {
         </div>
       )}
     </OpsBar>
+  )
+}
+
+/**
+ * "Pedir edição": free text for any change in this job's résumé, run by Hermes (job-search host) or the Grok CV
+ * Operator. The text is the user's own (decision 2026-10-03, option B): it goes straight to Claude in Chrome, without
+ * ChatGPT. Same guards as the "vaga indicada"; the server and job-search check again.
+ */
+function CvEditForm({
+  jobId,
+  disabledReason,
+  onStarted,
+}: {
+  jobId: string
+  disabledReason: string | null
+  onStarted: () => void
+}) {
+  const platform = usePlatform()
+  const [text, setText] = useState("")
+  const [pending, startTransition] = useTransition()
+  const check = normalizeIntake(text)
+  const length = intakeLength(text.trim())
+  const problem =
+    text.trim() === "" || check.ok
+      ? null
+      : refusalText(check.code === "INTAKE_LOOKS_LIKE_APPROVAL" ? "REQUEST_LOOKS_LIKE_APPROVAL" : "REQUEST_INVALID")
+  return (
+    <section className="space-y-2 rounded-2xl border border-border p-4" data-testid="cv-edit" aria-label="Pedir edição">
+      <div className="flex flex-wrap items-center gap-2">
+        <Label htmlFor="cv-edit-input" className="text-sm font-semibold">
+          Pedir edição do currículo
+        </Label>
+        <span className="ml-auto">
+          <PlatformToggle />
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">{ACTION_META.EDITAR_CURRICULO.description}</p>
+      <Textarea
+        id="cv-edit-input"
+        value={text}
+        maxLength={INTAKE_MAX + 200}
+        rows={4}
+        placeholder="Ex.: troque o headline para “Engenharia Química | Processos e Dados” e tire a categoria Power BI."
+        disabled={disabledReason !== null}
+        data-testid="cv-edit-input"
+        onChange={(event) => setText(event.target.value)}
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground tabular-nums" data-testid="cv-edit-count">
+          {length}/{INTAKE_MAX}
+        </span>
+        {problem && (
+          <span className="text-xs text-st-review-fg" data-testid="cv-edit-problem">
+            {problem}
+          </span>
+        )}
+        {disabledReason && (
+          <span className="text-xs text-muted-foreground" data-testid="cv-edit-disabled">
+            {disabledReason}
+          </span>
+        )}
+        <Button
+          size="sm"
+          className="ml-auto"
+          disabled={disabledReason !== null || !check.ok || pending}
+          data-testid="cv-edit-submit"
+          onClick={() =>
+            startTransition(async () => {
+              if (!check.ok) return
+              try {
+                const result = await editCv(jobId, { platform, text: check.text })
+                if (!result.ok) {
+                  toast.error(refusalText(result.code))
+                  return
+                }
+                toast.success(
+                  platform === "grok"
+                    ? "Comando pronto: cole no CV Operator do Grok."
+                    : "Edição pedida ao job-search (Claude in Chrome)."
+                )
+                setText("")
+                onStarted()
+              } catch {
+                toast.error(refusalText("UNAUTHENTICATED"))
+              }
+            })
+          }
+        >
+          {pending ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <PencilLine className="h-4 w-4" aria-hidden="true" />
+          )}
+          {ACTION_META.EDITAR_CURRICULO.verb} · {PLATFORM_LABEL[platform]}
+        </Button>
+      </div>
+    </section>
   )
 }
 

@@ -14,6 +14,8 @@ import {
   DISPATCH_ID_RE,
   JOB_ID_RE,
   LEFT_OUT_ACTION,
+  CV_EDIT_ACTION,
+  PLATFORMS,
   confirmOpenResultSchema,
   declineResultSchema,
   deleteJobResultSchema,
@@ -169,6 +171,27 @@ export async function resumeCv(dispatchId: unknown, choice: unknown): Promise<Ac
   const result = await runDispatcher([...args, "chatgpt", "--note-stdin"], oneResultSchema, undefined, {
     stdin: note.text,
   })
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+const cvEditInputSchema = z.object({ platform: z.enum(PLATFORMS), text: z.string().max(12_000) }).strict()
+
+/**
+ * "Pedir edição": the user's own edit of this job's résumé (decision 2026-10-03, option B, no ChatGPT). The job must
+ * be in the Sheet; the text gets the same guards as the "vaga indicada" and goes over stdin, never argv. job-search
+ * checks again, stores it as a private file and builds the edit for Claude in Chrome; Grok gets a fixed command.
+ */
+export async function editCv(jobId: unknown, input: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  const parsed = cvEditInputSchema.safeParse(input)
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId) || !parsed.success)
+    return { ok: false, code: "INPUT_INVALID" }
+  const request = normalizeIntake(parsed.data.text)
+  if (!request.ok) return { ok: false, code: request.code.replace("INTAKE_", "REQUEST_") }
+  const data = await getJobSearchData()
+  if (!data.views.some((item) => item.job.job_id === jobId)) return { ok: false, code: "JOB_NOT_FOUND" }
+  const args = ["start", CV_EDIT_ACTION, "--platform", parsed.data.platform, "--job-id", jobId, "--request-stdin"]
+  const result = await runDispatcher(args, oneResultSchema, undefined, { stdin: request.text })
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }
 

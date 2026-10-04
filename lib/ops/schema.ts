@@ -28,6 +28,13 @@ export const ANALYZE_ACTION = "ANALISAR_VAGA"
 export const LEFT_OUT_ACTION = "ANALISAR_DESCOBERTA"
 
 /**
+ * "Pedir edição" (decision 2026-10-03, option B): the user's own edit of a job's résumé goes straight to Claude in
+ * Chrome, without ChatGPT. Third narrow free-text exception: guarded here and by job-search, sent over stdin
+ * (`editCv`), stored as a private file; Hermes runs it on the host, Grok gets a fixed command for the CV Operator.
+ */
+export const CV_EDIT_ACTION = "EDITAR_CURRICULO"
+
+/**
  * Every record kind in the dispatcher's list. REGISTRAR_WRITESET is not a bot: it is `dispatch.py persist`,
  * where job-search runs `writeset.py persist` with its own write credential at the user's request.
  */
@@ -36,6 +43,7 @@ export const DISPATCH_ACTIONS = [
   ...INTAKE_ACTIONS,
   ANALYZE_ACTION,
   LEFT_OUT_ACTION,
+  CV_EDIT_ACTION,
   "REGISTRAR_WRITESET",
 ] as const
 export type DispatchAction = (typeof DISPATCH_ACTIONS)[number]
@@ -201,6 +209,9 @@ const progressSchema = z.object({
   claude_url: z.string().max(2000).nullable().optional(),
   /** "Analisar": where job-search found the posting (runtime, dossiers, linkedin). */
   posting_source: z.string().max(40).nullable().optional(),
+  /** "Pedir edição": the user's request (their own text, plain) and the PDF name the edit must produce. */
+  edit_request: z.string().max(1500).nullable().optional(),
+  edit_output: z.string().max(200).nullable().optional(),
   /** "Gerar currículo" stuck in PRECISA_HUMANO (host): reason and resume options. */
   recovery: cvRecoverySchema.nullable().optional(),
 })

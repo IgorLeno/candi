@@ -15,7 +15,8 @@ with ChatGPT refuses another with CHATGPT_BUSY. GERAR_CURRICULO of fake-1003 on 
 `progress.recovery` (Claude stopped without PDF); `resume-cv <id> --option claude|chatgpt [--note-stdin]` starts a new
 run that finishes. A finished BUSCAR_VAGAS lists the jobs it left out (`LEFT_OUT`);
 `ANALISAR_DESCOBERTA --from <search> --job-id` walks posting → ChatGPT → writeset for one of them (fake-1001:
-ALREADY_IN_RUNTIME, fake-9104: LEFT_OUT_WITHOUT_CARD). `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
+ALREADY_IN_RUNTIME, fake-9104: LEFT_OUT_WITHOUT_CARD). EDITAR_CURRICULO (stdin) needs a finished GERAR_CURRICULO of the
+job (CV_NOT_READY) and no résumé run (CV_DOC_BUSY); once done, `cv-file` answers the `-v2` PDF. `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
 CV_JSON_MISSING before). State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import hashlib
@@ -34,7 +35,8 @@ APPROVAL_RE = re.compile(r"(?i)\b(ok|n[aã]o)\s+[0-9a-f]{8}\b")
 BOTS = {"BUSCAR_VAGAS": ("Lince", "Job Scout"), "GERAR_CURRICULO": ("CVerino", "CV Strategist"),
         "PREENCHER_CANDIDATURA": ("Candidatinho", "Application Operator"), "LOCALIZAR_VAGA": ("Lince", "Job Scout"),
         "ANALISAR_INDICADA": ("ChatGPT (host)", "Job Scout"), "ANALISAR_VAGA": ("ChatGPT (host)", "Job Scout"),
-        "ANALISAR_DESCOBERTA": ("ChatGPT (host)", "Job Scout")}
+        "ANALISAR_DESCOBERTA": ("ChatGPT (host)", "Job Scout"),
+        "EDITAR_CURRICULO": ("Claude in Chrome (host)", "CV Operator")}
 LINCE = ("BUSCAR_VAGAS", "LOCALIZAR_VAGA")
 # Actions whose last stage is "registro na planilha" (a writeset the panel may persist).
 WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA")
@@ -86,6 +88,8 @@ STAGES = {
     "ANALISAR_INDICADA": [("posting", "Texto da vaga e planilha (só leitura)"),
                           ("analise", "Análise no ChatGPT (host)"), ("writeset", "Writeset pronto"),
                           ("registro", "Registro na planilha")],
+    "EDITAR_CURRICULO": [("pedido", "Pedido de edição (seu texto, sem ChatGPT)"),
+                         ("claude", "Edição no Claude in Chrome"), ("cv", "Currículo novo registrado")],
     "ANALISAR_DESCOBERTA": [("posting", "Texto da vaga"), ("analise", "Análise no ChatGPT (host)"),
                             ("writeset", "Writeset pronto"), ("registro", "Registro na planilha")],
     "ANALISAR_VAGA": [("planilha", "Dados da vaga (planilha, só leitura)"), ("posting", "Texto da vaga"),
@@ -230,6 +234,10 @@ def view(rec, recs=()):
                active=rec["status"] == "RODANDO", progress=progress)
     if rec["action"] in HOST_ANALYSES or rec.get("mode") == "host":
         out["mode"] = "host"
+    if rec["action"] == "EDITAR_CURRICULO":
+        progress.update(edit_request=rec["edit_request"], edit_output="curriculo_igor-fernandes_pt_fake-v2.pdf")
+        if step == 0:
+            out_stages[0]["state"] = "done"   # o pedido já está gravado
     if rec["action"] == "GERAR_CURRICULO":
         out.update(resumes=rec.get("resumes"), resume_option=rec.get("resume_option"),
                    retried_by=rec.get("retried_by"))
@@ -238,8 +246,14 @@ def view(rec, recs=()):
         if rec["status"] == "PRECISA_HUMANO":
             out_stages[1].update(state="failed", note="CLAUDE_STOPPED_WITHOUT_PDF")
     if rec["status"] == "MANUAL":
-        out["command"] = f"[painel:dispatch {rec['id']} · {rec['action']}]\n\nComando fixo de teste."
+        out["command"] = f"[painel:dispatch {rec['id']} · {rec['action']}]\n\nComando fixo de teste." + (
+            f" python3 hermes/browsers/cv_claude_chrome.py edit {rec['job_id']} --op-dir runtime/operations/{rec['id']}"
+            if rec["action"] == "EDITAR_CURRICULO" else "")
     return out
+
+
+def cv_done(recs, job_id):
+    return any(r["job_id"] == job_id and r["action"] == "GERAR_CURRICULO" and r["status"] == "CONCLUIDO" for r in recs)
 
 
 def refuse(code):
@@ -309,6 +323,17 @@ def main(argv):
             if origin is not None:
                 rec["refines"] = origin["id"]
                 origin.update(refined_by=rec["id"], acknowledged=True)
+        if action == "EDITAR_CURRICULO":
+            text = sys.stdin.read() if "--request-stdin" in argv else ""
+            if not 10 <= len(text.strip()) <= 1500:
+                return refuse("REQUEST_INVALID")
+            if APPROVAL_RE.search(text):
+                return refuse("REQUEST_LOOKS_LIKE_APPROVAL")
+            if any(r["action"] in ("GERAR_CURRICULO", "EDITAR_CURRICULO") and r["status"] == "RODANDO" for r in recs):
+                return refuse("CV_DOC_BUSY")
+            if not cv_done(recs, job_id):
+                return refuse("CV_NOT_READY")
+            rec.update(edit_request=text.strip(), mode="host" if platform == "hermes" else "bot")
         if action == "ANALISAR_DESCOBERTA":
             search = next((r for r in recs if r["id"] == source_id), None)
             card = next((e for e in LEFT_OUT["excluded"] + LEFT_OUT["deferred"] if e["job_id"] == job_id), None)
@@ -384,10 +409,9 @@ def main(argv):
                  and (action is None or r["action"] == action)]
         out = {"ok": True, "gateway": "running", "dispatches": [view(r, recs) for r in shown[:5]]}
         if job_id is not None:
-            cv_done = any(r["job_id"] == job_id and r["action"] == "GERAR_CURRICULO" and r["status"] == "CONCLUIDO"
-                          for r in recs)
+            ready = cv_done(recs, job_id)
             out["job"] = {"job_id": job_id, "dossier": "VALID", "actionable": True, "cv_allowed": True,
-                          "cv": "VALID" if cv_done else "MISSING", "application_state": None}
+                          "cv": "VALID" if ready else "MISSING", "application_state": None}
         print(json.dumps(out))
         return 0
     if cmd == "resume-cv":
@@ -470,16 +494,19 @@ def main(argv):
         job_id = argv[1] if len(argv) > 1 else ""
         if not JOB_ID_RE.match(job_id):
             return refuse("JOB_ID_INVALID")
-        if not any(r["job_id"] == job_id and r["action"] == "GERAR_CURRICULO" and r["status"] == "CONCLUIDO"
-                   for r in recs):
+        if not cv_done(recs, job_id):
             print(json.dumps({"ok": False, "code": "CV_NOT_VALID", "detail": "CV_JSON_MISSING"}))
             return 1
-        pdf = STATE.parent / "curriculos" / "curriculo_igor-fernandes_pt_fake.pdf"
+        # A finished "Pedir edição" leaves a new PDF (-v2, other bytes) as the registered résumé.
+        edited = any(r["job_id"] == job_id and r["action"] == "EDITAR_CURRICULO" and r["status"] == "CONCLUIDO"
+                     for r in recs)
+        body = FAKE_PDF + (b"%editado\n" if edited else b"")
+        pdf = STATE.parent / "curriculos" / f"curriculo_igor-fernandes_pt_fake{'-v2' if edited else ''}.pdf"
         pdf.parent.mkdir(parents=True, exist_ok=True)
-        pdf.write_bytes(FAKE_PDF)
+        pdf.write_bytes(body)
         print(json.dumps({"ok": True, "cv_file": {
-            "job_id": job_id, "path": str(pdf), "filename": pdf.name, "size": len(FAKE_PDF),
-            "sha256": hashlib.sha256(FAKE_PDF).hexdigest(), "exported_at": "2026-10-03T12:00:00Z"}}))
+            "job_id": job_id, "path": str(pdf), "filename": pdf.name, "size": len(body),
+            "sha256": hashlib.sha256(body).hexdigest(), "exported_at": "2026-10-03T12:00:00Z"}}))
         return 0
     if cmd == "confirm-open":
         job_id = argv[1] if len(argv) > 1 else ""

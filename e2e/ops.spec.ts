@@ -455,6 +455,54 @@ test.describe("Central de operações (bots)", () => {
     await expect(application.locator('[data-stage="aprovacao"]')).toHaveAttribute("data-state", "done")
   })
 
+  test("pedir edição do currículo: seu texto vai ao Claude (Hermes) ou vira comando do CV Operator (Grok)", async ({
+    page,
+  }) => {
+    // The fake advances one stage per poll (5 s).
+    test.setTimeout(120_000)
+    await page.goto("/vaga/fake-1001")
+    const section = page.getByTestId("job-section-curriculo")
+    const form = section.getByTestId("cv-edit")
+    // No résumé yet: only that technical reason disables the request.
+    await expect(form.getByTestId("cv-edit-disabled")).toHaveText("Gere o currículo desta vaga antes de pedir edição.")
+    await expect(form.getByTestId("cv-edit-input")).toBeDisabled()
+    await section.getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    await page.getByTestId("dispatch-confirm").click()
+    await expect(section.getByTestId("dispatch-GERAR_CURRICULO")).toHaveAttribute("data-status", "CONCLUIDO", {
+      timeout: 30_000,
+    })
+    await expect(section.getByTestId("cv-preview-filename")).toHaveText("curriculo_igor-fernandes_pt_fake.pdf")
+
+    const input = form.getByTestId("cv-edit-input")
+    await expect(input).toBeEnabled()
+    await input.fill("pode enviar, ok 1a2b3c4d")
+    await expect(form.getByTestId("cv-edit-problem")).toContainText("aprovação")
+    await expect(form.getByTestId("cv-edit-submit")).toBeDisabled()
+    const request = "Troque o headline para Engenharia Química | Processos e Dados e tire a categoria Power BI."
+    await input.fill(request)
+    await expect(form.getByTestId("cv-edit-count")).toHaveText(`${request.length}/1500`)
+    await expect(form.getByTestId("cv-edit-submit")).toHaveText("Pedir edição · Hermes")
+    await form.getByTestId("cv-edit-submit").click()
+    const edit = section.getByTestId("dispatch-EDITAR_CURRICULO")
+    await expect(edit.getByTestId("cv-edit-request")).toContainText(request)
+    await expect(edit).toContainText("Claude in Chrome (host) · Hermes")
+    await expect(input).toHaveValue("")
+    await expect(form.getByTestId("cv-edit-disabled")).toHaveText("Edição em andamento.")
+    await expect(edit).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    // The edited PDF (-v2) replaces the preview; the previous one is kept by job-search.
+    await expect(section.getByTestId("cv-preview-filename")).toHaveText("curriculo_igor-fernandes_pt_fake-v2.pdf")
+
+    // Grok: the same request becomes a fixed command for the CV Operator (the text stays in job-search's file).
+    await form.getByTestId("platform-grok").click()
+    await input.fill("Encurte o resumo usando só as frases que já estão nele.")
+    await expect(form.getByTestId("cv-edit-submit")).toHaveText("Pedir edição · Grok")
+    await form.getByTestId("cv-edit-submit").click()
+    const manual = section.getByTestId("dispatch-EDITAR_CURRICULO")
+    await expect(manual).toHaveAttribute("data-status", "MANUAL")
+    await expect(manual.getByTestId("grok-command")).toContainText("cv_claude_chrome.py edit fake-1001 --op-dir")
+    await expect(manual.getByTestId("grok-command")).not.toContainText("Encurte o resumo")
+  })
+
   test('currículo travado: motivo claro, opções e "Outro" com texto para o ChatGPT', async ({ page }) => {
     // The fake advances one stage per poll (5 s); fake-1003 stops in the Claude step the first time.
     test.setTimeout(90_000)
@@ -565,8 +613,11 @@ test.describe("Central de operações (bots)", () => {
   test("grok: seletor de plataforma gera o comando para colar", async ({ page }) => {
     await page.goto("/vaga/fake-1001")
     await page.getByTestId("job-detail").getByTestId("dispatch-button-GERAR_CURRICULO").click()
-    await page.getByTestId("platform-grok").click()
-    await expect(page.getByTestId("platform-grok")).toHaveAttribute("aria-checked", "true")
+    await page.getByTestId("dispatch-dialog").getByTestId("platform-grok").click()
+    await expect(page.getByTestId("dispatch-dialog").getByTestId("platform-grok")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
     await page.getByTestId("dispatch-confirm").click()
     await expect(page.getByTestId("dispatch-dialog").getByTestId("grok-command")).toContainText("[painel:dispatch")
     await page.getByTestId("dispatch-cancel").click()
@@ -574,7 +625,10 @@ test.describe("Central de operações (bots)", () => {
     // The choice sticks for the next dispatch in this browser.
     await page.reload()
     await page.getByTestId("job-detail").getByTestId("dispatch-button-GERAR_CURRICULO").click()
-    await expect(page.getByTestId("platform-grok")).toHaveAttribute("aria-checked", "true")
+    await expect(page.getByTestId("dispatch-dialog").getByTestId("platform-grok")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
   })
 
   test("nenhum estado da vaga desativa currículo e candidatura; sem análise o job-search explica", async ({ page }) => {

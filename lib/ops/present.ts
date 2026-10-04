@@ -57,6 +57,12 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     description:
       "O job-search pega o texto completo desta vaga, que a cotação deixou de fora, e leva ao ChatGPT para a análise completa. O veredito do pré-filtro não impede: o writeset fica pronto e você decide se registra na planilha.",
   },
+  EDITAR_CURRICULO: {
+    label: "Edição do currículo",
+    verb: "Pedir edição",
+    description:
+      "Seu pedido vai direto ao Claude in Chrome (/ajustar-curriculo), sem ChatGPT: ele edita só o que você pediu no currículo desta vaga, sem inventar fato, e exporta um PDF novo (-v2, -v3...) sem apagar o anterior.",
+  },
   REGISTRAR_WRITESET: {
     label: "Registrar na planilha",
     verb: "Registrar na planilha",
@@ -144,6 +150,13 @@ const REFUSAL_TEXT: Record<string, string> = {
   HANDOFF_NOT_REUSABLE: "O patch anterior não pode ser reaproveitado: refaça o patch no ChatGPT.",
   // "Analisar" (dispatch.py start ANALISAR_VAGA).
   CHATGPT_BUSY: "O ChatGPT do job-search já está ocupado com outra cotação, currículo ou análise: espere terminar.",
+  // "Pedir edição" do currículo (dispatch.py start EDITAR_CURRICULO).
+  REQUEST_INVALID: "O pedido precisa ter de 10 a 1500 caracteres, sem marca do painel nem marcador dos bots.",
+  REQUEST_LOOKS_LIKE_APPROVAL: "O pedido não pode parecer uma aprovação (ok/não + código).",
+  CV_NOT_READY: "Ainda não há currículo válido desta vaga: gere o currículo antes de pedir edição.",
+  CV_DOC_AT_OTHER_JOB:
+    "O currículo de trabalho no Claude Design está com o currículo de outra vaga. Gere de novo o desta vaga e depois peça a edição.",
+  CV_DOC_BUSY: "Outro currículo está sendo gerado ou editado no Claude Design: espere terminar.",
   // "Mandar ao ChatGPT" uma vaga que a cotação deixou de fora (dispatch.py start ANALISAR_DESCOBERTA).
   SOURCE_NOT_A_SEARCH: "Esse disparo não é uma cotação de vagas.",
   NOT_LEFT_OUT: "A vaga não está entre as que esta cotação deixou de fora: atualize o painel.",
