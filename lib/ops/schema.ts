@@ -270,6 +270,24 @@ export const deleteJobResultSchema = z.object({
 })
 export type DeleteJobResult = z.infer<typeof deleteJobResultSchema>["delete_job"]
 
+/**
+ * `dispatch.py cv-file <job_id>`: the résumé PDF job-search registered for the job (`cv.json` passing `cv_export
+ * verify`, file inside the résumé folder). `path` stays on the server: the client only gets `CvFileInfo`.
+ */
+export const cvFileResultSchema = z.object({
+  ok: z.literal(true),
+  cv_file: z.object({
+    job_id: z.string().regex(JOB_ID_RE),
+    path: z.string().min(1).max(1000),
+    filename: z.string().regex(/^[a-z0-9_-]+\.pdf$/),
+    size: z.number().int().nonnegative(),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    exported_at: z.string().max(40),
+  }),
+})
+export type CvFile = z.infer<typeof cvFileResultSchema>["cv_file"]
+export type CvFileInfo = Omit<CvFile, "path">
+
 export const refusalSchema = z.object({
   ok: z.literal(false),
   code: z.string().max(80),

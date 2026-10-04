@@ -156,6 +156,19 @@ export function refusalText(code: string): string {
   return REFUSAL_TEXT[code] ?? `Disparo recusado (${code}).`
 }
 
+// "Currículo" preview (dispatch.py cv-file): why there is no PDF to show. `detail` is cv_export's first error.
+export function cvFileText(code: string, detail?: string): string {
+  if (code === "CV_NOT_VALID") {
+    if (detail === "CV_JSON_MISSING") return "Ainda não há currículo gerado para esta vaga."
+    if (detail === "PDF_HASH_MISMATCH" || detail === "PDF_MISSING" || detail === "NOT_A_PDF")
+      return "O PDF registrado para esta vaga não está mais na pasta de currículos ou foi alterado depois de gerado. Gere de novo para ver aqui."
+    return "O currículo registrado não confere com o handoff atual desta vaga (geração nova não concluída?). Gere de novo para ver aqui."
+  }
+  if (code === "CV_OUTSIDE_PDF_DIR" || code === "CV_PATH_INVALID")
+    return "O PDF registrado está fora da pasta de currículos; o painel não o mostra."
+  return refusalText(code)
+}
+
 // "Excluir vaga" (dispatch.py delete-job → application.py delete). Codes shared with "Descartar" get their own words;
 // every code that may mean "some rows are already gone" sends the user to sync and check.
 const DELETE_JOB_REFUSAL_TEXT: Record<string, string> = {

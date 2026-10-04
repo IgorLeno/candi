@@ -363,8 +363,18 @@ test.describe("Central de operações (bots)", () => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)
     await page.goto("/vaga/fake-1001")
-    const ops = page.getByTestId("job-ops")
+    const ops = page.getByTestId("job-detail")
+    // Three sections, in order, each with its own bot action (decision 2026-10-03).
+    await expect(page.locator('[data-testid^="job-section-"]')).toHaveCount(3)
+    const sections = await page.locator('[data-testid^="job-section-"] h2').allTextContents()
+    expect(sections).toEqual(["Análise da vaga", "Currículo", "Candidatura"])
+    await expect(page.getByTestId("job-section-analise").getByTestId("analyze-button")).toBeVisible()
+    await expect(page.getByTestId("job-section-curriculo").getByTestId("dispatch-button-GERAR_CURRICULO")).toBeVisible()
+    await expect(
+      page.getByTestId("job-section-candidatura").getByTestId("dispatch-button-PREENCHER_CANDIDATURA")
+    ).toBeVisible()
     await expect(ops.getByTestId("cv-status")).toHaveText("Currículo não gerado")
+    await expect(page.getByTestId("cv-preview-empty")).toHaveText("Ainda não há currículo gerado para esta vaga.")
 
     // Without a ready CV the application dialog recommends generating it first.
     await ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
@@ -376,13 +386,22 @@ test.describe("Central de operações (bots)", () => {
     await page.getByTestId("dispatch-confirm").click()
     const cv = ops.getByTestId("dispatch-GERAR_CURRICULO")
     await expect(cv).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    // The finished run refreshes the preview without a reload: the PDF job-search registered, served inline.
+    const preview = page.getByTestId("job-section-curriculo").getByTestId("cv-preview")
+    await expect(preview.getByTestId("cv-preview-filename")).toHaveText("curriculo_igor-fernandes_pt_fake.pdf")
+    const src = await preview.getByTestId("cv-preview-frame").getAttribute("src")
+    expect(src).toMatch(/^\/api\/vaga\/fake-1001\/curriculo\?v=[0-9a-f]{12}$/)
+    const pdf = await page.request.get(src!)
+    expect(pdf.status()).toBe(200)
+    expect(pdf.headers()["content-type"]).toBe("application/pdf")
+    expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-")
     await page.reload()
-    await expect(page.getByTestId("job-ops").getByTestId("cv-status")).toHaveText("Currículo pronto")
+    await expect(page.getByTestId("job-detail").getByTestId("cv-status")).toHaveText("Currículo pronto")
 
-    await page.getByTestId("job-ops").getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
+    await page.getByTestId("job-detail").getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
     await expect(page.getByTestId("dispatch-dialog")).not.toContainText("ainda não está pronto")
     await page.getByTestId("dispatch-confirm").click()
-    const application = page.getByTestId("job-ops").getByTestId("dispatch-PREENCHER_CANDIDATURA")
+    const application = page.getByTestId("job-detail").getByTestId("dispatch-PREENCHER_CANDIDATURA")
     await expect(application).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
     await expect(application.locator('[data-stage="aprovacao"]')).toHaveAttribute("data-state", "done")
   })
@@ -391,7 +410,7 @@ test.describe("Central de operações (bots)", () => {
     // The fake advances one stage per poll (5 s); fake-1003 stops in the Claude step the first time.
     test.setTimeout(90_000)
     await page.goto("/vaga/fake-1003")
-    const ops = page.getByTestId("job-ops")
+    const ops = page.getByTestId("job-detail")
     await ops.getByTestId("dispatch-button-GERAR_CURRICULO").click()
     await page.getByTestId("dispatch-confirm").click()
     const stuck = ops.getByTestId("dispatch-GERAR_CURRICULO")
@@ -434,7 +453,7 @@ test.describe("Central de operações (bots)", () => {
     test.setTimeout(90_000)
     // fake-1006 is ENVIADA: the analysis, like every action, is still offered (the user chooses).
     await page.goto("/vaga/fake-1006")
-    const ops = page.getByTestId("job-ops")
+    const ops = page.getByTestId("job-detail")
     await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeEnabled()
     const button = ops.getByTestId("analyze-button")
     await expect(button).toBeEnabled()
@@ -476,14 +495,14 @@ test.describe("Central de operações (bots)", () => {
   test("analisar: vaga com dossier oferece refazer; vaga sem texto pede você", async ({ page }) => {
     test.setTimeout(60_000)
     await page.goto("/vaga/fake-1001")
-    await expect(page.getByTestId("job-ops").getByTestId("analyze-button")).toHaveText("Refazer análise")
-    await page.getByTestId("job-ops").getByTestId("analyze-button").click()
+    await expect(page.getByTestId("job-detail").getByTestId("analyze-button")).toHaveText("Refazer análise")
+    await page.getByTestId("job-detail").getByTestId("analyze-button").click()
     await expect(page.getByTestId("analyze-dialog")).toContainText("O dossier novo é anexado")
     await page.getByTestId("analyze-cancel").click()
 
     // fake-1008: no posting anywhere, so job-search stops and asks the user (never invents the text).
     await page.goto("/vaga/fake-1008")
-    const ops = page.getByTestId("job-ops")
+    const ops = page.getByTestId("job-detail")
     await ops.getByTestId("analyze-button").click()
     await page.getByTestId("analyze-confirm").click()
     const card = ops.getByTestId("dispatch-ANALISAR_VAGA")
@@ -496,7 +515,7 @@ test.describe("Central de operações (bots)", () => {
 
   test("grok: seletor de plataforma gera o comando para colar", async ({ page }) => {
     await page.goto("/vaga/fake-1001")
-    await page.getByTestId("job-ops").getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    await page.getByTestId("job-detail").getByTestId("dispatch-button-GERAR_CURRICULO").click()
     await page.getByTestId("platform-grok").click()
     await expect(page.getByTestId("platform-grok")).toHaveAttribute("aria-checked", "true")
     await page.getByTestId("dispatch-confirm").click()
@@ -505,7 +524,7 @@ test.describe("Central de operações (bots)", () => {
     await expect(page.getByTestId("dispatch-GERAR_CURRICULO")).toHaveAttribute("data-status", "MANUAL")
     // The choice sticks for the next dispatch in this browser.
     await page.reload()
-    await page.getByTestId("job-ops").getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    await page.getByTestId("job-detail").getByTestId("dispatch-button-GERAR_CURRICULO").click()
     await expect(page.getByTestId("platform-grok")).toHaveAttribute("aria-checked", "true")
   })
 
@@ -513,13 +532,13 @@ test.describe("Central de operações (bots)", () => {
     // ENVIO INCERTO, ENVIADA, NÃO CONFIRMADA and ENCERRADA + NÃO PRIORIZADA: the user chooses (decision 2026-10-02).
     for (const id of ["fake-1007", "fake-1006", "fake-1008", "fake-1010"]) {
       await page.goto(`/vaga/${id}`)
-      const ops = page.getByTestId("job-ops")
+      const ops = page.getByTestId("job-detail")
       await expect(ops.getByTestId("dispatch-button-GERAR_CURRICULO")).toBeEnabled()
       await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeEnabled()
     }
     // fake-1005 was never analysed: the button works and job-search's refusal says what to do.
     await page.goto("/vaga/fake-1005")
-    await page.getByTestId("job-ops").getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
+    await page.getByTestId("job-detail").getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
     await page.getByTestId("dispatch-dialog").getByTestId("platform-hermes").click()
     await page.getByTestId("dispatch-confirm").click()
     await expect(page.getByText('A vaga ainda não foi analisada no job-search: use "Analisar" antes.')).toBeVisible()
@@ -564,7 +583,7 @@ test.describe("Central de operações (bots)", () => {
   }) => {
     // The fake answers like job-search but cannot change the fixture Sheet: fake-1008 stays NÃO CONFIRMADA.
     await page.goto("/vaga/fake-1008")
-    const ops = page.getByTestId("job-ops")
+    const ops = page.getByTestId("job-detail")
     await expect(ops.getByTestId("dispatch-button-GERAR_CURRICULO")).toBeEnabled()
     await expect(ops.getByTestId("dispatch-button-PREENCHER_CANDIDATURA")).toBeEnabled()
     await page.getByTestId("confirm-open").click()

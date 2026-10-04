@@ -41,7 +41,8 @@ All dashboard pages live in `app/(dashboard)/` (layout = session guard + `Sideba
 - `/cotar` — "Cotar vagas" (`SearchOps`, only with bot dispatch enabled; `docs/plans/2026-10-02-jobusca-cotar-vagas.md`): "Cotar vagas"/"Nova cotação" (BUSCAR_VAGAS) and "Buscar vaga específica" (the "vaga indicada"). The latest cards stay hidden behind "Última cotação"/"Última vaga buscada" (React state, hidden again on reload); `needsUser()` keeps a running, PRECISA_HUMANO or unregistered-writeset card on screen.
 - `/analise` — KPIs, funnel, weekly series, distributions, source coverage, data quality. `?periodo=30d|90d` filters by `data_primeira_analise`.
 - `/vagas` — Job list: server page projects `JobView[]` with `toListItem()` and hands the slim rows to the client `JobsExplorer` (no bot search here); filters live in the URL (`parseFilters`/`filtersToParams`).
-- `/vaga/[job_id]` — Job detail (Server Component) over one `JobView`, handles FULL/PARTIAL/NONE/INVALID and unknown ids.
+- `/vaga/[job_id]` — Job detail (Server Component) over one `JobView`, handles FULL/PARTIAL/NONE/INVALID and unknown ids. Since 2026-10-03 the page has three sections, each with its own bot actions (`JobOpsProvider` polls once; `JobAnalysisOps`, `JobCvOps`, `JobApplicationOps`): **Análise da vaga**, **Currículo** (status, Gerar currículo and an inline preview of the PDF job-search registered) and **Candidatura**.
+- `/api/vaga/[job_id]/curriculo` — the résumé PDF of one job, inline (route handler, checks the session itself). Read-only: `dispatch.py cv-file <job_id>` says which file (`cv.json` VALID, inside the résumé folder); the panel never takes a path from the request and re-checks the PDF header and sha256 (`lib/ops/cv-file.ts`).
 - `/configuracoes` — Weekly goal and theme.
 - `/login` — Google sign-in (public). `/api/auth/*` — Auth.js handlers (public).
 
@@ -53,7 +54,7 @@ Auth.js v5 (`auth.ts`), Google only, JWT sessions, allowlist `ALLOWED_EMAIL` (fa
 - `app/(dashboard)/layout.tsx` calls `requireAllowedSession()`; every new dashboard page goes inside `app/(dashboard)/`.
 - `getJobSearchData()` refuses the real Sheet without an allowed session. Any future server action or route handler must call `getAllowedSession()` itself — the proxy does not protect Server Functions.
 
-Bot dispatch (`app/actions/ops.ts`: `startDispatch`, `listDispatches`, `ackDispatch`, `registerWriteset`, `startIntake`, `analyzeIntake`, `discardDispatch`, `declineJob`, `deleteJob`, `analyzeJob`, `resumeCv`) follows the same rule: every action calls `getAllowedSession()` first. Pages read `getJobSearchData()` directly. "Sincronizar" is `app/actions/job-search.ts` (`getAllowedSession()` + `updateTag`). Data links use `prefetch={false}` (each prefetch is a full dynamic render).
+Bot dispatch (`app/actions/ops.ts`: `startDispatch`, `listDispatches`, `ackDispatch`, `registerWriteset`, `startIntake`, `analyzeIntake`, `discardDispatch`, `declineJob`, `deleteJob`, `analyzeJob`, `resumeCv`, `getCvFile`) follows the same rule: every action calls `getAllowedSession()` first. Pages read `getJobSearchData()` directly. "Sincronizar" is `app/actions/job-search.ts` (`getAllowedSession()` + `updateTag`). Data links use `prefetch={false}` (each prefetch is a full dynamic render).
 
 `proxy.ts` only reads the session: it strips the session `Set-Cookie` that Auth.js re-issues on every JWT `auth()` call (`session.updateAge` does not apply to JWT), otherwise any response sent with the old cookie that lands after "Sair" sets it again. The cookie is written only by sign-in and sign-out, so a session lasts `maxAge` (7 days) from sign-in, with no sliding renewal. Do not go back to `export { auth as proxy }`.
 

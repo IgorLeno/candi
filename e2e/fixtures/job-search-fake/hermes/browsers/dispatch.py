@@ -13,8 +13,10 @@ the job's verdict, availability or application never refuse, like job-search on 
 for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
 with ChatGPT refuses another with CHATGPT_BUSY. GERAR_CURRICULO of fake-1003 on Hermes stops in PRECISA_HUMANO with
 `progress.recovery` (Claude stopped without PDF); `resume-cv <id> --option claude|chatgpt [--note-stdin]` starts a new
-run that finishes. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
+run that finishes. `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
+CV_JSON_MISSING before). State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
+import hashlib
 import json
 import os
 import re
@@ -22,6 +24,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+FAKE_PDF = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj "
+            b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n")
 STATE = Path(os.environ["JOB_SEARCH_BROWSERS_STATE"]) / "fake-dispatch.json"
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 APPROVAL_RE = re.compile(r"(?i)\b(ok|n[aã]o)\s+[0-9a-f]{8}\b")
@@ -417,6 +421,22 @@ def main(argv):
         if job_id == "fake-1006":
             return refuse("ALREADY_SENT")
         print(json.dumps({"ok": True, "decline": {"job_id": job_id, "status_candidatura": "RETIRADA"}}))
+        return 0
+    if cmd == "cv-file":
+        # The résumé of a job whose GERAR_CURRICULO finished: a tiny real PDF in the fake state dir (like cv.json VALID).
+        job_id = argv[1] if len(argv) > 1 else ""
+        if not JOB_ID_RE.match(job_id):
+            return refuse("JOB_ID_INVALID")
+        if not any(r["job_id"] == job_id and r["action"] == "GERAR_CURRICULO" and r["status"] == "CONCLUIDO"
+                   for r in recs):
+            print(json.dumps({"ok": False, "code": "CV_NOT_VALID", "detail": "CV_JSON_MISSING"}))
+            return 1
+        pdf = STATE.parent / "curriculos" / "curriculo_igor-fernandes_pt_fake.pdf"
+        pdf.parent.mkdir(parents=True, exist_ok=True)
+        pdf.write_bytes(FAKE_PDF)
+        print(json.dumps({"ok": True, "cv_file": {
+            "job_id": job_id, "path": str(pdf), "filename": pdf.name, "size": len(FAKE_PDF),
+            "sha256": hashlib.sha256(FAKE_PDF).hexdigest(), "exported_at": "2026-10-03T12:00:00Z"}}))
         return 0
     if cmd == "confirm-open":
         job_id = argv[1] if len(argv) > 1 else ""

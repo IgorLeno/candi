@@ -4,6 +4,7 @@ import { updateTag } from "next/cache"
 import { z } from "zod"
 import { getAllowedSession } from "@/lib/auth/session"
 import { JOB_SEARCH_CACHE_TAG, getJobSearchData } from "@/lib/job-search/source"
+import { cvFileInfo } from "@/lib/ops/cv-file"
 import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
 import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
 import {
@@ -20,6 +21,7 @@ import {
   oneResultSchema,
   startInputSchema,
   type ConfirmOpenResult,
+  type CvFileInfo,
   type DeclineResult,
   type DeleteJobResult,
   type DeleteResult,
@@ -253,4 +255,17 @@ export async function deleteJob(jobId: unknown): Promise<ActionResult<DeleteJobR
   // A partial or uncertain delete may have removed rows: re-read the Sheet either way.
   updateTag(JOB_SEARCH_CACHE_TAG)
   return result.ok ? { ok: true, value: result.value.delete_job } : { ok: false, code: result.code }
+}
+
+/**
+ * "Currículo" section: which résumé PDF job-search registered for this job (name, size, date), for the preview. The
+ * file path stays on the server; the PDF itself is served by `/api/vaga/[job_id]/curriculo`.
+ */
+export async function getCvFile(jobId: unknown): Promise<ActionResult<CvFileInfo> & { detail?: string }> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const info = await cvFileInfo(jobId)
+  if (!info.ok) return { ok: false, code: info.code, detail: info.detail }
+  const { job_id, filename, size, sha256, exported_at } = info.file
+  return { ok: true, value: { job_id, filename, size, sha256, exported_at } }
 }

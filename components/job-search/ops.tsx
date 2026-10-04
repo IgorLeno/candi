@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   Bot,
@@ -31,6 +31,7 @@ import {
   analyzeJob,
   deleteDispatch,
   discardDispatch,
+  getCvFile,
   listDispatches,
   refineIntake,
   registerWriteset,
@@ -69,6 +70,7 @@ import {
   canRefineIntake,
   canRegisterWriteset,
   canResumeCv,
+  cvFileText,
   discardedIntakes,
   isActiveStatus,
   latest,
@@ -83,6 +85,7 @@ import {
 import {
   PLATFORMS,
   type BotAction,
+  type CvFileInfo,
   type CvResumeOption,
   type Dispatch,
   type DispatchAction,
@@ -1541,43 +1544,74 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
 }
 
 /**
- * Bot actions of one job: "Analisar", "Gerar currículo", then "Preencher candidatura". No verdict, availability or
- * application state disables them (the user chooses, decision 2026-10-02); only the same action already running does.
- * job-search refuses with a code when it cannot run (no analysis, browser closed), shown in a toast.
+ * Bot actions of one job, split by the three sections of the job page (Análise da vaga, Currículo, Candidatura). One
+ * provider holds the job's dispatch list (one poll for the page); each section shows its own buttons and cards. No
+ * verdict, availability or application state disables them (the user chooses, decision 2026-10-02); only the same
+ * action already running does. job-search refuses with a code when it cannot run, shown in a toast.
  */
-export function JobOps({ jobId, analyzed }: { jobId: string; analyzed: boolean }) {
+type JobOpsState = { jobId: string; data: DispatchList | null; error: string | null; refresh: () => Promise<void> }
+const JobOpsContext = createContext<JobOpsState | null>(null)
+
+export function JobOpsProvider({ jobId, children }: { jobId: string; children: React.ReactNode }) {
   const { data, error, refresh } = useDispatches({ jobId })
+  const value = useMemo(() => ({ jobId, data, error, refresh }), [jobId, data, error, refresh])
+  return <JobOpsContext.Provider value={value}>{children}</JobOpsContext.Provider>
+}
+
+function useJobOps(): JobOpsState {
+  const value = useContext(JobOpsContext)
+  if (!value) throw new Error("JobOpsProvider ausente")
+  return value
+}
+
+function OpsBar({ testId, label, children }: { testId: string; label: string; children: React.ReactNode }) {
+  const { error } = useJobOps()
+  return (
+    <section
+      className="space-y-3 rounded-2xl border border-border bg-muted/20 p-4"
+      data-testid={testId}
+      aria-label={label}
+    >
+      <div className="flex flex-wrap items-center gap-2">{children}</div>
+      {error && <p className="text-xs text-muted-foreground">{refusalText(error)}</p>}
+    </section>
+  )
+}
+
+/** "Análise da vaga": Analisar / Refazer análise and its card. */
+export function JobAnalysisOps({ analyzed }: { analyzed: boolean }) {
+  const { jobId, data, refresh } = useJobOps()
   const analysis = latest(data?.dispatches ?? [], "ANALISAR_VAGA")
+  return (
+    <OpsBar testId="job-ops-analysis" label="Análise desta vaga pelos bots">
+      <AnalyzeButton
+        jobId={jobId}
+        analyzed={analyzed}
+        disabledReason={analyzeJobBlocker(analysis)}
+        onStarted={refresh}
+      />
+      {analysis && (
+        <div className="basis-full">
+          <DispatchCard dispatch={analysis} onChanged={refresh} />
+        </div>
+      )}
+    </OpsBar>
+  )
+}
+
+/** "Currículo": status, the PDF job-search registered for this job, Gerar currículo and its card. */
+export function JobCvOps() {
+  const { jobId, data, refresh } = useJobOps()
   const cv = latest(data?.dispatches ?? [], "GERAR_CURRICULO")
-  const application = latest(data?.dispatches ?? [], "PREENCHER_CANDIDATURA")
   const job = data?.job
   const cvReady = job?.cv === "VALID"
   return (
-    <section
-      className="space-y-4 rounded-2xl border border-border bg-muted/20 p-4"
-      data-testid="job-ops"
-      aria-label="Operação dos bots nesta vaga"
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Bots</span>
-        <AnalyzeButton
-          jobId={jobId}
-          analyzed={analyzed}
-          disabledReason={analyzeJobBlocker(analysis)}
-          onStarted={refresh}
-        />
+    <div className="space-y-4">
+      <OpsBar testId="job-ops-cv" label="Currículo desta vaga pelos bots">
         <DispatchButton
           action="GERAR_CURRICULO"
           jobId={jobId}
           disabledReason={cv?.active ? "Geração de currículo em andamento." : null}
-          onStarted={refresh}
-        />
-        <DispatchButton
-          action="PREENCHER_CANDIDATURA"
-          jobId={jobId}
-          primary
-          disabledReason={application?.active ? "Candidatura em andamento." : null}
-          warning={cvReady ? null : "O currículo desta vaga ainda não está pronto. O recomendado é gerar antes."}
           onStarted={refresh}
         />
         {job && (
@@ -1585,15 +1619,113 @@ export function JobOps({ jobId, analyzed }: { jobId: string; analyzed: boolean }
             {cvReady ? "Currículo pronto" : "Currículo não gerado"}
           </ToneBadge>
         )}
-      </div>
-      {error && <p className="text-xs text-muted-foreground">{refusalText(error)}</p>}
-      {(analysis || cv || application) && (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {analysis && <DispatchCard dispatch={analysis} onChanged={refresh} />}
-          {cv && <DispatchCard dispatch={cv} onChanged={refresh} />}
-          {application && <DispatchCard dispatch={application} onChanged={refresh} />}
+        {cv && (
+          <div className="basis-full">
+            <DispatchCard dispatch={cv} onChanged={refresh} />
+          </div>
+        )}
+      </OpsBar>
+      {/* Re-read the file whenever job-search's verdict on the résumé changes (a new PDF was just recorded). */}
+      <CvPreview key={`${job?.cv ?? "?"}:${cv?.finished_at ?? ""}`} jobId={jobId} />
+    </div>
+  )
+}
+
+/** "Candidatura": Preencher vaga and its card. */
+export function JobApplicationOps() {
+  const { jobId, data, refresh } = useJobOps()
+  const application = latest(data?.dispatches ?? [], "PREENCHER_CANDIDATURA")
+  const cvReady = data?.job?.cv === "VALID"
+  return (
+    <OpsBar testId="job-ops-application" label="Candidatura desta vaga pelos bots">
+      <DispatchButton
+        action="PREENCHER_CANDIDATURA"
+        jobId={jobId}
+        primary
+        disabledReason={application?.active ? "Candidatura em andamento." : null}
+        warning={cvReady ? null : "O currículo desta vaga ainda não está pronto. O recomendado é gerar antes."}
+        onStarted={refresh}
+      />
+      {application && (
+        <div className="basis-full">
+          <DispatchCard dispatch={application} onChanged={refresh} />
         </div>
       )}
-    </section>
+    </OpsBar>
+  )
+}
+
+type CvPreviewState = { state: "loading" } | { state: "ready"; file: CvFileInfo } | { state: "none"; text: string }
+
+/**
+ * The résumé PDF job-search recorded for this job (`cv.json`), inline. The bytes come from
+ * `/api/vaga/[job_id]/curriculo`; `?v=` is the file hash, so a new PDF is never served from the browser cache.
+ */
+function CvPreview({ jobId }: { jobId: string }) {
+  const [preview, setPreview] = useState<CvPreviewState>({ state: "loading" })
+  useEffect(() => {
+    let alive = true
+    getCvFile(jobId)
+      .then((result) => {
+        if (!alive) return
+        setPreview(
+          result.ok
+            ? { state: "ready", file: result.value }
+            : { state: "none", text: cvFileText(result.code, result.detail) }
+        )
+      })
+      .catch(() => alive && setPreview({ state: "none", text: refusalText("UNAUTHENTICATED") }))
+    return () => {
+      alive = false
+    }
+  }, [jobId])
+  if (preview.state === "loading") {
+    return (
+      <p className="text-sm text-muted-foreground" data-testid="cv-preview-loading">
+        <Loader2 className="mr-1.5 inline h-4 w-4 animate-spin" aria-hidden="true" />
+        Procurando o currículo desta vaga…
+      </p>
+    )
+  }
+  if (preview.state === "none") {
+    return (
+      <p
+        className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground"
+        data-testid="cv-preview-empty"
+      >
+        {preview.text}
+      </p>
+    )
+  }
+  const { file } = preview
+  const src = `/api/vaga/${encodeURIComponent(jobId)}/curriculo?v=${file.sha256.slice(0, 12)}`
+  return (
+    <div className="space-y-2" data-testid="cv-preview">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        <span className="font-mono text-xs break-all" data-testid="cv-preview-filename">
+          {file.filename}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {formatTimestamp(file.exported_at)} · {Math.max(1, Math.round(file.size / 1024))} KB
+        </span>
+        <a
+          href={src}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          data-testid="cv-preview-open"
+        >
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          Abrir PDF
+        </a>
+      </div>
+      <iframe
+        src={src}
+        title={`Currículo: ${file.filename}`}
+        className="h-[42rem] w-full rounded-xl border border-border bg-white"
+        data-testid="cv-preview-frame"
+      />
+    </div>
   )
 }

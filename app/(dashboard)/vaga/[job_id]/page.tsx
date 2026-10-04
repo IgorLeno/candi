@@ -9,7 +9,7 @@ import { AnalysisBadge, CellBadge } from "@/components/job-search/cell-badge"
 import { ToneBadge } from "@/components/job-search/tone-badge"
 import { SectionCard } from "@/components/job-search/overview"
 import { DoneStamp, Flames, JourneyTrail, StateBadge, stateBarClass } from "@/components/job-search/visual"
-import { JobOps } from "@/components/job-search/ops"
+import { JobAnalysisOps, JobApplicationOps, JobCvOps, JobOpsProvider } from "@/components/job-search/ops"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
 import { canConfirmOpen, canDeclineJob, canDeleteJob } from "@/lib/ops/present"
 import { ConfirmOpenButton } from "@/components/job-search/confirm-open"
@@ -158,11 +158,17 @@ function JobDetail({ view }: { view: JobView }) {
               job_id <span className="font-mono">{job.job_id}</span>
             </span>
           </div>
-          {isDispatchEnabled() && (
-            <div className="mt-4">
-              <JobOps jobId={job.job_id} analyzed={view.dossier?.valid === true} />
-            </div>
-          )}
+          <nav className="mt-4 flex flex-wrap gap-2 text-sm" aria-label="Seções da vaga" data-testid="job-sections-nav">
+            {SECTIONS.map((section) => (
+              <a
+                key={section.id}
+                href={`#${section.id}`}
+                className="rounded-full border border-border px-3 py-1 text-muted-foreground hover:text-foreground"
+              >
+                {section.title}
+              </a>
+            ))}
+          </nav>
         </header>
       </div>
 
@@ -183,69 +189,107 @@ function JobDetail({ view }: { view: JobView }) {
         </div>
       )}
 
-      <AnalysisBanner view={view} />
+      {/* The three parts of the job (decision 2026-10-03): analysis, résumé and application, each with its own bot
+          actions. One provider polls the job's dispatches for the three sections. */}
+      <OpsScope jobId={job.job_id}>
+        <JobSection id="analise">
+          <AnalysisBanner view={view} />
+          {isDispatchEnabled() && <JobAnalysisOps analyzed={view.dossier?.valid === true} />}
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="space-y-6 lg:col-span-2">
+              <SectionCard title="Resumo">
+                <dl className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <Field label="Frase-núcleo">
+                      {dossier ? dossier.analysis.core_sentence : <Empty>Indisponível sem dossier válido.</Empty>}
+                    </Field>
+                  </div>
+                  {dossier && <Field label="Senioridade">{dossier.analysis.seniority}</Field>}
+                  <Field label="Status da análise">{enumLabel(job.status_analise)}</Field>
+                  <Field label="Gate decisivo">{job.gate_decisivo || dossier?.analysis.gate_decisivo || "—"}</Field>
+                  <Field label="Motivo da análise">
+                    <span className="whitespace-pre-wrap">{job.motivo_analise || "—"}</span>
+                  </Field>
+                  <Field label="Família funcional">{enumLabel(job.familia_funcao)}</Field>
+                  <Field label="Setor">{enumLabel(job.setor)}</Field>
+                  <Field label="Proximidade com EQ">{enumLabel(job.proximidade_eq)}</Field>
+                  <Field label="Tipo de programa">{enumLabel(job.tipo_programa)}</Field>
+                  <Field label="Primeira / última análise">
+                    {formatDay(job.data_primeira_analise)} · {formatDay(job.data_ultima_analise)}
+                  </Field>
+                  <Field label="Fonte">
+                    {job.fonte_descoberta || job.fonte || "—"}
+                    {job.origem_skill && (
+                      <span className="block text-xs text-muted-foreground">via {job.origem_skill}</span>
+                    )}
+                  </Field>
+                </dl>
+              </SectionCard>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <SectionCard title="Resumo">
-            <dl className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <Field label="Frase-núcleo">
-                  {dossier ? dossier.analysis.core_sentence : <Empty>Indisponível sem dossier válido.</Empty>}
-                </Field>
-              </div>
-              {dossier && <Field label="Senioridade">{dossier.analysis.seniority}</Field>}
-              <Field label="Status da análise">{enumLabel(job.status_analise)}</Field>
-              <Field label="Gate decisivo">{job.gate_decisivo || dossier?.analysis.gate_decisivo || "—"}</Field>
-              <Field label="Motivo da análise">
-                <span className="whitespace-pre-wrap">{job.motivo_analise || "—"}</span>
-              </Field>
-              <Field label="Família funcional">{enumLabel(job.familia_funcao)}</Field>
-              <Field label="Setor">{enumLabel(job.setor)}</Field>
-              <Field label="Proximidade com EQ">{enumLabel(job.proximidade_eq)}</Field>
-              <Field label="Tipo de programa">{enumLabel(job.tipo_programa)}</Field>
-              <Field label="Primeira / última análise">
-                {formatDay(job.data_primeira_analise)} · {formatDay(job.data_ultima_analise)}
-              </Field>
-              <Field label="Fonte">
-                {job.fonte_descoberta || job.fonte || "—"}
-                {job.origem_skill && (
-                  <span className="block text-xs text-muted-foreground">via {job.origem_skill}</span>
-                )}
-              </Field>
-            </dl>
-          </SectionCard>
+              {dossier ? (
+                <>
+                  <ActivitiesSection activities={dossier.analysis.activities} />
+                  {view.requirementsByEvidence && <RequirementsSection groups={view.requirementsByEvidence} />}
+                  <RisksSection risks={dossier.representation_risks} />
+                </>
+              ) : (
+                <SectionCard title="Análise estruturada">
+                  <Empty>
+                    {view.analysis === "INVALID"
+                      ? "O dossier desta vaga não passou na verificação; atividades, requisitos e riscos ficam ocultos até uma nova exportação válida."
+                      : "Esta vaga não tem dossier. Atividades, requisitos, riscos e localização aparecem quando o job-search exportar a análise."}
+                  </Empty>
+                </SectionCard>
+              )}
+            </div>
 
-          {dossier ? (
-            <>
-              <ActivitiesSection activities={dossier.analysis.activities} />
-              {view.requirementsByEvidence && <RequirementsSection groups={view.requirementsByEvidence} />}
-              <RisksSection risks={dossier.representation_risks} />
-            </>
-          ) : (
-            <SectionCard title="Análise estruturada">
-              <Empty>
-                {view.analysis === "INVALID"
-                  ? "O dossier desta vaga não passou na verificação; atividades, requisitos e riscos ficam ocultos até uma nova exportação válida."
-                  : "Esta vaga não tem dossier. Atividades, requisitos, riscos e localização aparecem quando o job-search exportar a análise."}
-              </Empty>
+            <div className="space-y-6">
+              {dossier ? (
+                <InterestSection dossier={dossier} />
+              ) : (
+                <SectionCard title="Interesse">
+                  <div className="space-y-2">
+                    <CellBadge cell={cellDisplay(job.interesse)} />
+                    <Empty>Motivos do nível só constam no dossier.</Empty>
+                  </div>
+                </SectionCard>
+              )}
+              {dossier && <LocationSection dossier={dossier} />}
+            </div>
+          </div>
+          {dossier && view.dossier && (
+            <SectionCard title="Publicação original" testId="posting">
+              {view.dossier.posting_truncated && (
+                <p className="mb-2 text-xs text-st-review-fg">
+                  Texto truncado na Sheet (limite de célula); o dossier foi analisado sobre a publicação completa.
+                </p>
+              )}
+              <details>
+                <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+                  Mostrar texto da publicação
+                </summary>
+                {/* Plain text on purpose: the posting is untrusted and never rendered as HTML/markdown. */}
+                <pre className="mt-3 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/40 p-4 font-sans text-sm text-foreground">
+                  {view.dossier.posting_md}
+                </pre>
+              </details>
             </SectionCard>
           )}
-        </div>
+        </JobSection>
 
-        <div className="space-y-6">
-          {dossier ? (
-            <InterestSection dossier={dossier} />
+        <JobSection id="curriculo">
+          {isDispatchEnabled() ? (
+            <JobCvOps />
           ) : (
-            <SectionCard title="Interesse">
-              <div className="space-y-2">
-                <CellBadge cell={cellDisplay(job.interesse)} />
-                <Empty>Motivos do nível só constam no dossier.</Empty>
-              </div>
-            </SectionCard>
+            <Empty>
+              O disparo dos bots está desligado neste painel; o currículo aparece aqui quando estiver ligado.
+            </Empty>
           )}
-          {dossier && <LocationSection dossier={dossier} />}
-          <SectionCard title="Candidatura">
+        </JobSection>
+
+        <JobSection id="candidatura">
+          {isDispatchEnabled() && <JobApplicationOps />}
+          <SectionCard title="Situação da candidatura">
             <dl className="mb-4 grid grid-cols-2 gap-x-4 gap-y-3">
               <Field label="Status">
                 <CellBadge cell={cellDisplay(job.status_candidatura)} />
@@ -264,35 +308,45 @@ function JobDetail({ view }: { view: JobView }) {
             </dl>
             <EventsTimeline events={view.events} uncertain={view.uncertainSubmit} />
           </SectionCard>
-        </div>
-      </div>
+        </JobSection>
+      </OpsScope>
 
       {job.observacoes && (
         <SectionCard title="Observações da Sheet">
           <p className="whitespace-pre-wrap break-words text-sm text-foreground">{job.observacoes}</p>
         </SectionCard>
       )}
-
-      {dossier && view.dossier && (
-        <SectionCard title="Publicação original" testId="posting">
-          {view.dossier.posting_truncated && (
-            <p className="mb-2 text-xs text-st-review-fg">
-              Texto truncado na Sheet (limite de célula); o dossier foi analisado sobre a publicação completa.
-            </p>
-          )}
-          <details>
-            <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
-              Mostrar texto da publicação
-            </summary>
-            {/* Plain text on purpose: the posting is untrusted and never rendered as HTML/markdown. */}
-            <pre className="mt-3 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/40 p-4 font-sans text-sm text-foreground">
-              {view.dossier.posting_md}
-            </pre>
-          </details>
-        </SectionCard>
-      )}
     </article>
   )
+}
+
+const SECTIONS = [
+  { id: "analise", title: "Análise da vaga" },
+  { id: "curriculo", title: "Currículo" },
+  { id: "candidatura", title: "Candidatura" },
+] as const
+
+/** One of the three parts of the job page; the nav in the header links to each by id. */
+function JobSection({ id, children }: { id: (typeof SECTIONS)[number]["id"]; children: React.ReactNode }) {
+  const title = SECTIONS.find((section) => section.id === id)?.title
+  return (
+    <section
+      id={id}
+      aria-labelledby={`${id}-title`}
+      className="scroll-mt-6 space-y-4 rounded-3xl border border-border bg-card/40 p-4 sm:p-6"
+      data-testid={`job-section-${id}`}
+    >
+      <h2 id={`${id}-title`} className="font-display text-2xl font-bold tracking-tight text-foreground">
+        {title}
+      </h2>
+      {children}
+    </section>
+  )
+}
+
+/** Bot actions only exist with dispatch enabled; without it the sections render their Sheet data alone. */
+function OpsScope({ jobId, children }: { jobId: string; children: React.ReactNode }) {
+  return isDispatchEnabled() ? <JobOpsProvider jobId={jobId}>{children}</JobOpsProvider> : <>{children}</>
 }
 
 /** Tolerates both already-decoded params and stray `%` in hand-typed URLs. */
