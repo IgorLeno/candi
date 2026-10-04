@@ -28,6 +28,7 @@ import {
   editCv,
   listDispatches,
   openCvBrowser,
+  recordSent,
   refineIntake,
   registerWriteset,
   resumeCv,
@@ -57,6 +58,7 @@ describe("ops server actions", () => {
     await expect(deleteDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(declineJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(confirmJobOpen("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(recordSent("fake-1001", "SUCCESS_PAGE")).rejects.toThrow("UNAUTHENTICATED")
     await expect(openCvBrowser()).rejects.toThrow("UNAUTHENTICATED")
     await expect(deleteJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
@@ -349,6 +351,33 @@ describe("ops server actions", () => {
     // An uncertain write may have landed: the Sheet is re-read on refusals too.
     runDispatcher.mockResolvedValue({ ok: false, code: "DECLINE_UNCERTAIN", detail: "x" })
     await expect(declineJob("fake-1001")).resolves.toEqual({ ok: false, code: "DECLINE_UNCERTAIN" })
+    expect(updateTag).toHaveBeenCalledTimes(2)
+  })
+
+  it("registrar envio: only a validated job_id and an evidence from the list, re-read the Sheet", async () => {
+    for (const [id, evidence] of [
+      [null, "SUCCESS_PAGE"],
+      ["../x", "SUCCESS_PAGE"],
+      ["fake-1001", "NOT_IN_APPLIED_LIST"],
+      ["fake-1001", "enviei ontem, protocolo 123"],
+      ["fake-1001", ["SUCCESS_PAGE"]],
+      ["fake-1001", undefined],
+    ]) {
+      await expect(recordSent(id, evidence)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    runDispatcher.mockResolvedValue({
+      ok: true,
+      value: { ok: true, record_sent: { job_id: "fake-1001", status_candidatura: "ENVIADA" } },
+    })
+    await expect(recordSent("fake-1001", "ATS_EMAIL_CONFIRMATION")).resolves.toEqual({
+      ok: true,
+      value: { job_id: "fake-1001", status_candidatura: "ENVIADA" },
+    })
+    expect(runDispatcher.mock.calls[0][0]).toEqual(["record-sent", "fake-1001", "--evidence", "ATS_EMAIL_CONFIRMATION"])
+    expect(updateTag).toHaveBeenCalledWith("job-search")
+    runDispatcher.mockResolvedValue({ ok: false, code: "RECORD_UNCERTAIN", detail: "x" })
+    await expect(recordSent("fake-1001", "SUCCESS_PAGE")).resolves.toEqual({ ok: false, code: "RECORD_UNCERTAIN" })
     expect(updateTag).toHaveBeenCalledTimes(2)
   })
 

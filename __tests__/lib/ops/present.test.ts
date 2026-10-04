@@ -4,6 +4,7 @@ import {
   canConfirmOpen,
   canDeclineJob,
   canDeleteJob,
+  canRecordSent,
   canRegisterWriteset,
   canResumeCv,
   confirmOpenRefusalText,
@@ -11,6 +12,7 @@ import {
   deleteJobRefusalText,
   latest,
   leftOutBlocker,
+  recordSentRefusalText,
   leftOutKindLabel,
   needsUser,
   persistSummary,
@@ -116,6 +118,29 @@ describe("canConfirmOpen", () => {
     for (const status of ["ENVIADA", "ENVIO INCERTO", "RETIRADA"]) {
       expect(canConfirmOpen({ ...unconfirmed, statusCandidatura: cell(status) })).toBe(false)
     }
+  })
+})
+
+describe("canRecordSent", () => {
+  it("allows any job in the main tab not sent or uncertain, discarded ones included", () => {
+    for (const status of ["NÃO INICIADA", "EM PREPARAÇÃO", "PRONTA PARA REVISÃO", "RETIRADA", null]) {
+      expect(canRecordSent({ ...open, statusCandidatura: cell(status) })).toBe(true)
+    }
+  })
+
+  it("refuses sent, uncertain, archived and invalid", () => {
+    for (const status of ["ENVIADA", "ENVIO INCERTO"]) {
+      expect(canRecordSent({ ...open, statusCandidatura: cell(status) })).toBe(false)
+    }
+    expect(canRecordSent({ ...open, uncertainSubmit: true })).toBe(false)
+    expect(canRecordSent({ ...open, archived: true })).toBe(false)
+    expect(canRecordSent({ ...open, statusCandidatura: cell("ENVIADX", true) })).toBe(false)
+  })
+
+  it("words its own codes and falls back to the shared ones", () => {
+    expect(recordSentRefusalText("ALREADY_SENT")).toMatch(/já está registrado/)
+    expect(recordSentRefusalText("RECORD_UNCERTAIN")).toMatch(/Sincronize/)
+    expect(recordSentRefusalText("DISPATCHER_UNAVAILABLE")).toBe(refusalText("DISPATCHER_UNAVAILABLE"))
   })
 })
 

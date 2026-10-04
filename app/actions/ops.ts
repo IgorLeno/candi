@@ -16,6 +16,7 @@ import {
   LEFT_OUT_ACTION,
   CV_EDIT_ACTION,
   PLATFORMS,
+  SENT_EVIDENCE,
   confirmOpenResultSchema,
   declineResultSchema,
   deleteJobResultSchema,
@@ -23,6 +24,7 @@ import {
   listResultSchema,
   oneResultSchema,
   openBrowserResultSchema,
+  recordSentResultSchema,
   startInputSchema,
   type ConfirmOpenResult,
   type CvFileInfo,
@@ -32,6 +34,7 @@ import {
   type Dispatch,
   type DispatchList,
   type OpenBrowserResult,
+  type RecordSentResult,
 } from "@/lib/ops/schema"
 
 // Bot dispatch from the panel. Server Functions are not covered by `proxy.ts`: every action checks the
@@ -281,6 +284,23 @@ export async function confirmJobOpen(jobId: unknown): Promise<ActionResult<Confi
   // Uncertain or failed writes may still have landed: re-read the Sheet either way.
   updateTag(JOB_SEARCH_CACHE_TAG)
   return result.ok ? { ok: true, value: result.value.confirm_open } : { ok: false, code: result.code }
+}
+
+/**
+ * "Registrar envio": the user clicked the portal's final button (Claude in Chrome stops before it) and says which
+ * strong evidence they saw. job-search (`dispatch.py record-sent` → `application.py record-panel-submit`) writes
+ * ENVIADA and a SUBMITTED event with its own credential; the panel sends only the job_id and an evidence from a fixed
+ * list, never free text. There is no undo.
+ */
+export async function recordSent(jobId: unknown, evidence: unknown): Promise<ActionResult<RecordSentResult>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const parsed = z.enum(SENT_EVIDENCE).safeParse(evidence)
+  if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["record-sent", jobId, "--evidence", parsed.data], recordSentResultSchema)
+  // An uncertain write may have landed: re-read the Sheet either way.
+  updateTag(JOB_SEARCH_CACHE_TAG)
+  return result.ok ? { ok: true, value: result.value.record_sent } : { ok: false, code: result.code }
 }
 
 /**

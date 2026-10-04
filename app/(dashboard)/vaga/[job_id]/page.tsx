@@ -11,10 +11,11 @@ import { SectionCard } from "@/components/job-search/overview"
 import { DoneStamp, Flames, JourneyTrail, StateBadge, stateBarClass } from "@/components/job-search/visual"
 import { JobAnalysisOps, JobApplicationOps, JobCvOps, JobOpsProvider } from "@/components/job-search/ops"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
-import { canConfirmOpen, canDeclineJob, canDeleteJob } from "@/lib/ops/present"
+import { canConfirmOpen, canDeclineJob, canDeleteJob, canRecordSent } from "@/lib/ops/present"
 import { ConfirmOpenButton } from "@/components/job-search/confirm-open"
 import { DeclineJobButton } from "@/components/job-search/decline-job"
 import { DeleteJobButton } from "@/components/job-search/delete-job"
+import { RecordSentButton } from "@/components/job-search/record-sent"
 import { cn } from "@/lib/utils"
 import {
   ActivitiesSection,
@@ -289,6 +290,18 @@ function JobDetail({ view }: { view: JobView }) {
 
         <JobSection id="candidatura">
           {isDispatchEnabled() && <JobApplicationOps />}
+          {isDispatchEnabled() && canRecordSent(item) && (
+            <div
+              className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+              data-testid="record-sent-bar"
+            >
+              <RecordSentButton
+                jobId={job.job_id}
+                label={[job.empresa || "(sem empresa)", job.cargo || "(sem cargo)"].join(" · ")}
+              />
+              <span>Clicou em Enviar no portal? Registre aqui para a vaga contar como enviada.</span>
+            </div>
+          )}
           <SectionCard title="Situação da candidatura">
             <dl className="mb-4 grid grid-cols-2 gap-x-4 gap-y-3">
               <Field label="Status">

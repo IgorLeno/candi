@@ -9,6 +9,7 @@ import type {
   LeftOutJob,
   PersistResult,
   RecordPlatform,
+  SentEvidence,
 } from "@/lib/ops/schema"
 
 // Labels and UX gating for bot dispatches. The dispatcher and the bots are the authority; nothing here
@@ -257,6 +258,44 @@ export function canDeleteJob(item: Pick<JobListItem, "statusCandidatura" | "unce
 /** The strong confirmation of "Excluir vaga": the user types the job_id itself. */
 export function deleteJobConfirmed(typed: string, jobId: string): boolean {
   return typed.trim() === jobId
+}
+
+// "Registrar envio" (dispatch.py record-sent). What the user saw after clicking the portal's final button.
+export const SENT_EVIDENCE_LABEL: Record<SentEvidence, { label: string; description: string }> = {
+  SUCCESS_PAGE: { label: "Página de sucesso", description: "O portal mostrou que a candidatura foi enviada." },
+  PORTAL_SHOWS_APPLIED: {
+    label: "Portal mostra a candidatura",
+    description: "A vaga aparece como candidatada na sua área do portal.",
+  },
+  ATS_EMAIL_CONFIRMATION: { label: "E-mail de confirmação", description: "Chegou o e-mail do portal confirmando." },
+}
+
+const RECORD_SENT_REFUSAL_TEXT: Record<string, string> = {
+  JOB_DISPATCH_ACTIVE: "Há um disparo desta vaga em andamento: espere terminar para registrar o envio.",
+  ALREADY_SENT: "O envio desta vaga já está registrado.",
+  SUBMIT_UNCERTAIN: "A vaga está em ENVIO INCERTO: reconcilie a candidatura no job-search antes.",
+  WRONG_STATE: "Há uma candidatura do Application Operator em andamento antes do preenchimento: termine-a antes.",
+  STRONG_EVIDENCE_REQUIRED: "Escolha a evidência que você viu.",
+  EVIDENCE_INVALID: "Escolha a evidência que você viu.",
+  ROW_NOT_FOUND: "A vaga não está na aba principal da planilha.",
+  ROW_DUPLICATED: "A vaga aparece duplicada na planilha: corrija antes de registrar.",
+  REGISTRY_UNAVAILABLE: "O job-search não conseguiu ler a planilha; nada foi gravado.",
+  RECORD_FAILED: "O job-search não conseguiu registrar o envio; nada foi gravado.",
+  RECORD_UNCERTAIN: "Sem confirmação do job-search. Sincronize e confira a vaga; registrar de novo termina o serviço.",
+}
+
+export function recordSentRefusalText(code: string): string {
+  return RECORD_SENT_REFUSAL_TEXT[code] ?? refusalText(code)
+}
+
+/**
+ * "Registrar envio" (UX gating only; job-search re-checks the Sheet, events and runtime): a job in the main tab whose
+ * application is not sent or uncertain. A discarded job can still be recorded: the user may have applied anyway.
+ */
+export function canRecordSent(item: Pick<JobListItem, "statusCandidatura" | "archived" | "uncertainSubmit">): boolean {
+  if (item.archived || item.uncertainSubmit || item.statusCandidatura.invalid) return false
+  const candidatura = item.statusCandidatura.value
+  return candidatura !== "ENVIADA" && candidatura !== "ENVIO INCERTO"
 }
 
 // "Confirmei que está aberta" (dispatch.py confirm-open). Codes shared with "Descartar" get their own words.

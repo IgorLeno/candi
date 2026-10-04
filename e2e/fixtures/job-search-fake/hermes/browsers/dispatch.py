@@ -7,7 +7,8 @@ can be exercised deterministically. `persist` records a REGISTRAR_WRITESET that 
 `--candidate N` or a stdin complement locates it), ANALISAR_INDICADA --from produces a writeset, `discard`
 marks the chain and `delete` hides the whole lineage from `list`. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
 the fixture, is refused with ALREADY_SENT). `delete-job <job_id>` answers like `application.py delete` without deleting
-anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). `confirm-open <job_id>` answers ABERTA without
+anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). `record-sent <job_id> --evidence <tipo>` answers ENVIADA without writing
+anything (fake-1006 → ALREADY_SENT). `confirm-open <job_id>` answers ABERTA without
 writing anything (fake-1005 → DOSSIER_NOT_VALID, also for GERAR_CURRICULO/PREENCHER_CANDIDATURA: never analysed;
 the job's verdict, availability or application never refuse, like job-search on the host). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
 for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
@@ -507,6 +508,18 @@ def main(argv):
         print(json.dumps({"ok": True, "cv_file": {
             "job_id": job_id, "path": str(pdf), "filename": pdf.name, "size": len(body),
             "sha256": hashlib.sha256(body).hexdigest(), "exported_at": "2026-10-03T12:00:00Z"}}))
+        return 0
+    if cmd == "record-sent":
+        # Writes nothing: answers like `application.py record-panel-submit` (fake-1006, sent in the fixture, is refused).
+        job_id = argv[1] if len(argv) > 1 else ""
+        evidence = argv[3] if len(argv) > 3 and argv[2] == "--evidence" else ""
+        if not JOB_ID_RE.match(job_id):
+            return refuse("INVALID_JOB_ID")
+        if evidence not in ("SUCCESS_PAGE", "PORTAL_SHOWS_APPLIED", "ATS_EMAIL_CONFIRMATION"):
+            return refuse("EVIDENCE_INVALID")
+        if job_id == "fake-1006":
+            return refuse("ALREADY_SENT")
+        print(json.dumps({"ok": True, "record_sent": {"job_id": job_id, "status_candidatura": "ENVIADA"}}))
         return 0
     if cmd == "confirm-open":
         job_id = argv[1] if len(argv) > 1 else ""

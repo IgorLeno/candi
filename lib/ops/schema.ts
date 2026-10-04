@@ -292,6 +292,20 @@ export const declineResultSchema = z.object({
 })
 export type DeclineResult = z.infer<typeof declineResultSchema>["decline"]
 
+/**
+ * "Registrar envio": the strong evidence the user saw after clicking the portal's final button. The only input besides
+ * the job_id (no free text); mirrors job-search's `SENT_EVIDENCE` / `POSITIVE_EVIDENCE`.
+ */
+export const SENT_EVIDENCE = ["SUCCESS_PAGE", "PORTAL_SHOWS_APPLIED", "ATS_EMAIL_CONFIRMATION"] as const
+export type SentEvidence = (typeof SENT_EVIDENCE)[number]
+
+/** `dispatch.py record-sent <job_id> --evidence <tipo>`: job-search wrote ENVIADA to the Sheet. Fixed fields only. */
+export const recordSentResultSchema = z.object({
+  ok: z.literal(true),
+  record_sent: z.object({ job_id: z.string().regex(JOB_ID_RE), status_candidatura: z.literal("ENVIADA") }),
+})
+export type RecordSentResult = z.infer<typeof recordSentResultSchema>["record_sent"]
+
 /** `dispatch.py confirm-open <job_id>`: job-search wrote ABERTA to the Sheet and the dossier. Fixed fields only. */
 export const confirmOpenResultSchema = z.object({
   ok: z.literal(true),
