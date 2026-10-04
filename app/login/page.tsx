@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
-import { Crosshair } from "lucide-react"
 import { signInWithGoogle } from "@/app/actions/auth"
+import { CandiMark } from "@/components/brand/candi-logo"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { getAllowedSession } from "@/lib/auth/session"
@@ -27,10 +27,8 @@ export default async function LoginPage({
     <main className="mesh-bg min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-sm rounded-3xl">
         <CardHeader className="items-center text-center">
-          <div className="w-12 h-12 rounded-2xl bg-st-open flex items-center justify-center mb-2">
-            <Crosshair className="w-6 h-6 text-st-open-ink" aria-hidden="true" />
-          </div>
-          <CardTitle className="font-display text-2xl font-bold">Caçavaga</CardTitle>
+          <CandiMark className="w-12 h-12 mx-auto mb-2" />
+          <CardTitle className="font-display text-2xl font-bold">Candi</CardTitle>
           <CardDescription>Acesso restrito. Entre com a conta Google autorizada.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

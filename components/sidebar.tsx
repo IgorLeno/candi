@@ -2,8 +2,9 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BarChart3, Crosshair, Flame, LayoutGrid, LogOut, Radar, Settings2 } from "lucide-react"
+import { BarChart3, Flame, LayoutGrid, LogOut, Radar, Settings2 } from "lucide-react"
 import { signOutAction } from "@/app/actions/auth"
+import { CandiMark } from "@/components/brand/candi-logo"
 import { cn } from "@/lib/utils"
 
 const menuItems = [
@@ -33,14 +34,12 @@ export function Sidebar() {
         <div className="absolute inset-0 mesh-bg pointer-events-none" />
 
         <div className="relative px-5 pt-6 pb-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-st-open flex items-center justify-center flex-shrink-0 -rotate-6">
-            <Crosshair className="w-5 h-5 text-st-open-ink" aria-hidden="true" />
-          </div>
+          <CandiMark className="w-10 h-10" />
           <div>
             <span className="font-display text-sidebar-primary text-lg font-bold tracking-tight block leading-tight">
-              Caçavaga
+              Candi
             </span>
-            <span className="text-sidebar-foreground/80 text-xs">central de vagas</span>
+            <span className="text-sidebar-foreground/80 text-xs tracking-wide">central do candidato</span>
           </div>
         </div>
 
@@ -92,10 +91,8 @@ export function Sidebar() {
 
       <header className="sticky top-0 z-50 border-b border-sidebar-border bg-sidebar lg:hidden">
         <div className="flex items-center gap-2 px-4 pt-3">
-          <div className="w-7 h-7 rounded-lg bg-st-open flex items-center justify-center -rotate-6">
-            <Crosshair className="w-3.5 h-3.5 text-st-open-ink" aria-hidden="true" />
-          </div>
-          <span className="font-display text-sidebar-primary text-base font-bold">Caçavaga</span>
+          <CandiMark className="w-7 h-7" />
+          <span className="font-display text-sidebar-primary text-base font-bold">Candi</span>
           <form action={signOutAction} className="ml-auto">
             <button
               type="submit"

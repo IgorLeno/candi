@@ -30,8 +30,8 @@ const themeInitializationScript = `
 `
 
 export const metadata: Metadata = {
-  title: "Caçavaga",
-  description: "Central de vagas do job-search: o que está aberto e qual é a próxima candidatura",
+  title: "Candi",
+  description: "Central do candidato do job-search: o que está aberto e qual é a próxima candidatura",
   generator: "v0.app",
   icons: {
     icon: [

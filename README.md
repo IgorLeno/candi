@@ -1,4 +1,4 @@
-# Caçavaga
+# Candi
 
 Camada visual e analítica, **somente leitura**, do repositório `job-search`. Os bots do `job-search` fazem o trabalho (análise de vagas, currículo, candidatura) e mantêm a Google Sheet de registro; este dashboard consolida e apresenta esses dados.
 
