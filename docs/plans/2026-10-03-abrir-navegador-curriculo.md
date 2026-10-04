@@ -19,5 +19,7 @@ continuam manuais; nenhuma credencial passa pelo painel.
       disparo fecha antes, porque o modal bloqueia o clique no toast
 - [x] fake do e2e responde `open-browser clouddesign`
 - [x] testes unitários (action e textos), tsc, lint, format; conferência visual em cópia na porta 3108
-- [ ] ramo que abre o Chrome de fato, pelo painel real: no teste de 2026-10-04 o Chrome já estava aberto
-      (`already_open: true`)
+- [x] ramo que abre o Chrome de fato (2026-10-04): com o Chrome fechado, `open-browser clouddesign` com env mínimo
+      igual ao do painel abriu o Chrome em 5 s (`already_open: false`, CDP 9226 no ar) e o login no Claude continuou
+      (conferido pelo usuário). O clique no painel real da 3000 não foi testado (login Google); o caminho do painel até
+      o comando foi conferido na cópia da 3108.
