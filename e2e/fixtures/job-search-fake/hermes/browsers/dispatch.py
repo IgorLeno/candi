@@ -7,7 +7,9 @@ can be exercised deterministically. `persist` records a REGISTRAR_WRITESET that 
 `--candidate N` or a stdin complement locates it), ANALISAR_INDICADA --from produces a writeset, `discard`
 marks the chain and `delete` hides the whole lineage from `list`. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
 the fixture, is refused with ALREADY_SENT). `delete-job <job_id>` answers like `application.py delete` without deleting
-anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). `record-sent <job_id> --evidence <tipo>` answers ENVIADA without writing
+anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). "Preencher vaga" of fake-1007 on Hermes follows the host path and ends with
+the prompt to paste (`prompt_stale` once a later "Pedir edição" finished). `record-sent <job_id> --evidence <tipo>`
+answers ENVIADA without writing
 anything (fake-1006 → ALREADY_SENT). `confirm-open <job_id>` answers ABERTA without
 writing anything (fake-1005 → DOSSIER_NOT_VALID, also for GERAR_CURRICULO/PREENCHER_CANDIDATURA: never analysed;
 the job's verdict, availability or application never refuse, like job-search on the host). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
@@ -85,6 +87,10 @@ STAGES = {
                         ("cv", "Currículo registrado (cv.pdf + cv.json)")],
     "PREENCHER_CANDIDATURA": [("claim", "Claim e preflight"), ("preenchimento", "Preenchimento do formulário"),
                               ("revisao", "Revisão e gate"), ("aprovacao", "Aguardando sua aprovação")],
+    # Host path (Claude in Chrome), only for HOST_APPLY: the dispatch ends asking the user to paste the prompt.
+    "PREENCHER_HOST": [("preflight", "Preflight (dossier e estado)"), ("cv", "Currículo (gera se faltar)"),
+                       ("open", "Página da vaga aberta (Chrome application)"),
+                       ("paste", "Cole o prompt no Claude in Chrome")],
     "LOCALIZAR_VAGA": [("localizar", "Localizar a vaga (Lince)"), ("prefilter", "Análise preliminar (prefilter)")],
     "ANALISAR_INDICADA": [("posting", "Texto da vaga e planilha (só leitura)"),
                           ("analise", "Análise no ChatGPT (host)"), ("writeset", "Writeset pronto"),
@@ -98,6 +104,9 @@ STAGES = {
                       ("registro", "Registro na planilha")],
 }
 REGISTER = "REGISTRAR_WRITESET"
+# "Preencher vaga" of this job on Hermes follows the host path (the others keep the Candidatinho stages): it ends in
+# PRECISA_HUMANO/PASTE_PROMPT_IN_CLAUDE, and a "Pedir edição" finished afterwards makes the prompt stale.
+HOST_APPLY = "fake-1007"
 # fake-9001 is not in the fixture Sheet: the registration stage stays open until the panel persists it.
 WRITESET_JOB_IDS = {"BUSCAR_VAGAS": ["fake-1001", "fake-9001"], "ANALISAR_INDICADA": ["fake-9002"]}
 LOCATED = {"found": True, "reason": None, "already_in_registry": False, "posting": True,
@@ -164,7 +173,7 @@ def intake_of(rec, recs):
 def view(rec, recs=()):
     if rec["action"] == REGISTER:
         return view_register(rec)
-    stages = STAGES[rec["action"]]
+    stages = STAGES["PREENCHER_HOST" if rec.get("host_apply") else rec["action"]]
     step = rec["step"]
     last = last_step(rec["action"])
     not_found = rec["action"] == "LOCALIZAR_VAGA" and not rec["found"] and step >= last
@@ -239,6 +248,15 @@ def view(rec, recs=()):
         progress.update(edit_request=rec["edit_request"], edit_output="curriculo_igor-fernandes_pt_fake-v2.pdf")
         if step == 0:
             out_stages[0]["state"] = "done"   # o pedido já está gravado
+    if rec.get("host_apply") and rec["status"] == "PRECISA_HUMANO":
+        out_stages[-1].update(state="active", note="ação sua: abrir o painel do Claude na aba e colar")
+        # Newest first: the records before this one were started after it.
+        newer = list(recs)[: list(recs).index(rec)] if rec in recs else []
+        stale = any(r["job_id"] == rec["job_id"] and r["action"] == "EDITAR_CURRICULO" and r["status"] == "CONCLUIDO"
+                    for r in newer)
+        progress.update(stage="paste", claude_url="https://exemplo.com/candidatura/1007", prompt_stale=stale,
+                        claude_prompt="Você vai preencher a candidatura da vaga abaixo nesta aba do navegador.\n"
+                                      "CURRÍCULO: anexe exatamente o arquivo /fake/curriculo_igor-fernandes_pt_fake.pdf")
     if rec["action"] == "GERAR_CURRICULO":
         out.update(resumes=rec.get("resumes"), resume_option=rec.get("resume_option"),
                    retried_by=rec.get("retried_by"))
@@ -289,6 +307,8 @@ def main(argv):
                "created_at": now()}
         if action == "GERAR_CURRICULO" and platform == "hermes":
             rec["mode"] = "host"
+        if action == "PREENCHER_CANDIDATURA" and platform == "hermes" and job_id == HOST_APPLY:
+            rec.update(mode="host", host_apply=True)
         if action == "LOCALIZAR_VAGA":
             text = sys.stdin.read() if "--intake-stdin" in argv else ""
             candidate = flag(argv, "--candidate")
@@ -401,7 +421,10 @@ def main(argv):
                     rec.update(step=1, status="PRECISA_HUMANO",
                                code="BLOCKED_CLAUDE_CHROME:CLAUDE_STOPPED_WITHOUT_PDF")
                 elif rec["step"] >= last_step(rec["action"]):
-                    if rec["action"] == "LOCALIZAR_VAGA" and not rec["found"]:
+                    if rec.get("host_apply"):
+                        rec.update(step=last_step(rec["action"]) - 1, status="PRECISA_HUMANO",
+                                   code="PASTE_PROMPT_IN_CLAUDE")
+                    elif rec["action"] == "LOCALIZAR_VAGA" and not rec["found"]:
                         rec.update(status="PRECISA_HUMANO", code="NEEDS_CONTEXT")
                     else:
                         rec["status"] = "CONCLUIDO"

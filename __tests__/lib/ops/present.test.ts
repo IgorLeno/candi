@@ -351,6 +351,15 @@ describe("canResumeCv", () => {
     expect(canResumeCv({ ...stuck, progress: { ...stuck.progress, recovery: null } })).toBe(false)
   })
 
+  it("reads prompt_stale only as a boolean", () => {
+    const application = { ...stuck, action: "PREENCHER_CANDIDATURA", code: "PASTE_PROMPT_IN_CLAUDE" }
+    const parse = (patch: object) =>
+      dispatchSchema.safeParse({ ...application, progress: { percent: 80, stages: [], ...patch } })
+    expect(parse({ claude_prompt: "x", prompt_stale: true }).success).toBe(true)
+    expect(parse({ claude_prompt: "x" }).success).toBe(true)
+    expect(parse({ claude_prompt: "x", prompt_stale: "sim" }).success).toBe(false)
+  })
+
   it("rejects options and texts outside the contract", () => {
     const bad = (patch: object) =>
       dispatchSchema.safeParse({ ...stuck, progress: { ...stuck.progress, recovery: { ...recovery, ...patch } } })

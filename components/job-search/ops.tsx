@@ -241,7 +241,28 @@ function CommandBox({ command }: { command: string }) {
  * happens only on click. Claude in Chrome is NOT covered by the Hermes submit gate: the prompt tells it to stop at
  * READY_TO_SUBMIT and the user clicks the final button.
  */
-function ClaudePromptBox({ prompt, url }: { prompt: string; url: string | null | undefined }) {
+function ClaudePromptBox({
+  prompt,
+  url,
+  stale,
+}: {
+  prompt: string
+  url: string | null | undefined
+  /** The résumé changed after this prompt was prepared: pasting it would attach the old PDF. */
+  stale: boolean
+}) {
+  if (stale) {
+    return (
+      <p
+        role="alert"
+        className="rounded-lg border border-st-review/60 bg-st-review/10 p-3 text-sm text-st-review-fg"
+        data-testid="claude-prompt-stale"
+      >
+        O currículo desta vaga mudou depois que este prompt foi preparado: ele anexaria o PDF antigo. Clique em
+        “Preencher vaga” de novo para um prompt com o currículo atual.
+      </p>
+    )
+  }
   return (
     <div className="space-y-2" data-testid="claude-prompt">
       <p className="text-xs text-muted-foreground">
@@ -1216,7 +1237,13 @@ export function DispatchCard({
           </p>
         )}
         {dispatch.command && <CommandBox command={dispatch.command} />}
-        {progress.claude_prompt && <ClaudePromptBox prompt={progress.claude_prompt} url={progress.claude_url} />}
+        {progress.claude_prompt && (
+          <ClaudePromptBox
+            prompt={progress.claude_prompt}
+            url={progress.claude_url}
+            stale={progress.prompt_stale === true}
+          />
+        )}
         {ACKABLE.has(dispatch.status) && !dispatch.acknowledged && (
           <Button
             size="sm"

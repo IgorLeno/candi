@@ -207,6 +207,8 @@ const progressSchema = z.object({
   discovery_code: z.string().nullable().optional(),
   claude_prompt: z.string().max(60_000).nullable().optional(),
   claude_url: z.string().max(2000).nullable().optional(),
+  // The résumé job-search registered for the job changed after the prompt was prepared: it points to the old PDF.
+  prompt_stale: z.boolean().optional(),
   /** "Analisar": where job-search found the posting (runtime, dossiers, linkedin). */
   posting_source: z.string().max(40).nullable().optional(),
   /** "Pedir edição": the user's request (their own text, plain) and the PDF name the edit must produce. */
