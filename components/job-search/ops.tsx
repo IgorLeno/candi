@@ -1259,7 +1259,11 @@ export function DispatchCard({
               })
             }
           >
-            {dispatch.status === "INCERTO" ? "Conferi no Desktop, liberar" : "Dispensar"}
+            {dispatch.status === "INCERTO"
+              ? dispatch.mode === "host"
+                ? "Conferi, liberar"
+                : "Conferi no Desktop, liberar"
+              : "Dispensar"}
           </Button>
         )}
       </CollapsibleContent>
@@ -1391,6 +1395,7 @@ function DispatchButton({
   verb?: string
   onStarted: () => void
 }) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [command, setCommand] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -1464,6 +1469,19 @@ function DispatchButton({
                   startTransition(async () => {
                     try {
                       const result = await startDispatch({ action, platform, ...(jobId ? { jobId } : {}) })
+                      if (!result.ok && "blocker" in result) {
+                        // Another job's application holds the slot: the modal closes so "Ver a vaga" is clickable.
+                        const blocker = result.blocker
+                        setOpen(false)
+                        toast.error(`${refusalText(result.code)} Vaga ${blocker}.`, {
+                          duration: 15_000,
+                          action: {
+                            label: "Ver a vaga",
+                            onClick: () => router.push(`/vaga/${encodeURIComponent(blocker)}`),
+                          },
+                        })
+                        return
+                      }
                       if (!result.ok) {
                         toastRefusal(result.code)
                         // The modal blocks clicks outside it: close it so the toast's "Abrir navegador" is reachable.

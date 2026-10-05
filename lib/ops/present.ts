@@ -110,7 +110,8 @@ const REFUSAL_TEXT: Record<string, string> = {
   JOB_NOT_FOUND: "Vaga não encontrada na planilha.",
   GATEWAY_NOT_RUNNING: "O gateway Hermes está parado ou sem inferência. Inicie-o ou use o Grok.",
   DISPATCH_ACTIVE: "Já existe um disparo igual em andamento.",
-  APPLICATION_DISPATCH_ACTIVE: "Outra candidatura está em andamento: uma por vez.",
+  APPLICATION_DISPATCH_ACTIVE:
+    "Outra candidatura está em andamento ou ficou incerta (uma por vez): termine ou libere o card dela antes.",
   APPLICATION_CDP_DOWN:
     "O Application Browser (Chrome com o Claude, CDP 9227) está fechado: abra o navegador da candidatura e tente de novo.",
   CLOUDDESIGN_CDP_DOWN:

@@ -70,6 +70,20 @@ describe("ops server actions", () => {
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
+  it("passes back only a validated job_id of the application holding the slot", async () => {
+    runDispatcher.mockResolvedValue({ ok: false, code: "APPLICATION_DISPATCH_ACTIVE", detail: "fake-1002" })
+    const input = { action: "PREENCHER_CANDIDATURA", platform: "hermes", jobId: "fake-1001" }
+    await expect(startDispatch(input)).resolves.toEqual({
+      ok: false,
+      code: "APPLICATION_DISPATCH_ACTIVE",
+      blocker: "fake-1002",
+    })
+    runDispatcher.mockResolvedValue({ ok: false, code: "APPLICATION_DISPATCH_ACTIVE", detail: "um por vez <b>" })
+    await expect(startDispatch(input)).resolves.toEqual({ ok: false, code: "APPLICATION_DISPATCH_ACTIVE" })
+    runDispatcher.mockResolvedValue({ ok: false, code: "DOSSIER_NOT_VALID", detail: "fake-1002" })
+    await expect(startDispatch(input)).resolves.toEqual({ ok: false, code: "DOSSIER_NOT_VALID" })
+  })
+
   it("reject malformed input without calling the dispatcher", async () => {
     for (const input of [
       null,

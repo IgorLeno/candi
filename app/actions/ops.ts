@@ -55,7 +55,10 @@ function strip<T>(result: RunResult<T>): ActionResult<T> {
   return result.ok ? result : { ok: false, code: result.code }
 }
 
-export async function startDispatch(input: unknown): Promise<ActionResult<Dispatch>> {
+/** A refusal of "Preencher vaga" because another job's application holds the slot carries that job_id. */
+export type StartResult = ActionResult<Dispatch> | { ok: false; code: string; blocker: string }
+
+export async function startDispatch(input: unknown): Promise<StartResult> {
   await requireSession()
   const parsed = startInputSchema.safeParse(input)
   if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
@@ -68,7 +71,12 @@ export async function startDispatch(input: unknown): Promise<ActionResult<Dispat
   }
   const args = ["start", action, "--platform", platform, ...(jobId ? ["--job-id", jobId] : [])]
   const result = await runDispatcher(args, oneResultSchema)
-  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+  if (result.ok) return { ok: true, value: result.value.dispatch }
+  // Only a validated job_id goes back to the client; any other detail stays on the server.
+  if (result.code === "APPLICATION_DISPATCH_ACTIVE" && result.detail && JOB_ID_RE.test(result.detail)) {
+    return { ok: false, code: result.code, blocker: result.detail }
+  }
+  return { ok: false, code: result.code }
 }
 
 const listInputSchema = z

@@ -275,8 +275,8 @@ def cv_done(recs, job_id):
     return any(r["job_id"] == job_id and r["action"] == "GERAR_CURRICULO" and r["status"] == "CONCLUIDO" for r in recs)
 
 
-def refuse(code):
-    print(json.dumps({"ok": False, "code": code, "detail": ""}))
+def refuse(code, detail=""):
+    print(json.dumps({"ok": False, "code": code, "detail": detail}))
     return 1
 
 
@@ -299,6 +299,10 @@ def main(argv):
             return refuse("CHATGPT_BUSY")
         if action in LINCE and any(r["action"] in LINCE and r["status"] == "RODANDO" for r in recs):
             return refuse("PROFILE_BUSY")
+        holder = next((r for r in recs if action == "PREENCHER_CANDIDATURA" and r["action"] == action
+                       and r["status"] == "RODANDO" and r["job_id"] != job_id), None)
+        if holder:
+            return refuse("APPLICATION_DISPATCH_ACTIVE", holder["job_id"])   # one application at a time
         if action == "PREENCHER_CANDIDATURA" and platform == "hermes" and job_id == "fake-1010":
             return refuse("APPLICATION_CDP_DOWN")   # Chrome da candidatura fechado: o toast oferece abrir
         if action in ("GERAR_CURRICULO", "PREENCHER_CANDIDATURA") and job_id == "fake-1005":
