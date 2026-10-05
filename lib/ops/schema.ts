@@ -336,7 +336,7 @@ export type MarkClosedResult = z.infer<typeof markClosedResultSchema>["mark_clos
  */
 export const openBrowserResultSchema = z.object({
   ok: z.literal(true),
-  open_browser: z.object({ browser: z.literal("clouddesign"), already_open: z.boolean() }),
+  open_browser: z.object({ browser: z.enum(["clouddesign", "application"]), already_open: z.boolean() }),
 })
 export type OpenBrowserResult = z.infer<typeof openBrowserResultSchema>["open_browser"]
 

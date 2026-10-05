@@ -332,6 +332,17 @@ export async function openCvBrowser(): Promise<ActionResult<OpenBrowserResult>> 
 }
 
 /**
+ * "Abrir navegador da candidatura": job-search (`dispatch.py open-browser application`) runs the same command as the
+ * Application Browser shortcut (the Chrome with Claude in Chrome, CDP 9227) and checks the CDP. No input from the
+ * client: the browser name is fixed here. Signing in to Claude and to the job portals stays with the user.
+ */
+export async function openApplicationBrowser(): Promise<ActionResult<OpenBrowserResult>> {
+  await requireSession()
+  const result = await runDispatcher(["open-browser", "application"], openBrowserResultSchema)
+  return result.ok ? { ok: true, value: result.value.open_browser } : { ok: false, code: result.code }
+}
+
+/**
  * "Excluir vaga": the job leaves the Sheet. job-search (`dispatch.py delete-job` → `application.py delete`) backs the
  * rows up locally, then deletes the main-tab row and its Eventos/Dossiers rows with its own credential; the panel
  * sends only the job_id. The Sheet snapshot is dropped afterwards whatever the answer. There is no undo.

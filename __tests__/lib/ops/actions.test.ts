@@ -28,6 +28,7 @@ import {
   editCv,
   listDispatches,
   markJobClosed,
+  openApplicationBrowser,
   openCvBrowser,
   recordSent,
   refineIntake,
@@ -62,6 +63,7 @@ describe("ops server actions", () => {
     await expect(recordSent("fake-1001", "SUCCESS_PAGE")).rejects.toThrow("UNAUTHENTICATED")
     await expect(markJobClosed("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(openCvBrowser()).rejects.toThrow("UNAUTHENTICATED")
+    await expect(openApplicationBrowser()).rejects.toThrow("UNAUTHENTICATED")
     await expect(deleteJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(resumeCv("d-20260929T120000Z-abcdef", { option: "claude" })).rejects.toThrow("UNAUTHENTICATED")
@@ -426,6 +428,19 @@ describe("ops server actions", () => {
     runDispatcher.mockResolvedValue({ ok: false, code: "CLOUDDESIGN_OPEN_NO_CDP", detail: "x" })
     await expect(openCvBrowser()).resolves.toEqual({ ok: false, code: "CLOUDDESIGN_OPEN_NO_CDP" })
     expect(updateTag).not.toHaveBeenCalled()
+  })
+
+  it("abrir navegador da candidatura: fixed argv with no client input", async () => {
+    const value = { browser: "application", already_open: true }
+    runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, open_browser: value } })
+    await expect(openApplicationBrowser()).resolves.toEqual({ ok: true, value })
+    await (openApplicationBrowser as (...args: unknown[]) => Promise<unknown>)("clouddesign", "--evil")
+    expect(runDispatcher.mock.calls.map((call) => call[0])).toEqual([
+      ["open-browser", "application"],
+      ["open-browser", "application"],
+    ])
+    runDispatcher.mockResolvedValue({ ok: false, code: "APPLICATION_OPEN_NO_CDP", detail: "x" })
+    await expect(openApplicationBrowser()).resolves.toEqual({ ok: false, code: "APPLICATION_OPEN_NO_CDP" })
   })
 
   it("excluir vaga: send only a validated job_id, accept only the fixed counts, re-read the Sheet always", async () => {

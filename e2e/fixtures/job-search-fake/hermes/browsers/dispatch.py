@@ -7,7 +7,7 @@ can be exercised deterministically. `persist` records a REGISTRAR_WRITESET that 
 `--candidate N` or a stdin complement locates it), ANALISAR_INDICADA --from produces a writeset, `discard`
 marks the chain and `delete` hides the whole lineage from `list`. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
 the fixture, is refused with ALREADY_SENT). `delete-job <job_id>` answers like `application.py delete` without deleting
-anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). "Preencher vaga" of fake-1007 on Hermes follows the host path and ends with
+anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). "Preencher vaga" of fake-1010 on Hermes is refused with APPLICATION_CDP_DOWN. "Preencher vaga" of fake-1007 on Hermes follows the host path and ends with
 the prompt to paste (`prompt_stale` once a later "Pedir edição" finished). `record-sent <job_id> --evidence <tipo>`
 answers ENVIADA without writing
 anything (fake-1006 → ALREADY_SENT). `mark-closed <job_id>` answers ENCERRADA the same way. `confirm-open <job_id>` answers ABERTA without
@@ -20,7 +20,7 @@ run that finishes. A finished BUSCAR_VAGAS lists the jobs it left out (`LEFT_OUT
 `ANALISAR_DESCOBERTA --from <search> --job-id` walks posting → ChatGPT → writeset for one of them (fake-1001:
 ALREADY_IN_RUNTIME, fake-9104: LEFT_OUT_WITHOUT_CARD). EDITAR_CURRICULO (stdin) needs a finished GERAR_CURRICULO of the
 job (CV_NOT_READY) and no résumé run (CV_DOC_BUSY); once done, `cv-file` answers the `-v2` PDF. `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
-CV_JSON_MISSING before). `open-browser clouddesign` opens nothing and answers already_open false. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
+CV_JSON_MISSING before). `open-browser clouddesign|application` opens nothing and answers already_open false. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import hashlib
 import json
@@ -299,6 +299,8 @@ def main(argv):
             return refuse("CHATGPT_BUSY")
         if action in LINCE and any(r["action"] in LINCE and r["status"] == "RODANDO" for r in recs):
             return refuse("PROFILE_BUSY")
+        if action == "PREENCHER_CANDIDATURA" and platform == "hermes" and job_id == "fake-1010":
+            return refuse("APPLICATION_CDP_DOWN")   # Chrome da candidatura fechado: o toast oferece abrir
         if action in ("GERAR_CURRICULO", "PREENCHER_CANDIDATURA") and job_id == "fake-1005":
             return refuse("DOSSIER_NOT_VALID")   # nunca analisada: nem dossier local nem análise salva
         n = len(recs) + 1
@@ -564,9 +566,10 @@ def main(argv):
         return 0
     if cmd == "open-browser":
         # Opens nothing: says the Cloud Design Chrome is up, like `native_profiles.sh open` + `check` on the host.
-        if (argv[1] if len(argv) > 1 else "") != "clouddesign":
+        browser = argv[1] if len(argv) > 1 else ""
+        if browser not in ("clouddesign", "application"):
             return refuse("BROWSER_INVALID")
-        print(json.dumps({"ok": True, "open_browser": {"browser": "clouddesign", "already_open": False}}))
+        print(json.dumps({"ok": True, "open_browser": {"browser": browser, "already_open": False}}))
         return 0
     if cmd == "delete-job":
         job_id = argv[1] if len(argv) > 1 else ""

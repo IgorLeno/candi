@@ -37,6 +37,7 @@ import {
   discardDispatch,
   getCvFile,
   listDispatches,
+  openApplicationBrowser,
   openCvBrowser,
   refineIntake,
   registerWriteset,
@@ -1268,15 +1269,34 @@ export function DispatchCard({
 
 /** After the Chrome opens: what is still on the user (never automated: no credentials go through the panel). */
 function openBrowserText(value: OpenBrowserResult): string {
+  if (value.browser === "application") {
+    return value.already_open
+      ? "O Chrome da candidatura já estava aberto. Confira o login no Claude e no portal da vaga."
+      : "Chrome da candidatura aberto. Falta você: fazer login no Claude (e no portal da vaga, se pedir) e tentar de novo."
+  }
   return value.already_open
     ? "O Chrome do Cloud Design já estava aberto. Confira o login no Claude e o painel do Claude nas abas de currículo PT e EN."
     : "Chrome do Cloud Design aberto. Falta você: fazer login no Claude e abrir o painel do Claude nas abas de currículo PT e EN."
 }
 
-/** "Abrir navegador do currículo" from a toast: job-search opens the Chrome; the outcome is another toast. */
-async function openCvBrowserToast(): Promise<void> {
+type BrowserName = OpenBrowserResult["browser"]
+const OPEN_BROWSER: Record<
+  BrowserName,
+  { open: () => Promise<Awaited<ReturnType<typeof openCvBrowser>>>; label: string }
+> = {
+  clouddesign: { open: openCvBrowser, label: "Abrir navegador do currículo" },
+  application: { open: openApplicationBrowser, label: "Abrir navegador da candidatura" },
+}
+// A closed browser refusal → the browser the toast offers to open.
+const CDP_DOWN_BROWSER: Record<string, BrowserName> = {
+  CLOUDDESIGN_CDP_DOWN: "clouddesign",
+  APPLICATION_CDP_DOWN: "application",
+}
+
+/** "Abrir navegador" from a toast: job-search opens the Chrome; the outcome is another toast. */
+async function openBrowserToast(browser: BrowserName): Promise<void> {
   try {
-    const result = await openCvBrowser()
+    const result = await OPEN_BROWSER[browser].open()
     if (result.ok) toast.success(openBrowserText(result.value), { duration: 10_000 })
     else toast.error(refusalText(result.code))
   } catch {
@@ -1284,12 +1304,13 @@ async function openCvBrowserToast(): Promise<void> {
   }
 }
 
-/** A refusal toast; CLOUDDESIGN_CDP_DOWN also offers to open the Cloud Design Chrome right there. */
+/** A refusal toast; a closed Chrome (Cloud Design or application) also offers to open it right there. */
 function toastRefusal(code: string): void {
-  if (code === "CLOUDDESIGN_CDP_DOWN") {
+  const browser = Object.hasOwn(CDP_DOWN_BROWSER, code) ? CDP_DOWN_BROWSER[code] : undefined
+  if (browser) {
     toast.error(refusalText(code), {
       duration: 15_000,
-      action: { label: "Abrir navegador", onClick: () => void openCvBrowserToast() },
+      action: { label: "Abrir navegador", onClick: () => void openBrowserToast(browser) },
     })
     return
   }
@@ -1297,24 +1318,25 @@ function toastRefusal(code: string): void {
 }
 
 /**
- * "Abrir navegador do currículo" (Hermes): job-search opens the Cloud Design Chrome (CDP 9226) the way the desktop
- * shortcut does. Only the Chrome: signing in to Claude and the Claude panel on the PT/EN tabs stay with the user.
+ * "Abrir navegador do currículo" / "da candidatura" (Hermes): job-search opens the Cloud Design Chrome (CDP 9226) or
+ * the application Chrome (CDP 9227) the way the desktop shortcut does. Only the Chrome: signing in to Claude (and to
+ * the job portal) stays with the user.
  */
-function OpenCvBrowserButton() {
+function OpenBrowserButton({ browser }: { browser: BrowserName }) {
   const [pending, startTransition] = useTransition()
   const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null)
   return (
-    <div className="space-y-2" data-testid="open-cv-browser">
+    <div className="space-y-2" data-testid={browser === "clouddesign" ? "open-cv-browser" : "open-application-browser"}>
       <Button
         variant="outline"
         size="sm"
         disabled={pending}
-        data-testid="open-cv-browser-button"
+        data-testid={`${browser === "clouddesign" ? "open-cv-browser" : "open-application-browser"}-button`}
         onClick={() =>
           startTransition(async () => {
             setOutcome(null)
             try {
-              const result = await openCvBrowser()
+              const result = await OPEN_BROWSER[browser].open()
               setOutcome(
                 result.ok
                   ? { ok: true, text: openBrowserText(result.value) }
@@ -1331,13 +1353,13 @@ function OpenCvBrowserButton() {
         ) : (
           <AppWindow className="h-4 w-4" aria-hidden="true" />
         )}
-        {pending ? "Abrindo o navegador…" : "Abrir navegador do currículo"}
+        {pending ? "Abrindo o navegador…" : OPEN_BROWSER[browser].label}
       </Button>
       {outcome && (
         <p
           className={cn("flex items-start gap-1.5 text-xs", outcome.ok ? "text-st-open-fg" : "text-st-review-fg")}
           role={outcome.ok ? "status" : "alert"}
-          data-testid="open-cv-browser-outcome"
+          data-testid={`${browser === "clouddesign" ? "open-cv-browser" : "open-application-browser"}-outcome`}
         >
           {outcome.ok ? (
             <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -1416,7 +1438,10 @@ function DispatchButton({
                 <span className="text-muted-foreground">Plataforma:</span>
                 <PlatformToggle />
               </div>
-              {action === "GERAR_CURRICULO" && platform === "hermes" && <OpenCvBrowserButton />}
+              {action === "GERAR_CURRICULO" && platform === "hermes" && <OpenBrowserButton browser="clouddesign" />}
+              {action === "PREENCHER_CANDIDATURA" && platform === "hermes" && (
+                <OpenBrowserButton browser="application" />
+              )}
               {warning && (
                 <p className="rounded-lg border border-st-review/45 bg-st-review/15 p-2 text-st-review-fg" role="note">
                   {warning}
@@ -1442,7 +1467,7 @@ function DispatchButton({
                       if (!result.ok) {
                         toastRefusal(result.code)
                         // The modal blocks clicks outside it: close it so the toast's "Abrir navegador" is reachable.
-                        if (result.code === "CLOUDDESIGN_CDP_DOWN") setOpen(false)
+                        if (Object.hasOwn(CDP_DOWN_BROWSER, result.code)) setOpen(false)
                         return
                       }
                       onStarted()

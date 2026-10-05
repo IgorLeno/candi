@@ -176,6 +176,9 @@ describe("open-browser refusals", () => {
     expect(refusalText("CLOUDDESIGN_OPEN_FAILED")).toMatch(/Cloud Design Browser/)
     expect(refusalText("NO_GRAPHICAL_SESSION")).toMatch(/sessão gráfica/)
     expect(refusalText("BROWSER_INVALID")).toMatch(/Navegador/)
+    expect(refusalText("APPLICATION_CDP_DOWN")).toMatch(/abra o navegador da candidatura/)
+    expect(refusalText("APPLICATION_OPEN_NO_CDP")).toMatch(/feche essa janela/)
+    expect(refusalText("APPLICATION_OPEN_FAILED")).toMatch(/Application Browser/)
   })
 })
 
