@@ -332,6 +332,34 @@ export function canConfirmOpen(
   return candidatura !== "ENVIADA" && candidatura !== "ENVIO INCERTO" && candidatura !== "RETIRADA"
 }
 
+// "Vaga encerrada" (dispatch.py mark-closed): same path and codes as confirm-open.
+const MARK_CLOSED_REFUSAL_TEXT: Record<string, string> = {
+  ALREADY_CLOSED: "A vaga já está ENCERRADA na planilha e no dossier.",
+  ALREADY_SENT: "A candidatura já foi enviada: a disponibilidade não muda mais.",
+  SUBMIT_UNCERTAIN: "ENVIO INCERTO: reconcilie a candidatura antes de mudar a disponibilidade.",
+  DOSSIER_WRITE_FAILED:
+    "A planilha ficou ENCERRADA, mas o dossier local não foi gravado: marque de novo para terminar.",
+  OPEN_UNCERTAIN: "Sem resposta a tempo do job-search. Sincronize e confira a disponibilidade; repetir é seguro.",
+}
+
+export function markClosedRefusalText(code: string): string {
+  return MARK_CLOSED_REFUSAL_TEXT[code] ?? confirmOpenRefusalText(code)
+}
+
+/**
+ * "Vaga encerrada" (UX gating only; job-search re-checks): an ABERTA or NÃO CONFIRMADA job in the main tab whose
+ * application was not sent, uncertain or withdrawn.
+ */
+export function canMarkClosed(
+  item: Pick<JobListItem, "statusDisponibilidade" | "statusCandidatura" | "archived" | "uncertainSubmit">
+): boolean {
+  if (item.archived || item.uncertainSubmit || item.statusCandidatura.invalid) return false
+  const disponibilidade = item.statusDisponibilidade.invalid ? null : item.statusDisponibilidade.value
+  if (disponibilidade !== "ABERTA" && disponibilidade !== "NÃO CONFIRMADA") return false
+  const candidatura = item.statusCandidatura.value
+  return candidatura !== "ENVIADA" && candidatura !== "ENVIO INCERTO" && candidatura !== "RETIRADA"
+}
+
 /**
  * "Descartar vaga" (UX gating only; job-search re-checks the Sheet): not after a sent, uncertain or withdrawn
  * application. Closed or unselected jobs can still be discarded: the user is choosing what to keep.

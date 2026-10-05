@@ -319,6 +319,17 @@ export const confirmOpenResultSchema = z.object({
 })
 export type ConfirmOpenResult = z.infer<typeof confirmOpenResultSchema>["confirm_open"]
 
+/** `dispatch.py mark-closed <job_id>`: job-search wrote ENCERRADA to the Sheet and the dossier. Fixed fields only. */
+export const markClosedResultSchema = z.object({
+  ok: z.literal(true),
+  mark_closed: z.object({
+    job_id: z.string().regex(JOB_ID_RE),
+    status_disponibilidade: z.literal("ENCERRADA"),
+    sheet: z.enum(["UPDATED", "UNCHANGED"]),
+  }),
+})
+export type MarkClosedResult = z.infer<typeof markClosedResultSchema>["mark_closed"]
+
 /**
  * `dispatch.py open-browser clouddesign`: job-search opened the Cloud Design Chrome (CDP 9226), as the desktop
  * shortcut does, or found it already open. Only the browser name and whether it was already open.

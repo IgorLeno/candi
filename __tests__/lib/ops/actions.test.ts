@@ -27,6 +27,7 @@ import {
   discardDispatch,
   editCv,
   listDispatches,
+  markJobClosed,
   openCvBrowser,
   recordSent,
   refineIntake,
@@ -59,6 +60,7 @@ describe("ops server actions", () => {
     await expect(declineJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(confirmJobOpen("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(recordSent("fake-1001", "SUCCESS_PAGE")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(markJobClosed("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(openCvBrowser()).rejects.toThrow("UNAUTHENTICATED")
     await expect(deleteJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
@@ -351,6 +353,21 @@ describe("ops server actions", () => {
     // An uncertain write may have landed: the Sheet is re-read on refusals too.
     runDispatcher.mockResolvedValue({ ok: false, code: "DECLINE_UNCERTAIN", detail: "x" })
     await expect(declineJob("fake-1001")).resolves.toEqual({ ok: false, code: "DECLINE_UNCERTAIN" })
+    expect(updateTag).toHaveBeenCalledTimes(2)
+  })
+
+  it("vaga encerrada: send only a validated job_id, accept only the fixed fields, re-read the Sheet", async () => {
+    for (const id of [null, "../x", "--job-id", "a b", ["fake-1001"]]) {
+      await expect(markJobClosed(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    const value = { job_id: "fake-1001", status_disponibilidade: "ENCERRADA", sheet: "UPDATED" }
+    runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, mark_closed: value } })
+    await expect(markJobClosed("fake-1001")).resolves.toEqual({ ok: true, value })
+    expect(runDispatcher.mock.calls[0][0]).toEqual(["mark-closed", "fake-1001"])
+    expect(updateTag).toHaveBeenCalledWith("job-search")
+    runDispatcher.mockResolvedValue({ ok: false, code: "OPEN_UNCERTAIN", detail: "x" })
+    await expect(markJobClosed("fake-1001")).resolves.toEqual({ ok: false, code: "OPEN_UNCERTAIN" })
     expect(updateTag).toHaveBeenCalledTimes(2)
   })
 

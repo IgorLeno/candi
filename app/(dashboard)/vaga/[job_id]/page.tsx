@@ -11,10 +11,11 @@ import { SectionCard } from "@/components/job-search/overview"
 import { DoneStamp, Flames, JourneyTrail, StateBadge, stateBarClass } from "@/components/job-search/visual"
 import { JobAnalysisOps, JobApplicationOps, JobCvOps, JobOpsProvider } from "@/components/job-search/ops"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
-import { canConfirmOpen, canDeclineJob, canDeleteJob, canRecordSent } from "@/lib/ops/present"
+import { canConfirmOpen, canDeclineJob, canDeleteJob, canMarkClosed, canRecordSent } from "@/lib/ops/present"
 import { ConfirmOpenButton } from "@/components/job-search/confirm-open"
 import { DeclineJobButton } from "@/components/job-search/decline-job"
 import { DeleteJobButton } from "@/components/job-search/delete-job"
+import { MarkClosedButton } from "@/components/job-search/mark-closed"
 import { RecordSentButton } from "@/components/job-search/record-sent"
 import { cn } from "@/lib/utils"
 import {
@@ -150,6 +151,13 @@ function JobDetail({ view }: { view: JobView }) {
                 label={[job.empresa || "(sem empresa)", job.cargo || "(sem cargo)"].join(" · ")}
                 postingUrl={postingUrl || null}
                 closed={item.statusDisponibilidade.value === "ENCERRADA"}
+              />
+            )}
+            {isDispatchEnabled() && canMarkClosed(item) && (
+              <MarkClosedButton
+                jobId={job.job_id}
+                label={[job.empresa || "(sem empresa)", job.cargo || "(sem cargo)"].join(" · ")}
+                postingUrl={postingUrl || null}
               />
             )}
             <CellBadge cell={cellDisplay(job.status_candidatura)} testId="badge-candidatura" />

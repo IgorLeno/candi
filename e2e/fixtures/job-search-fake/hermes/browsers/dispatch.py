@@ -10,7 +10,7 @@ the fixture, is refused with ALREADY_SENT). `delete-job <job_id>` answers like `
 anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). "Preencher vaga" of fake-1007 on Hermes follows the host path and ends with
 the prompt to paste (`prompt_stale` once a later "Pedir edição" finished). `record-sent <job_id> --evidence <tipo>`
 answers ENVIADA without writing
-anything (fake-1006 → ALREADY_SENT). `confirm-open <job_id>` answers ABERTA without
+anything (fake-1006 → ALREADY_SENT). `mark-closed <job_id>` answers ENCERRADA the same way. `confirm-open <job_id>` answers ABERTA without
 writing anything (fake-1005 → DOSSIER_NOT_VALID, also for GERAR_CURRICULO/PREENCHER_CANDIDATURA: never analysed;
 the job's verdict, availability or application never refuse, like job-search on the host). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
 for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
@@ -543,6 +543,15 @@ def main(argv):
         if job_id == "fake-1006":
             return refuse("ALREADY_SENT")
         print(json.dumps({"ok": True, "record_sent": {"job_id": job_id, "status_candidatura": "ENVIADA"}}))
+        return 0
+    if cmd == "mark-closed":
+        job_id = argv[1] if len(argv) > 1 else ""
+        if not JOB_ID_RE.match(job_id):
+            return refuse("INVALID_JOB_ID")
+        if job_id == "fake-1005":
+            return refuse("DOSSIER_NOT_VALID")
+        print(json.dumps({"ok": True, "mark_closed": {"job_id": job_id, "status_disponibilidade": "ENCERRADA",
+                                                      "sheet": "UPDATED"}}))
         return 0
     if cmd == "confirm-open":
         job_id = argv[1] if len(argv) > 1 else ""

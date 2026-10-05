@@ -22,6 +22,7 @@ import {
   deleteJobResultSchema,
   deleteResultSchema,
   listResultSchema,
+  markClosedResultSchema,
   oneResultSchema,
   openBrowserResultSchema,
   recordSentResultSchema,
@@ -33,6 +34,7 @@ import {
   type DeleteResult,
   type Dispatch,
   type DispatchList,
+  type MarkClosedResult,
   type OpenBrowserResult,
   type RecordSentResult,
 } from "@/lib/ops/schema"
@@ -284,6 +286,21 @@ export async function confirmJobOpen(jobId: unknown): Promise<ActionResult<Confi
   // Uncertain or failed writes may still have landed: re-read the Sheet either way.
   updateTag(JOB_SEARCH_CACHE_TAG)
   return result.ok ? { ok: true, value: result.value.confirm_open } : { ok: false, code: result.code }
+}
+
+/**
+ * "Vaga encerrada": the user saw that the job no longer takes applications (on the posting, or Claude in Chrome said
+ * so while filling). job-search (`dispatch.py mark-closed`) writes status_disponibilidade ENCERRADA to the Sheet
+ * (writeset with a USER_CONFIRMED reconciliation) and to the dossier; the application is left as it is. The panel
+ * sends only the job_id. "Confirmei que está aberta" undoes it.
+ */
+export async function markJobClosed(jobId: unknown): Promise<ActionResult<MarkClosedResult>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["mark-closed", jobId], markClosedResultSchema)
+  // Uncertain or failed writes may still have landed: re-read the Sheet either way.
+  updateTag(JOB_SEARCH_CACHE_TAG)
+  return result.ok ? { ok: true, value: result.value.mark_closed } : { ok: false, code: result.code }
 }
 
 /**

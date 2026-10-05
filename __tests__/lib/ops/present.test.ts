@@ -4,6 +4,7 @@ import {
   canConfirmOpen,
   canDeclineJob,
   canDeleteJob,
+  canMarkClosed,
   canRecordSent,
   canRegisterWriteset,
   canResumeCv,
@@ -12,6 +13,7 @@ import {
   deleteJobRefusalText,
   latest,
   leftOutBlocker,
+  markClosedRefusalText,
   recordSentRefusalText,
   leftOutKindLabel,
   needsUser,
@@ -118,6 +120,29 @@ describe("canConfirmOpen", () => {
     for (const status of ["ENVIADA", "ENVIO INCERTO", "RETIRADA"]) {
       expect(canConfirmOpen({ ...unconfirmed, statusCandidatura: cell(status) })).toBe(false)
     }
+  })
+})
+
+describe("canMarkClosed", () => {
+  it("allows an ABERTA or NÃO CONFIRMADA job in the main tab not sent, uncertain or withdrawn", () => {
+    expect(canMarkClosed(open)).toBe(true)
+    expect(canMarkClosed({ ...open, statusDisponibilidade: cell("NÃO CONFIRMADA") })).toBe(true)
+    expect(canMarkClosed({ ...open, statusCandidatura: cell("EM PREPARAÇÃO") })).toBe(true)
+  })
+
+  it("refuses closed, invalid, archived, sent, uncertain and withdrawn jobs", () => {
+    expect(canMarkClosed({ ...open, statusDisponibilidade: cell("ENCERRADA") })).toBe(false)
+    expect(canMarkClosed({ ...open, statusDisponibilidade: cell("ABERTX", true) })).toBe(false)
+    expect(canMarkClosed({ ...open, archived: true })).toBe(false)
+    expect(canMarkClosed({ ...open, uncertainSubmit: true })).toBe(false)
+    for (const status of ["ENVIADA", "ENVIO INCERTO", "RETIRADA"]) {
+      expect(canMarkClosed({ ...open, statusCandidatura: cell(status) })).toBe(false)
+    }
+  })
+
+  it("words its own codes and reuses the confirm-open ones", () => {
+    expect(markClosedRefusalText("ALREADY_CLOSED")).toMatch(/já está ENCERRADA/)
+    expect(markClosedRefusalText("DOSSIER_NOT_VALID")).toBe(confirmOpenRefusalText("DOSSIER_NOT_VALID"))
   })
 })
 
