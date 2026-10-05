@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   analyzeJobBlocker,
+  applicationStopText,
   canConfirmOpen,
   canDeclineJob,
   canDeleteJob,
@@ -120,6 +121,15 @@ describe("canConfirmOpen", () => {
     for (const status of ["ENVIADA", "ENVIO INCERTO", "RETIRADA"]) {
       expect(canConfirmOpen({ ...unconfirmed, statusCandidatura: cell(status) })).toBe(false)
     }
+  })
+})
+
+describe("applicationStopText", () => {
+  it("sends a résumé stop to the Currículo section and a closed Chrome to the browser button", () => {
+    for (const code of ["OUTPUT_EXISTS", "BLOCKED_CLAUDE_CHROME:CLAUDE_PANEL_CLOSED", "HUMAN_REVIEW_DOUBTS", null]) {
+      expect(applicationStopText(code)).toMatch(/Gerar currículo/)
+    }
+    expect(applicationStopText("APPLICATION_CDP_DOWN")).toMatch(/abra o navegador da candidatura/)
   })
 })
 

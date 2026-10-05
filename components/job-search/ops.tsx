@@ -64,6 +64,7 @@ import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
 import { usePlatform, writePlatform } from "@/lib/ops/platform-pref"
 import { useClosed, useCollapsed, writeClosed, writeCollapsed } from "@/lib/ops/collapse-pref"
 import {
+  applicationStopText,
   ACTION_META,
   PLATFORM_LABEL,
   statusBadge,
@@ -1226,7 +1227,9 @@ export function DispatchCard({
                         ? " — veja o motivo acima e escolha como seguir."
                         : dispatch.action === "EDITAR_CURRICULO"
                           ? " — o Claude parou sem PDF novo: veja a resposta no painel do Claude e peça a edição de novo, se quiser."
-                          : " — ação sua necessária (veja o código)."
+                          : dispatch.action === "PREENCHER_CANDIDATURA"
+                            ? ` — ${applicationStopText(dispatch.code)}`
+                            : " — ação sua necessária (veja o código)."
                 : canRefineIntake(dispatch)
                   ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
                   : " — veja o Bot Chat no Hermes Desktop.")}

@@ -267,6 +267,18 @@ export function deleteJobConfirmed(typed: string, jobId: string): boolean {
   return typed.trim() === jobId
 }
 
+/**
+ * Why a host "Preencher vaga" stopped before the prompt, and what fixes it. Every code except the closed application
+ * Chrome comes from the résumé the run had to generate first; its reason and the resume options live on the
+ * "Gerar currículo" card, so the user goes there.
+ */
+export function applicationStopText(code: string | null | undefined): string {
+  if (code === "APPLICATION_CDP_DOWN") {
+    return "o Chrome da candidatura fechou: abra o navegador da candidatura e clique em \u201cPreencher vaga\u201d de novo."
+  }
+  return "o currículo desta vaga parou antes da candidatura: use \u201cGerar currículo\u201d na seção Currículo (o motivo e como retomar aparecem lá) e depois \u201cPreencher vaga\u201d de novo."
+}
+
 // "Registrar envio" (dispatch.py record-sent). What the user saw after clicking the portal's final button.
 export const SENT_EVIDENCE_LABEL: Record<SentEvidence, { label: string; description: string }> = {
   SUCCESS_PAGE: { label: "Página de sucesso", description: "O portal mostrou que a candidatura foi enviada." },
