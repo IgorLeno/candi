@@ -1,28 +1,58 @@
 # Candi — central do candidato
 
-Painel local em Next.js e TypeScript que transforma uma planilha de busca de vagas em uma **fila de ação, KPIs e funil**, e que funciona como **central de operações** de bots de busca, análise, currículo e candidatura.
+O Candi é a central de quem está procurando emprego. Em um só lugar, o candidato:
 
-![Tela "Hoje": fila de candidaturas, meta semanal e alertas de qualidade dos dados](docs/screenshots/hoje-escuro.png)
+1. **Cota vagas**: pede uma busca e recebe as vagas que combinam com ele, ou indica uma vaga específica que encontrou.
+2. **Recebe uma análise personalizada de cada vaga**, feita de acordo com o seu perfil: o que a vaga pede, onde ele atende, onde há lacuna e quanto vale a pena se candidatar.
+3. **Gera um currículo personalizado para aquela vaga**, sem inventar experiência, e pode pedir ajustes em texto livre.
+4. **Tem o preenchimento da candidatura automatizado**: os dados são preenchidos no portal da vaga e o envio final fica com ele, que confere e clica.
+
+E acompanha tudo: a fila do dia, a meta da semana, o funil da busca e o estado de cada candidatura.
+
+![Tela "Hoje": próxima candidatura, fila de vagas abertas e meta da semana](docs/screenshots/hoje-escuro.png)
 
 > Todos os prints usam dados fictícios (empresas e vagas de exemplo), gerados com o contrato do `job-search` pelo mesmo gerador da fixture local; nenhum dado real.
 
-## O problema
+## Quem faz o trabalho: bots de IA
 
-Uma busca de vagas com automação gera muito estado espalhado: vagas analisadas, vereditos, dossiês, currículos gerados, candidaturas enviadas ou incertas, fontes que falharam. Esse estado mora em uma Google Sheet mantida por bots (repositório `job-search`), e a Sheet não responde às perguntas do dia a dia: _o que faço agora?_, _onde a busca está travando?_, _qual dado está inconsistente?_.
+O Candi é o painel. O trabalho pesado é feito por bots de IA do repositório `job-search`, que o painel aciona com um clique:
 
-O Candi responde a essas perguntas sem virar uma segunda fonte de verdade:
+- **Bots de IA, no Hermes ou no Grok bot**: cada etapa tem o seu bot (busca, análise, currículo, candidatura), com um papel e regras do que pode e do que não pode fazer. Os mesmos bots rodam em duas plataformas, o Hermes (Hermes Agent, na máquina do candidato) e o Grok bot, e o painel trabalha com as duas: no Hermes ele dispara o bot direto; no Grok bot ele entrega o comando pronto para colar.
+- **ChatGPT**: faz a análise de cada vaga contra o perfil do candidato e propõe as mudanças do currículo para aquela vaga.
+- **Claude in Chrome e Claude Design**: o Claude in Chrome edita o currículo no Claude Design e exporta o PDF, e preenche os formulários de candidatura no navegador, parando antes do botão de envio.
+- **Google Planilhas como base de dados**: cada vaga, análise, evento de candidatura e fonte de busca fica registrado em uma planilha. O painel só lê essa planilha; quem grava são os bots, com regras e validações próprias.
 
-- **Hoje**: próxima candidatura, fila de vagas abertas, meta semanal e alertas (envio incerto, dossiê inválido, divergência entre Sheet e dossiê).
-- **Análise**: KPIs, funil da busca, evolução semanal, distribuições, cobertura de fontes e qualidade dos dados, com filtro de 30 ou 90 dias. Todo gráfico tem visão em tabela.
-- **Vagas** e **Vaga**: lista com filtros na URL e detalhe por vaga em três seções (análise, currículo, candidatura).
-- **Cotar vagas**: pede aos bots uma nova busca ou a análise de uma vaga específica e acompanha cada etapa até o registro na planilha.
+O perfil do candidato (experiências, evidências, preferências) e as regras de cada etapa ficam versionados no `job-search`, e os bots não podem inventar fato nem transformar projeto ou curso em experiência profissional.
 
-## Arquitetura
+## As telas
+
+- **Hoje**: próxima candidatura, fila de vagas abertas, meta da semana e o que precisa de atenção.
+- **Cotar vagas**: pede uma nova busca ou a análise de uma vaga específica e acompanha cada etapa até o registro na planilha.
+- **Vagas** e **Vaga**: todas as vagas com filtros e, em cada uma, três seções: análise, currículo e candidatura, cada uma com os seus botões.
+- **Análise**: KPIs, funil da busca, evolução semanal, distribuições, cobertura de fontes e qualidade dos dados. Todo gráfico tem visão em tabela.
+
+| Análise                                                       | Vagas                                                  |
+| ------------------------------------------------------------- | ------------------------------------------------------ |
+| ![Análise: KPIs e funil](docs/screenshots/analise-escuro.png) | ![Vagas em cartões](docs/screenshots/vagas-escuro.png) |
+
+| Vaga                                                                    | Cotar vagas                                                             |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| ![Detalhe da vaga com dossiê íntegro](docs/screenshots/vaga-escuro.png) | ![Cotação acompanhada etapa a etapa](docs/screenshots/cotar-escuro.png) |
+
+Tema claro:
+
+![Tela "Hoje" no tema claro](docs/screenshots/hoje-claro.png)
+
+## Por dentro: detalhes técnicos
+
+Esta parte é para quem quer ver como o painel foi construído.
+
+### Arquitetura
 
 ```
-           regras e enums                         estado operacional
+           regras e perfil                        estado operacional
    ┌──────────────────────────┐            ┌──────────────────────────┐
-   │ job-search (Git)         │  escreve   │ Google Sheet de registro │
+   │ job-search (Git)         │  escreve   │ Google Planilhas         │
    │ bots: busca, análise,    │ ─────────▶ │ vagas, eventos, dossiês, │
    │ currículo, candidatura   │            │ cobertura de fontes      │
    └────────────▲─────────────┘            └────────────┬─────────────┘
@@ -37,9 +67,9 @@ O Candi responde a essas perguntas sem virar uma segunda fonte de verdade:
    └──────────────────────────────────────────────────────────────────┘
 ```
 
-O painel **nunca escreve na Sheet** e não tem credencial de escrita. Quando o usuário pede uma ação (registrar uma busca, descartar uma vaga), quem grava é o `job-search`, com a credencial dele e as validações dele.
+O painel **nunca escreve na planilha** e não tem credencial de escrita. Quando o usuário pede uma ação (registrar uma busca, descartar uma vaga), quem grava é o `job-search`, com a credencial dele e as validações dele.
 
-## Destaques técnicos
+### Destaques técnicos
 
 Cada item aponta para onde está no código.
 
@@ -50,20 +80,6 @@ Cada item aponta para onde está no código.
 - **Autenticação fail-closed em três portões.** Auth.js com Google e allowlist de um e-mail: o proxy barra páginas e `/api/*`, o layout do dashboard exige sessão, e a leitura da Sheet real recusa sem sessão permitida. Cada server action chama `getAllowedSession()` por conta própria (`auth.ts`, `proxy.ts`, `lib/auth/access.ts`, `app/actions/`).
 - **Local-first.** Roda na máquina do dono com `pnpm build && pnpm start`; sem deploy, sem banco de dados, sem dependência de provedor de hospedagem.
 - **Testes e CI.** Testes unitários em Vitest (parsing, schema, métricas, regras de apresentação, guardas de texto) e testes E2E em Playwright contra um **dispatcher falso** com a mesma CLI e o mesmo JSON do real, que avança uma etapa por consulta (`e2e/fixtures/job-search-fake`). O E2E não tem bypass de login: o servidor sobe com segredos descartáveis e os testes emitem o cookie de sessão. GitHub Actions roda lint, Prettier, testes com cobertura, E2E e build (`.github/workflows/ci.yml`).
-
-## Telas
-
-| Análise                                                       | Vagas                                                  |
-| ------------------------------------------------------------- | ------------------------------------------------------ |
-| ![Análise: KPIs e funil](docs/screenshots/analise-escuro.png) | ![Vagas em cartões](docs/screenshots/vagas-escuro.png) |
-
-| Vaga                                                                    | Cotar vagas                                                             |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| ![Detalhe da vaga com dossiê íntegro](docs/screenshots/vaga-escuro.png) | ![Cotação acompanhada etapa a etapa](docs/screenshots/cotar-escuro.png) |
-
-Tema claro:
-
-![Tela "Hoje" no tema claro](docs/screenshots/hoje-claro.png)
 
 ## Como rodar
 
