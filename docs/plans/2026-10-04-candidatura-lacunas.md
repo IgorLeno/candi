@@ -39,14 +39,27 @@ P2-8 e P2-9 adiados.
 
 ## Checklist (Fase 2)
 
-- [ ] P0-2 texto de `STATE_CORRUPT` só se o código ainda puder aparecer depois da correção no job-search
-- [ ] P0-1 `recordSent(jobId, evidence)` em app/actions/ops.ts (`requireSession()` primeiro, enum no schema, argv
+- [ ] P0-2 texto de `STATE_CORRUPT` só se o código ainda puder aparecer depois da correção no job-search. Correção
+      no job-search: 254be44 (estado do operador em application-state.json). Pendente no painel: o código ainda
+      sai de `application_state.py` (arquivo ilegível) e está em `RECORD_SENT_CODES`; hoje o painel mostra o
+      genérico "Disparo recusado (STATE_CORRUPT)."
+- [x] P0-1 `recordSent(jobId, evidence)` em app/actions/ops.ts (`requireSession()` primeiro, enum no schema, argv
       fixo), schema do resultado, textos de recusa, diálogo "Registrar envio" na seção Candidatura, fake do e2e
-- [ ] P1-3 `prompt_stale` no schema do progresso e aviso no card
-- [ ] P1-4 `markJobClosed(jobId)`, gating de UX, diálogo, textos, fake
-- [ ] P1-5 `openApplicationBrowser()` (ou `openBrowser(name)` com enum), botão no diálogo, ação no toast conferida
-      no navegador com o modal fechado (lição 2026-10-04)
-- [ ] P1-6 detalhe da recusa com link; rótulo do botão do INCERTO do host
-- [ ] P1-7 texto por código no card da candidatura
+      — painel 435dd25, job-search 86af4ae
+- [x] P1-3 `prompt_stale` no schema do progresso e aviso no card — painel 0fcd608, job-search f495660
+- [x] P1-4 `markJobClosed(jobId)`, gating de UX, diálogo, textos, fake — painel cac7e7c, job-search f7ed4cc
+- [x] P1-5 `openApplicationBrowser()` (ou `openBrowser(name)` com enum), botão no diálogo, ação no toast conferida
+      no navegador com o modal fechado (lição 2026-10-04) — painel cec7bcc, job-search b9f04e6. O clique no toast
+      não foi conferido no navegador na rodada de 2026-10-05 (nenhuma spec e2e cobre)
+- [x] P1-6 detalhe da recusa com link; rótulo do botão do INCERTO do host — painel 56ceaed, job-search 5f93a43
+- [x] P1-7 texto por código no card da candidatura — painel d207281; `-vN` automático no job-search 8774d7c
 - [ ] gates: `pnpm test`, `pnpm exec tsc --noEmit`, `pnpm lint` (2 warnings conhecidos), `pnpm format:check`;
       conferência visual em cópia na 3108 (fixture + fake), nunca a 3000
+      Rodada de 2026-10-05 sobre d207281, máquina com load ~23 em 16 núcleos: tsc, lint (só os 2 warnings) e
+      format:check OK; `pnpm test` inteiro travou duas vezes (vitest parado, sem CPU), os 18 arquivos rodados um a
+      um passam (256 testes). E2E em modo produção (`next build` + `next start -p 3108` numa cópia, fixture + fake,
+      Playwright sem webServer, 1 worker): 33 passaram, 0 falharam, em duas rodadas seguidas. As 16 falhas da
+      rodada com `next dev --webpack` não se repetem em produção. As specs não mudaram nesses commits: os ramos
+      novos do fake (`record-sent`, `mark-closed`, `open-browser application`, APPLICATION_CDP_DOWN,
+      PASTE_PROMPT_IN_CLAUDE/`prompt_stale`, APPLICATION_DISPATCH_ACTIVE) não têm spec e2e. Conferência visual
+      das telas novas não feita.
