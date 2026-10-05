@@ -4,7 +4,7 @@ Painel local em Next.js e TypeScript que transforma uma planilha de busca de vag
 
 ![Tela "Hoje": fila de candidaturas, meta semanal e alertas de qualidade dos dados](docs/screenshots/hoje-escuro.png)
 
-> Todos os prints usam a fixture local (`lib/job-search/fixtures/snapshot.json`): empresas e vagas fictícias.
+> Todos os prints usam dados fictícios (empresas e vagas de exemplo), gerados com o contrato do `job-search` pelo mesmo gerador da fixture local; nenhum dado real.
 
 ## O problema
 
