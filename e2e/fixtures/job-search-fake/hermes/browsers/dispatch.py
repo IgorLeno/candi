@@ -19,7 +19,10 @@ with ChatGPT refuses another with CHATGPT_BUSY. GERAR_CURRICULO of fake-1003 on 
 run that finishes. A finished BUSCAR_VAGAS lists the jobs it left out (`LEFT_OUT`);
 `ANALISAR_DESCOBERTA --from <search> --job-id` walks posting → ChatGPT → writeset for one of them (fake-1001:
 ALREADY_IN_RUNTIME, fake-9104: LEFT_OUT_WITHOUT_CARD). EDITAR_CURRICULO (stdin) needs a finished GERAR_CURRICULO of the
-job (CV_NOT_READY) and no résumé run (CV_DOC_BUSY); once done, `cv-file` answers the `-v2` PDF. `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
+job (CV_NOT_READY) and no résumé run (CV_DOC_BUSY); once done, `cv-file` answers the `-v2` PDF. With
+`--chatgpt-review` (Hermes only: CHATGPT_REVIEW_HERMES_ONLY; one ChatGPT host pipeline at a time: CHATGPT_BUSY) it walks
+pedido → ChatGPT → Claude → cv; a request mentioning "sem lastro" stops at the ChatGPT in PRECISA_HUMANO/
+HUMAN_REVIEW_DOUBTS with `edit_doubts`. `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
 CV_JSON_MISSING before). `open-browser clouddesign|application` opens nothing and answers already_open false. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import hashlib
@@ -97,6 +100,10 @@ STAGES = {
                           ("registro", "Registro na planilha")],
     "EDITAR_CURRICULO": [("pedido", "Pedido de edição (seu texto, sem ChatGPT)"),
                          ("claude", "Edição no Claude in Chrome"), ("cv", "Currículo novo registrado")],
+    # "Pedir edição" with the ChatGPT review (2026-10-05).
+    "EDITAR_REVIEW": [("pedido", "Pedido de edição (seu texto, revisado pelo ChatGPT)"),
+                      ("chatgpt", "Revisão do pedido no ChatGPT (host)"),
+                      ("claude", "Edição no Claude in Chrome"), ("cv", "Currículo novo registrado")],
     "ANALISAR_DESCOBERTA": [("posting", "Texto da vaga"), ("analise", "Análise no ChatGPT (host)"),
                             ("writeset", "Writeset pronto"), ("registro", "Registro na planilha")],
     "ANALISAR_VAGA": [("planilha", "Dados da vaga (planilha, só leitura)"), ("posting", "Texto da vaga"),
@@ -104,6 +111,8 @@ STAGES = {
                       ("registro", "Registro na planilha")],
 }
 REGISTER = "REGISTRAR_WRITESET"
+# What the ChatGPT doubts in a reviewed "Pedir edição" whose request mentions "sem lastro" (plain text).
+REVIEW_DOUBTS = ["O pedido cita Python na Acme, mas as evidências não mostram Python nesse trabalho."]
 # "Preencher vaga" of this job on Hermes follows the host path (the others keep the Candidatinho stages): it ends in
 # PRECISA_HUMANO/PASTE_PROMPT_IN_CLAUDE, and a "Pedir edição" finished afterwards makes the prompt stale.
 HOST_APPLY = "fake-1007"
@@ -161,8 +170,16 @@ def view_register(rec):
     return out
 
 
-def last_step(action):
-    return len(STAGES[action]) - (1 if action in WRITESET_ACTIONS else 0)
+def stage_key(rec):
+    if rec.get("host_apply"):
+        return "PREENCHER_HOST"
+    return "EDITAR_REVIEW" if rec.get("chatgpt_review") else rec["action"]
+
+
+def last_step(action, rec=None):
+    # Only the reviewed edit has its own stage list here; the host "Preencher vaga" keeps the action's count.
+    key = "EDITAR_REVIEW" if rec and rec.get("chatgpt_review") else action
+    return len(STAGES[key]) - (1 if action in WRITESET_ACTIONS else 0)
 
 
 def intake_of(rec, recs):
@@ -173,14 +190,15 @@ def intake_of(rec, recs):
 def view(rec, recs=()):
     if rec["action"] == REGISTER:
         return view_register(rec)
-    stages = STAGES["PREENCHER_HOST" if rec.get("host_apply") else rec["action"]]
+    stages = STAGES[stage_key(rec)]
     step = rec["step"]
-    last = last_step(rec["action"])
+    last = last_step(rec["action"], rec)
     not_found = rec["action"] == "LOCALIZAR_VAGA" and not rec["found"] and step >= last
     out_stages = []
     for i, (key, label) in enumerate(stages):
         state = "done" if i < step else "active" if i == step and rec["status"] == "RODANDO" else "pending"
-        if i == step and rec["status"] in ("PRECISA_HUMANO", "FALHOU") and rec["action"] in HOST_ANALYSES:
+        if i == step and rec["status"] in ("PRECISA_HUMANO", "FALHOU") and (
+                rec["action"] in HOST_ANALYSES or rec.get("chatgpt_review")):
             state = "failed"
         if rec["action"] in WRITESET_ACTIONS and key == "registro" and step >= last:
             state = "active"
@@ -245,9 +263,13 @@ def view(rec, recs=()):
     if rec["action"] in HOST_ANALYSES or rec.get("mode") == "host":
         out["mode"] = "host"
     if rec["action"] == "EDITAR_CURRICULO":
-        progress.update(edit_request=rec["edit_request"], edit_output="curriculo_igor-fernandes_pt_fake-v2.pdf")
+        progress.update(edit_request=rec["edit_request"], edit_output="curriculo_igor-fernandes_pt_fake-v2.pdf",
+                        chatgpt_review=bool(rec.get("chatgpt_review")), edit_doubts=[])
         if step == 0:
             out_stages[0]["state"] = "done"   # o pedido já está gravado
+        if rec.get("code") == "HUMAN_REVIEW_DOUBTS":
+            out_stages[1]["note"] = rec["code"]
+            progress["edit_doubts"] = REVIEW_DOUBTS
     if rec.get("host_apply") and rec["status"] == "PRECISA_HUMANO":
         out_stages[-1].update(state="active", note="ação sua: abrir o painel do Claude na aba e colar")
         # Newest first: the records before this one were started after it.
@@ -294,8 +316,13 @@ def main(argv):
             return refuse("PLATFORM_NOT_SUPPORTED")
         if any(r["action"] == action and r["job_id"] == job_id and r["status"] == "RODANDO" for r in recs):
             return refuse("DISPATCH_ACTIVE")
-        if action in HOST_ANALYSES and any(
-                r["action"] in CHATGPT_HOST and r["status"] == "RODANDO" for r in recs):
+        review = "--chatgpt-review" in argv
+        if review and action != "EDITAR_CURRICULO":
+            return refuse("REVIEW_NOT_EXPECTED")
+        if review and platform != "hermes":
+            return refuse("CHATGPT_REVIEW_HERMES_ONLY")
+        if (action in HOST_ANALYSES or review) and any(
+                (r["action"] in CHATGPT_HOST or r.get("chatgpt_review")) and r["status"] == "RODANDO" for r in recs):
             return refuse("CHATGPT_BUSY")
         if action in LINCE and any(r["action"] in LINCE and r["status"] == "RODANDO" for r in recs):
             return refuse("PROFILE_BUSY")
@@ -361,6 +388,8 @@ def main(argv):
             if not cv_done(recs, job_id):
                 return refuse("CV_NOT_READY")
             rec.update(edit_request=text.strip(), mode="host" if platform == "hermes" else "bot")
+            if review:
+                rec["chatgpt_review"] = True
         if action == "ANALISAR_DESCOBERTA":
             search = next((r for r in recs if r["id"] == source_id), None)
             card = next((e for e in LEFT_OUT["excluded"] + LEFT_OUT["deferred"] if e["job_id"] == job_id), None)
@@ -426,7 +455,9 @@ def main(argv):
                       and not rec.get("resumes") and rec["step"] >= 1):
                     rec.update(step=1, status="PRECISA_HUMANO",
                                code="BLOCKED_CLAUDE_CHROME:CLAUDE_STOPPED_WITHOUT_PDF")
-                elif rec["step"] >= last_step(rec["action"]):
+                elif rec.get("chatgpt_review") and "sem lastro" in rec["edit_request"] and rec["step"] >= 1:
+                    rec.update(step=1, status="PRECISA_HUMANO", code="HUMAN_REVIEW_DOUBTS")
+                elif rec["step"] >= last_step(rec["action"], rec):
                     if rec.get("host_apply"):
                         rec.update(step=last_step(rec["action"]) - 1, status="PRECISA_HUMANO",
                                    code="PASTE_PROMPT_IN_CLAUDE")

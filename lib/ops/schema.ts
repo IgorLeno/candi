@@ -214,6 +214,9 @@ const progressSchema = z.object({
   /** "Pedir edição": the user's request (their own text, plain) and the PDF name the edit must produce. */
   edit_request: z.string().max(1500).nullable().optional(),
   edit_output: z.string().max(200).nullable().optional(),
+  /** "Pedir edição" with the ChatGPT review (2026-10-05) and, stopped on them, the ChatGPT's doubts (plain text). */
+  chatgpt_review: z.boolean().optional(),
+  edit_doubts: z.array(z.string().max(300)).max(5).optional(),
   /** "Gerar currículo" stuck in PRECISA_HUMANO (host): reason and resume options. */
   recovery: cvRecoverySchema.nullable().optional(),
 })

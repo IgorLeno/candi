@@ -299,6 +299,32 @@ describe("ops server actions", () => {
     expect(options).toEqual({ stdin: "troque o headline --platform hermes" })
   })
 
+  it("pedir edição com revisão no ChatGPT: flag fixa no argv, só Hermes, texto continua no stdin", async () => {
+    session.current = { user: { email: "owner@e2e.test" } }
+    await expect(
+      editCv("fake-1001", { platform: "grok", text: "troque o headline do currículo", chatgptReview: true })
+    ).resolves.toEqual({ ok: false, code: "CHATGPT_REVIEW_HERMES_ONLY" })
+    await expect(
+      editCv("fake-1001", { platform: "hermes", text: "troque o headline do currículo", chatgptReview: "sim" })
+    ).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    expect(runDispatcher).not.toHaveBeenCalled()
+    await editCv("fake-1001", { platform: "hermes", text: "troque o headline do currículo", chatgptReview: true })
+    await editCv("fake-1001", { platform: "hermes", text: "troque o headline do currículo", chatgptReview: false })
+    const [reviewed, , , options] = runDispatcher.mock.calls[0]
+    expect(reviewed).toEqual([
+      "start",
+      "EDITAR_CURRICULO",
+      "--platform",
+      "hermes",
+      "--job-id",
+      "fake-1001",
+      "--request-stdin",
+      "--chatgpt-review",
+    ])
+    expect(options).toEqual({ stdin: "troque o headline do currículo" })
+    expect(runDispatcher.mock.calls[1][0]).not.toContain("--chatgpt-review")
+  })
+
   it("mandar ao ChatGPT uma vaga de fora: só o id da cotação e o job_id validados, nada mais", async () => {
     const search = "d-20261003T120000Z-abcdef"
     session.current = null

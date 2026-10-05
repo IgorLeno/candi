@@ -503,6 +503,56 @@ test.describe("Central de operações (bots)", () => {
     await expect(manual.getByTestId("grok-command")).not.toContainText("Encurte o resumo")
   })
 
+  test("pedir edição com revisão no ChatGPT: o switch muda o caminho e uma dúvida para antes do Claude", async ({
+    page,
+  }) => {
+    // The fake advances one stage per poll (5 s); a request mentioning "sem lastro" gets doubts from the ChatGPT.
+    test.setTimeout(150_000)
+    await page.goto("/vaga/fake-1001")
+    const section = page.getByTestId("job-section-curriculo")
+    const form = section.getByTestId("cv-edit")
+    await section.getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    await page.getByTestId("dispatch-confirm").click()
+    await expect(section.getByTestId("dispatch-GERAR_CURRICULO")).toHaveAttribute("data-status", "CONCLUIDO", {
+      timeout: 30_000,
+    })
+
+    // Off by default: the request goes straight to Claude, as before.
+    const toggle = form.getByRole("switch", { name: "Revisar o pedido no ChatGPT antes" })
+    await expect(toggle).toHaveAttribute("aria-checked", "false")
+    await expect(form.getByTestId("cv-edit-description")).toContainText("direto ao Claude in Chrome")
+    await toggle.click()
+    await expect(toggle).toHaveAttribute("aria-checked", "true")
+    await expect(form.getByTestId("cv-edit-description")).toContainText("O ChatGPT lê seu pedido antes")
+    const input = form.getByTestId("cv-edit-input")
+    await input.fill("Coloque Python sem lastro na experiência da Acme, por favor.")
+    await expect(form.getByTestId("cv-edit-submit")).toHaveText("Pedir edição · Hermes + ChatGPT")
+    await form.getByTestId("cv-edit-submit").click()
+    const stuck = section.getByTestId("dispatch-EDITAR_CURRICULO")
+    await expect(stuck.locator('[data-stage="chatgpt"]')).toHaveCount(1)
+    await expect(toggle).toHaveAttribute("aria-checked", "false")
+    await expect(stuck).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    await expect(stuck.locator('[data-stage="chatgpt"]')).toHaveAttribute("data-state", "failed")
+    await expect(stuck.locator('[data-stage="claude"]')).toHaveAttribute("data-state", "pending")
+    await expect(stuck.getByTestId("cv-edit-doubts")).toContainText("as evidências não mostram Python")
+    await expect(stuck).toContainText("nada foi ao Claude")
+
+    // Rewritten request: ChatGPT, then Claude, then the new PDF.
+    await toggle.click()
+    await input.fill("Troque o headline para Engenharia Química | Processos e Dados.")
+    await form.getByTestId("cv-edit-submit").click()
+    const edit = section.getByTestId("dispatch-EDITAR_CURRICULO")
+    await expect(edit).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 45_000 })
+    await expect(edit.locator('[data-stage="chatgpt"]')).toHaveAttribute("data-state", "done")
+    await expect(section.getByTestId("cv-preview-filename")).toHaveText("curriculo_igor-fernandes_pt_fake-v2.pdf")
+
+    // Grok never carries the text: the review is off and disabled, with the reason.
+    await form.getByTestId("platform-grok").click()
+    await expect(toggle).toBeDisabled()
+    await expect(toggle).toHaveAttribute("aria-checked", "false")
+    await expect(form.getByTestId("cv-edit-review-hermes-only")).toBeVisible()
+  })
+
   test('currículo travado: motivo claro, opções e "Outro" com texto para o ChatGPT', async ({ page }) => {
     // The fake advances one stage per poll (5 s); fake-1003 stops in the Claude step the first time.
     test.setTimeout(90_000)

@@ -174,6 +174,10 @@ const REFUSAL_TEXT: Record<string, string> = {
   CV_DOC_AT_OTHER_JOB:
     "O currículo de trabalho no Claude Design está com o currículo de outra vaga. Gere de novo o desta vaga e depois peça a edição.",
   CV_DOC_BUSY: "Outro currículo está sendo gerado ou editado no Claude Design: espere terminar.",
+  // "Pedir edição" com a revisão do pedido no ChatGPT (dispatch.py start EDITAR_CURRICULO --chatgpt-review).
+  CHATGPT_REVIEW_HERMES_ONLY:
+    "A revisão do pedido no ChatGPT só roda pelo Hermes: troque para Hermes ou desligue a revisão.",
+  REVIEW_NOT_EXPECTED: "Só a edição do currículo aceita a revisão do pedido no ChatGPT.",
   // "Mandar ao ChatGPT" uma vaga que a cotação deixou de fora (dispatch.py start ANALISAR_DESCOBERTA).
   SOURCE_NOT_A_SEARCH: "Esse disparo não é uma cotação de vagas.",
   NOT_LEFT_OUT: "A vaga não está entre as que esta cotação deixou de fora: atualize o painel.",
@@ -265,6 +269,21 @@ export function canDeleteJob(item: Pick<JobListItem, "statusCandidatura" | "unce
 /** The strong confirmation of "Excluir vaga": the user types the job_id itself. */
 export function deleteJobConfirmed(typed: string, jobId: string): boolean {
   return typed.trim() === jobId
+}
+
+/** "Pedir edição" with the ChatGPT review on (decision 2026-10-05): what the card says and the button adds. */
+export const CV_EDIT_REVIEW_DESCRIPTION =
+  "O ChatGPT lê seu pedido antes: transforma em mudanças conferidas contra os seus fatos (knowledge/) e o currículo atual, e põe em dúvida o que não tiver lastro. Sem dúvida, o Claude in Chrome aplica e exporta um PDF novo (-v2, -v3...) sem apagar o anterior; com dúvida, para e mostra aqui, sem mexer no currículo."
+
+/** Why a "Pedir edição" stopped in PRECISA_HUMANO (job-search's code; the ChatGPT ones only with the review on). */
+export function cvEditStopText(code: string | null | undefined): string {
+  if (code === "HUMAN_REVIEW_DOUBTS")
+    return "o ChatGPT deixou dúvidas sobre o pedido (acima) e nada foi ao Claude: reescreva o pedido e peça de novo."
+  if (code === "FORMAT_INVALID")
+    return "a resposta do ChatGPT veio fora do formato mesmo depois de uma correção e nada foi ao Claude: peça de novo."
+  if (code === "HUMAN_AUTH_REQUIRED")
+    return "o ChatGPT pediu login no Chrome do ChatGPT: entre na conta e peça a edição de novo."
+  return "o Claude parou sem PDF novo: veja a resposta no painel do Claude e peça a edição de novo, se quiser."
 }
 
 /**

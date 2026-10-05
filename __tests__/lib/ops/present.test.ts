@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   analyzeJobBlocker,
   applicationStopText,
+  cvEditStopText,
   canConfirmOpen,
   canDeclineJob,
   canDeleteJob,
@@ -121,6 +122,17 @@ describe("canConfirmOpen", () => {
     for (const status of ["ENVIADA", "ENVIO INCERTO", "RETIRADA"]) {
       expect(canConfirmOpen({ ...unconfirmed, statusCandidatura: cell(status) })).toBe(false)
     }
+  })
+})
+
+describe("cvEditStopText", () => {
+  it("diz que nada foi ao Claude quando o ChatGPT parou a edição revisada", () => {
+    for (const code of ["HUMAN_REVIEW_DOUBTS", "FORMAT_INVALID"]) {
+      expect(cvEditStopText(code)).toMatch(/nada foi ao Claude/)
+    }
+    expect(cvEditStopText("HUMAN_AUTH_REQUIRED")).toMatch(/login no Chrome do ChatGPT/)
+    expect(cvEditStopText("BLOCKED_CLAUDE_CHROME:CLAUDE_STOPPED_WITHOUT_PDF")).toMatch(/o Claude parou sem PDF/)
+    expect(cvEditStopText(null)).toMatch(/o Claude parou sem PDF/)
   })
 })
 

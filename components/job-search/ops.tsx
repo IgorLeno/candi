@@ -66,6 +66,8 @@ import { useClosed, useCollapsed, writeClosed, writeCollapsed } from "@/lib/ops/
 import {
   applicationStopText,
   ACTION_META,
+  CV_EDIT_REVIEW_DESCRIPTION,
+  cvEditStopText,
   PLATFORM_LABEL,
   statusBadge,
   activeIntake,
@@ -1199,6 +1201,18 @@ export function DispatchCard({
             <p className="whitespace-pre-wrap break-words">{progress.edit_request}</p>
           </div>
         )}
+        {dispatch.action === "EDITAR_CURRICULO" && (progress.edit_doubts?.length ?? 0) > 0 && (
+          <div className="rounded-lg border border-st-review/40 p-2 text-sm" data-testid="cv-edit-doubts">
+            <span className="text-xs text-muted-foreground">Dúvidas do ChatGPT sobre o pedido</span>
+            <ul className="list-disc space-y-1 pl-5">
+              {progress.edit_doubts?.map((doubt, index) => (
+                <li key={index} className="whitespace-pre-wrap break-words">
+                  {doubt}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {(dispatch.action === "ANALISAR_VAGA" || dispatch.action === "ANALISAR_DESCOBERTA") && (
           <DiagnosisList progress={progress} testId="analysis-diagnosis" />
         )}
@@ -1226,7 +1240,7 @@ export function DispatchCard({
                       : canResumeCv(dispatch)
                         ? " — veja o motivo acima e escolha como seguir."
                         : dispatch.action === "EDITAR_CURRICULO"
-                          ? " — o Claude parou sem PDF novo: veja a resposta no painel do Claude e peça a edição de novo, se quiser."
+                          ? ` — ${cvEditStopText(dispatch.code)}`
                           : dispatch.action === "PREENCHER_CANDIDATURA"
                             ? ` — ${applicationStopText(dispatch.code)}`
                             : " — ação sua necessária (veja o código)."
@@ -1994,8 +2008,9 @@ export function JobApplicationOps() {
 
 /**
  * "Pedir edição": free text for any change in this job's résumé, run by Hermes (job-search host) or the Grok CV
- * Operator. The text is the user's own (decision 2026-10-03, option B): it goes straight to Claude in Chrome, without
- * ChatGPT. Same guards as the "vaga indicada"; the server and job-search check again.
+ * Operator. The text is the user's own (decision 2026-10-03, option B): by default it goes straight to Claude in
+ * Chrome, without ChatGPT. The switch (decision 2026-10-05, Hermes only, off on every visit) has the ChatGPT review it
+ * first. Same guards as the "vaga indicada"; the server and job-search check again.
  */
 function CvEditForm({
   jobId,
@@ -2008,7 +2023,10 @@ function CvEditForm({
 }) {
   const platform = usePlatform()
   const [text, setText] = useState("")
+  const [review, setReview] = useState(false)
   const [pending, startTransition] = useTransition()
+  // Grok gets a fixed command that never carries the text: the review only runs on the job-search host.
+  const reviewOn = review && platform === "hermes"
   const check = normalizeIntake(text)
   const length = intakeLength(text.trim())
   const problem =
@@ -2025,7 +2043,40 @@ function CvEditForm({
           <PlatformToggle />
         </span>
       </div>
-      <p className="text-xs text-muted-foreground">{ACTION_META.EDITAR_CURRICULO.description}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          role="switch"
+          id="cv-edit-review"
+          aria-checked={reviewOn}
+          disabled={platform !== "hermes" || disabledReason !== null}
+          data-testid="cv-edit-review"
+          onClick={() => setReview((on) => !on)}
+          className={cn(
+            "inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-border transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+            reviewOn ? "bg-primary" : "bg-muted"
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              "inline-block h-3.5 w-3.5 rounded-full bg-background shadow transition-transform",
+              reviewOn ? "translate-x-4" : "translate-x-0.5"
+            )}
+          />
+        </button>
+        <Label htmlFor="cv-edit-review" className="text-xs font-medium">
+          Revisar o pedido no ChatGPT antes
+        </Label>
+        {platform !== "hermes" && (
+          <span className="text-xs text-muted-foreground" data-testid="cv-edit-review-hermes-only">
+            Só pelo Hermes: com o Grok o pedido vai direto ao Claude.
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground" data-testid="cv-edit-description">
+        {reviewOn ? CV_EDIT_REVIEW_DESCRIPTION : ACTION_META.EDITAR_CURRICULO.description}
+      </p>
       <Textarea
         id="cv-edit-input"
         value={text}
@@ -2059,7 +2110,7 @@ function CvEditForm({
             startTransition(async () => {
               if (!check.ok) return
               try {
-                const result = await editCv(jobId, { platform, text: check.text })
+                const result = await editCv(jobId, { platform, text: check.text, chatgptReview: reviewOn })
                 if (!result.ok) {
                   toastRefusal(result.code)
                   return
@@ -2067,9 +2118,12 @@ function CvEditForm({
                 toast.success(
                   platform === "grok"
                     ? "Comando pronto: cole no CV Operator do Grok."
-                    : "Edição pedida ao job-search (Claude in Chrome)."
+                    : reviewOn
+                      ? "Edição pedida ao job-search: o ChatGPT revisa o pedido, depois o Claude in Chrome."
+                      : "Edição pedida ao job-search (Claude in Chrome)."
                 )
                 setText("")
+                setReview(false)
                 onStarted()
               } catch {
                 toast.error(refusalText("UNAUTHENTICATED"))
@@ -2083,6 +2137,7 @@ function CvEditForm({
             <PencilLine className="h-4 w-4" aria-hidden="true" />
           )}
           {ACTION_META.EDITAR_CURRICULO.verb} · {PLATFORM_LABEL[platform]}
+          {reviewOn && " + ChatGPT"}
         </Button>
       </div>
     </section>
