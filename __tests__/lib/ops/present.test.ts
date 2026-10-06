@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   analyzeJobBlocker,
+  applicationCvWarning,
   applicationStopText,
   cvEditStopText,
   canConfirmOpen,
@@ -358,6 +359,21 @@ describe("Cotar vagas: searchVerb and needsUser", () => {
     expect(needsUser(search, withRegistration(searchProgress, new Set(["a", "b"])))).toBe(false)
     expect(needsUser({ ...search, status: "FALHOU" })).toBe(false)
     expect(needsUser({ ...search, status: "PRECISA_HUMANO", discarded: true })).toBe(false)
+  })
+})
+
+describe("applicationCvWarning", () => {
+  const job = { job_id: "j", dossier: "VALID", actionable: false, cv_allowed: true, application_state: null } as const
+
+  it("warns only when job-search says the résumé is not VALID", () => {
+    expect(applicationCvWarning({ ...job, cv: "MISSING" })).toMatch("ainda não está pronto")
+    expect(applicationCvWarning({ ...job, cv: "INVALID" })).toMatch("ainda não está pronto")
+    expect(applicationCvWarning({ ...job, cv: "VALID" })).toBeNull()
+  })
+
+  it("does not claim a missing résumé when the job state is unknown", () => {
+    // The list failed (e.g. dispatcher error) or is still loading: no verdict, no warning.
+    expect(applicationCvWarning(undefined)).toBeNull()
   })
 })
 

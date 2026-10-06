@@ -73,6 +73,7 @@ import {
   activeIntake,
   analysisOf,
   analyzeJobBlocker,
+  applicationCvWarning,
   canAnalyzeIntake,
   canDelete,
   canDiscard,
@@ -1986,7 +1987,6 @@ export function JobCvOps() {
 export function JobApplicationOps() {
   const { jobId, data, refresh } = useJobOps()
   const application = latest(data?.dispatches ?? [], "PREENCHER_CANDIDATURA")
-  const cvReady = data?.job?.cv === "VALID"
   return (
     <OpsBar testId="job-ops-application" label="Candidatura desta vaga pelos bots">
       <DispatchButton
@@ -1994,7 +1994,7 @@ export function JobApplicationOps() {
         jobId={jobId}
         primary
         disabledReason={application?.active ? "Candidatura em andamento." : null}
-        warning={cvReady ? null : "O currículo desta vaga ainda não está pronto. O recomendado é gerar antes."}
+        warning={applicationCvWarning(data?.job)}
         onStarted={refresh}
       />
       {application && (

@@ -6,6 +6,7 @@ import type {
   DispatchAction,
   DispatchProgress,
   DispatchStatus,
+  JobArtifacts,
   LeftOutJob,
   PersistResult,
   RecordPlatform,
@@ -527,6 +528,16 @@ const RESUME_CV_REFUSAL_TEXT: Record<string, string> = {
 
 export function resumeCvRefusalText(code: string): string {
   return RESUME_CV_REFUSAL_TEXT[code] ?? refusalText(code)
+}
+
+/**
+ * "Preencher vaga" warning: only job-search's own verdict (`cv` not VALID) says the résumé is missing. An unknown job
+ * (list failed or still loading) is not a missing résumé: on 2026-10-06 a crashing `dispatch.py list` made an edited,
+ * VALID résumé read as "não está pronto".
+ */
+export function applicationCvWarning(job: JobArtifacts | undefined): string | null {
+  if (!job || job.cv === "VALID") return null
+  return "O currículo desta vaga ainda não está pronto. O recomendado é gerar antes."
 }
 
 /** "Tentar de novo" (UX gating): a host résumé run stuck on the user, not resumed yet, with job-search's options. */
