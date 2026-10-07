@@ -1,0 +1,236 @@
+# Currículo sem Claude Design e sem Claude in Chrome (2026-10-07) — viabilidade e plano
+
+Pedido do usuário: gerar e editar os currículos sem o Claude Design e sem o Claude in Chrome, com **o mesmo layout**
+(requisito inegociável). O trabalho de hoje é "de parser": trocar trechos, duplicar itens, criar tópicos. Ideia:
+template pronto + um aplicador determinístico das mudanças propostas pelo ChatGPT, endereçando cada tópico com
+precisão. Ganhos: sem uso do Claude Design/Claude in Chrome e tudo no fluxo painel → job-search.
+
+Amplia e substitui a opção D3(c) do plano `2026-10-06-edicao-manual-curriculo.md` (ver "Relação com a edição manual").
+Atravessa os dois repositórios e mexe em GERAR_CURRICULO e EDITAR_CURRICULO: **nada é implementado antes do ok às
+decisões no fim.**
+
+## Resultado da investigação (protótipo descartável no scratchpad, fora dos repositórios)
+
+Fonte: o usuário exportou o projeto do Claude Design (`CURRÍCULOS.zip`: `Currículo Igor Fernandes.dc.html`,
+`doc-page.js`, `support.js`, `export/…source.html` mais antigo). O `.dc.html` é o documento de trabalho PT no estado
+da `-v2` da Enforce.
+
+O que o HTML mostra:
+
+- Layout = um `<section class="page">` A4 com estilos **inline** (flex/grid, Arial, tamanhos 27/13/12/11.8/11.6/11.5/
+  11.4 px, cores #0E5B54, #12202A, #283945…). Arial cai em LiberationSans (métrica idêntica): é a fonte do PDF.
+- Conteúdo misturado: parte literal no HTML, parte por binding `{{ t.x }}` de dicionários PT/EN no `<script>`, vários
+  valores mortos (`summaryBody`, `exp1..3`, `grim1..2`, `ic`, `tcc` não usados). O ramo EN do mesmo arquivo está
+  desatualizado; o currículo EN real vive no outro documento (`DOCS.en`), que **não** veio no zip.
+- `support.js` é o runtime do Claude Design (baixa React e Babel do unpkg); `doc-page.js` é o shell de página. Do
+  `doc-page.js` só importam três coisas: página A4 sem margem, `overflow: hidden` na página e os padrões
+  `text-wrap: balance` (títulos) / `text-wrap: pretty` (p, li). O `pretty` explica a quebra "cedo" do 1º bullet do
+  CPQBA e do 1º do Grimperium: não é ajuste manual de largura.
+- `<strong>UNESP</strong>` pede `Source Serif 4`, mas o PDF real sai em LiberationSans Bold (a web font não é usada na
+  impressão). O template fixa o que o PDF mostra.
+- **A página corta o excesso em silêncio** (`overflow: hidden`): um currículo que não cabe continua saindo com
+  `Pages: 1`. O teste de página única de hoje (`cv_claude_chrome.pdf_pages == 1`) não detecta texto cortado; quem
+  detecta hoje é o Claude olhando a tela.
+
+Protótipo: script converte o `.dc.html` em HTML estático (resolve `sc-if`/`{{ t.* }}`, troca `style-before` por CSS,
+remove `support.js`, Google Fonts e `doc-page.js`, põe ~6 linhas de CSS próprio: `@page A4 margin 0`, página
+210×297 mm com `overflow: hidden`, o deslocamento −8/−22 px que o documento já tem, e os dois `text-wrap`).
+Render: `google-chrome --headless=new --no-pdf-header-footer --print-to-pdf` (Chrome 154, o mesmo do PDF real).
+
+Paridade medida contra `curriculo_igor-fernandes_pt_enforce-grupo-btg-pactual-v2.pdf`:
+
+| Critério                                              | Resultado                                                           |
+| ----------------------------------------------------- | ------------------------------------------------------------------- |
+| `pdfinfo` (A4 594.96×841.92, 1 página, Skia/PDF m154) | igual                                                               |
+| `pdffonts`                                            | igual (LiberationSans regular + 2 subsets bold)                     |
+| `pdftotext -raw`                                      | **idêntico**                                                        |
+| `pdftotext -layout`                                   | idêntico, exceto uma linha em branco                                |
+| caixas de linha (`-bbox-layout`, 45 linhas)           | 45/45, mesmas quebras; x idêntico (≤ 0,02 px); 6 linhas 1 px abaixo |
+| stream do PDF (fonte, tamanho, cor, posição)          | igual exceto o baseline dessas 6 linhas (+1 px)                     |
+| `compare -metric AE -fuzz 10%` a 150 dpi              | 0,28% dos pixels (só as 6 linhas: 2 de contato, 4 títulos de seção) |
+| aprovação visual do usuário                           | **pendente** (imagem lado a lado enviada no chat)                   |
+
+O +1 px é arredondamento do baseline (posição fracionária dentro do editor); não some com deslocamentos sub-pixel
+nem carregando as web fonts. 1 px a 96 dpi = 0,26 mm. Medição da folga também prototipada: o render informa
+`free_px` = 154 no -v2 (≈ 9 linhas de corpo, bate com "cerca de 10 linhas" da skill) e `overflow: true` num caso
+forçado, que mesmo assim sai com `Pages: 1`.
+
+**Conclusão: viável com o layout exato.** O layout passa a ser um template versionado no job-search, derivado do HTML
+do próprio Claude Design, não uma réplica feita a olho.
+
+### Critério objetivo de "mesmo layout" (gate de migração e teste de regressão)
+
+1. `pdftotext -raw` idêntico e `pdftotext -layout` idêntico ignorando linhas em branco;
+2. caixas de linha: mesmo número de linhas, mesmo texto por linha, |Δx| ≤ 0,5 px e |Δy| ≤ 1 px;
+3. `compare -metric AE -fuzz 10%` a 150 dpi ≤ 0,5% dos pixels;
+4. mesmas fontes (`pdffonts`) e A4;
+5. aprovação visual do usuário (PT e EN), uma vez por idioma e a cada mudança de template.
+
+1–4 viram teste automatizado (fixture: o PDF de referência + o documento estruturado equivalente).
+
+## Modelo de documento estruturado (`cv-doc/1`)
+
+Um JSON por currículo; os ids são estáveis e são o endereço que o patch usa.
+
+```json
+{
+  "schema": "cv-doc/1", "lang": "pt", "template": "classic-1",
+  "header": {"name": "...", "headline": "...", "location": "...", "contact": "..."},
+  "sections": [
+    {"id": "summary", "kind": "paragraph", "title": "Resumo profissional", "text": "..."},
+    {"id": "experience", "kind": "entries", "title": "Experiência", "items": [
+      {"id": "cpqba", "title": "Estagiário de Engenharia Química", "date": "jun 2026 — jul 2026",
+       "org": {"strong": "CPQBA / UNICAMP", "rest": "Centro Pluridisciplinar ... · Campinas, SP"},
+       "bullets": [{"id": "b1", "text": "..."}, {"id": "b2", "text": "..."}]}]},
+    {"id": "projects", "kind": "entries", "title": "Projetos de dados, automação e IA", "items": [
+      {"id": "grimperium", "title": "...", "link": {"href": "https://github.com/...", "text": "github.com/..."},
+       "bullets": [...]}]},
+    {"id": "education", "kind": "entries", "...": "..."},
+    {"id": "skills", "kind": "pairs", "title": "Competências técnicas", "rows": [{"id": "r1", "label": "...", "text": "..."}]},
+    {"id": "certifications", "kind": "lines", "column": "left", "lines": [{"id": "l1", "text": "..."}]},
+    {"id": "languages", "kind": "lines", "column": "right", "lines": [...]}
+  ]
+}
+```
+
+- Texto puro em todos os campos (sem HTML, sem Markdown); o renderer escapa tudo. Link só `https://` de domínios
+  permitidos (github.com, linkedin.com), validado.
+- Campo **travado** = o que as REGRAS já proíbem mudar: `header.name`, `header.contact`, `date`, `org`, título do item
+  de FORMAÇÃO, `certifications`, `languages`. Patch que toca campo travado = inválido (hoje é só regra no prompt).
+- Ids novos são dados pelo host (`b3`, `grimperium-2`…), nunca pelo ChatGPT.
+- Base de cada idioma: `runtime/cv-base-{pt,en}.json` = documento da última exportação daquele idioma (mesma semântica
+  do "currículo de trabalho" de hoje, que parte do estado da vaga anterior). Cada vaga guarda o seu
+  `runtime/applications/<job_id>/cv-doc.json`.
+- Bootstrap: importador determinístico do `.dc.html` (PT agora; EN quando o usuário exportar o outro documento) →
+  `cv-base-pt.json`, conferido pelo critério acima.
+
+## Formato de patch determinístico (`cv-patch`, evolução do CHANGE)
+
+O ChatGPT continua autor editorial e validador factual; muda só o endereçamento. O prompt mostra o currículo-base como
+lista endereçada (`experience/cpqba/bullets/b1: Operei HPLC ...`) em vez do texto do `pdftotext`.
+
+```
+CHANGE 1
+op: REPLACE | INSERT_AFTER | INSERT_BEFORE | DUPLICATE | REMOVE | MOVE_AFTER
+path: experience/cpqba/bullets/b1
+expect: <texto atual exato do path; "nenhum" em INSERT/DUPLICATE de item vazio>
+text: <texto novo; em REMOVE/MOVE, "nenhum">
+anchor: <path de destino, só em MOVE_AFTER>
+reason / evidence_source / mandatory: yes | no
+```
+
+`DUPLICATE` copia um item inteiro (projeto, item de formação, linha de competência) para depois do original, com os
+campos que o CHANGE trouxer (`text` por subcampo: `title=`, `link=`, `bullets=`), cobrindo o "duplicar e preencher"
+da skill. Seções finais (KEEP UNCHANGED, NÃO ADICIONAR, ENCAIXE EM UMA PÁGINA, DÚVIDAS) ficam como estão.
+
+Validação no host (determinística, antes de aplicar; o que falhar vai para a rodada de FORMAT_REPAIR que já existe):
+
+- `path` existe; `expect` é igual (espaços normalizados) ao texto atual do path, que substitui o `target_text`
+  conferido no snapshot, agora sem ambiguidade de trecho repetido;
+- `op` compatível com o tipo do path; campo travado = erro; limites de estrutura (4 categorias, 2 projetos, 2 itens em
+  FORMAÇÃO, 3 bullets por bloco) checados no documento resultante;
+- texto: NFKC, sem caractere de controle, sem `<`/`>` de marcação, tamanho máximo por campo;
+- contra `knowledge/`: só o que é checável sem LLM: todo número/ano novo no texto precisa existir em `knowledge/` ou
+  no documento-base; "Engenheiro Químico" isolado é recusado; título de item novo em projetos/formação precisa
+  existir em `experience.json`/`knowledge/` (projeto, TCC, IC). O resto da conferência factual continua do ChatGPT,
+  como hoje (não prometo validação semântica determinística).
+
+Aplicação: `cv_doc.apply(base, patch) → doc` puro, testável, sem rede. Mesma entrada = mesmo documento = mesmo HTML.
+
+### Regra de uma página
+
+Medida no render, nunca adivinhada: o renderer abre o HTML no Chrome headless (mídia `print`, via CDP) e lê a folga
+da página (`free_px`, `overflow`), além de `pdfinfo` = 1 página. Decisão D4:
+
+- (a) **recomendado**: o host aplica os CHANGEs; se estourar, aplica a seção ENCAIXE EM UMA PÁGINA (só cortes/
+  encurtamentos com texto exato dado pelo ChatGPT, também como CHANGEs endereçados) e depois omite `mandatory: no` na
+  ordem inversa, re-renderizando a cada passo (é o "Caber em uma página" da skill, passos 2–3, agora determinístico).
+  Ainda estourou: PRECISA_HUMANO `PAGE_OVERFLOW` com quantas linhas faltam. O passo 4 da skill (mexer em larguras)
+  some: o template é fixo, é o requisito.
+- (b) uma rodada extra no ChatGPT com "faltam N px (≈ k linhas)" antes de parar.
+- (c) só medir e falhar; o usuário corta.
+
+## O que muda em cada parte
+
+| Parte                                       | Hoje                                                                                              | Depois                                                                                                                                                               |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GERAR_CURRICULO (`cv_pipeline`)             | packet → ChatGPT → parse → handoff → Claude in Chrome → verify                                    | packet (base endereçada) → ChatGPT → parse/validate `cv-patch` → apply → render/fit → `record` → verify. Etapa `claude` vira `render` (segundos).                    |
+| EDITAR_CURRICULO com revisão do ChatGPT     | pedido → ChatGPT → patch texto → Claude                                                           | pedido → ChatGPT → `cv-patch` → apply/render. Sem mudança no painel.                                                                                                 |
+| EDITAR_CURRICULO opção B (direto ao Claude) | texto livre interpretado pelo Claude                                                              | **não tem aplicador determinístico para texto livre.** D3: vira revisão obrigatória pelo ChatGPT, ou dá lugar à edição manual estruturada.                           |
+| `cv_export`                                 | `cv/2`: PDF + handoff por sha256                                                                  | `cv/3`: + `doc_sha256` (o `cv-doc.json` da vaga) e `template_sha256`; `verify` exige os quatro. Marcas editoriais iguais; nova `USER/MANUAL` só com a edição manual. |
+| snapshot `resume-master-snapshot*.md`       | `pdftotext -raw` do último PDF; cabeçalho `job_id`                                                | gerado do `cv-doc` (texto exato, com ids); mantido só para compatibilidade e auditoria. A base real passa a ser `cv-base-{pt,en}.json`.                              |
+| `CV_DOC_AT_OTHER_JOB` / `CV_DOC_BUSY`       | documento único por idioma, estado compartilhado entre vagas                                      | somem: cada vaga tem seu documento. Fica só a trava por vaga (uma geração/edição por vez).                                                                           |
+| Grok / CV Operator                          | cola comando que roda `cv_claude_chrome.py`                                                       | não precisa mais de agente: tudo roda no host. Proposta: currículo só Hermes/host; Grok sai deste fluxo (D5).                                                        |
+| painel                                      | "Abrir navegador do currículo", toast `CLOUDDESIGN_CDP_DOWN`, recusa por painel do Claude fechado | removidos depois do corte. Preview do PDF, `cv-file` e sha256 inalterados.                                                                                           |
+
+Aposentar depois do corte (não antes): `cv_claude_chrome.py`, `dispatch.py open-browser clouddesign`,
+`probe.clouddesign`/`claude_panels`, `grok-bot/cv-operator/ajustar-curriculo` e a skill da conta, os códigos
+`CLOUDDESIGN_*` e `openCvBrowser` no painel. O `open-browser application` (candidatura) fica.
+
+## Migração e rollback
+
+1. **Paridade** (PT feito no protótipo; EN depende do export do outro documento) e aprovação visual do usuário.
+2. Template + renderer + importador no job-search, com o teste de paridade. Nada do fluxo muda.
+3. Chave `JSB_CV_RENDERER=claude_design|local` (padrão `claude_design`). Com `local`, GERAR/EDITAR usam o caminho
+   novo; o Claude Design fica intocado.
+4. Uso real em algumas vagas com `local`, conferindo cada PDF; então o padrão vira `local`.
+5. Depois de N vagas sem incidente e com o ok do usuário: aposentar o código do Claude Design (lista acima).
+
+Rollback: voltar a chave para `claude_design`. Atenção: o documento do Claude Design fica parado no estado da última
+vaga feita por ele; as vagas feitas com `local` não voltam para lá. Na volta, o `CV_DOC_AT_OTHER_JOB` atual já
+recusa editar uma vaga feita com `local`; uma geração nova parte do documento antigo (mesmo comportamento de hoje
+quando outra vaga editou sem exportar). Os PDFs e `cv.json` já registrados continuam válidos.
+
+## Relação com a edição manual (plano 2026-10-06) e com o CLAUDE.md do painel
+
+- O mesmo `cv-doc.json` é a "fonte editável" que aquele plano propunha em Markdown: D3(c) deixa de ser "mudança
+  grande fora do plano" e passa a ser este plano. P1 (editar o JSON/um formulário fora do painel e rodar
+  `cv_render.py`) sai quase de graça; P2 (editor no painel) fica mais estreito que um Markdown livre: um campo por
+  id, só nos campos não travados, mesmas guardas.
+- Trade-offs com a regra do painel:
+  - **texto livre**: GERAR e EDITAR com ChatGPT não mudam (o pedido segue pela stdin, guardas iguais). A opção B, se
+    virar revisão obrigatória, reduz o que vai a LLM sem filtro. P2 seria a 4ª exceção, mas para um renderer
+    determinístico, não para um bot.
+  - **painel sem escrita**: inalterado; quem grava documento e PDF é o job-search. Nada vai à planilha.
+  - **PDF por sha256**: inalterado e mais forte: `cv.json` passa a ancorar também o documento e o template, e o PDF
+    é reproduzível a partir deles.
+
+## Decisões abertas (preciso do ok)
+
+- D1. Template derivado do HTML do Claude Design com CSS próprio (sem `doc-page.js`/`support.js` versionados) e o
+  critério de paridade acima, incluindo o +1 px em 6 linhas. Aprova o lado a lado?
+- D2. Exportar também o documento EN (mesmo zip) para fechar a paridade EN antes de seguir.
+- D3. Opção B do "Pedir edição": (a) revisão pelo ChatGPT passa a ser obrigatória (recomendado); (b) B vira a edição
+  manual estruturada (P1/P2 do plano anterior); (c) as duas.
+- D4. Regra de uma página: (a) cortes determinísticos + PRECISA_HUMANO (recomendado), (b) + rodada extra no ChatGPT,
+  (c) só medir.
+- D5. Currículo só no host (Hermes), sem Grok/CV Operator neste fluxo?
+- D6. Este plano substitui o de 2026-10-06 (que vira só P1/P2 sobre o `cv-doc`)?
+
+## Itens (depois do ok)
+
+job-search
+
+- [ ] `templates/cv/classic-1.html` + CSS, gerados do `.dc.html`; fixtures (PDF de referência PT/EN + `cv-doc`)
+- [ ] `scripts/cv_doc.py`: schema `cv-doc/1`, importador do `.dc.html`, `apply(patch)`, campos travados, limites, ids
+- [ ] `scripts/cv_render.py`: escape, Chrome headless offline (`--print-to-pdf`, sem rede), medida de folga via CDP
+      em mídia print, 1 página, `-vN` sem sobrescrever; teste de paridade (critério 1–4) e casos maliciosos
+      (`<script>`, `{{`, controle, link fora da lista)
+- [ ] `cv_pipeline`: prompt com base endereçada, parser/validator `cv-patch`, regra D4, etapa `render`
+- [ ] `cv_edit`: revisão → `cv-patch`; opção B conforme D3; remover `CV_DOC_AT_OTHER_JOB` só no caminho `local`
+- [ ] `cv_export` `cv/3` (`doc_sha256`, `template_sha256`) com `verify` aceitando `cv/2` legado; testes de regressão
+- [ ] `dispatch.py`: chave `JSB_CV_RENDERER`, pré-condições do caminho `local` (sem Chrome do Cloud Design/painéis)
+- [ ] Docs: `methodology/resume-handoff.md`, `resume-tailoring.md`, docstrings
+- [ ] Gates: `python3 -m unittest test_dispatch test_cv_edit test_cv_pipeline` + testes novos
+
+painel
+
+- [ ] Esconder "Abrir navegador do currículo" e o toast `CLOUDDESIGN_CDP_DOWN` quando o job-search informar o
+      renderer `local`; textos de recusa novos (`PAGE_OVERFLOW`, `PATCH_*`)
+- [ ] CLAUDE.md: fluxo do currículo sem Claude Design (e a 4ª exceção, só se P2)
+- [ ] Gates: `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm format:check`; E2E só sem o servidor real
+      na porta 3000
+
+aposentadoria (depois de D-corte)
+
+- [ ] remover `cv_claude_chrome.py`, `open-browser clouddesign`, probes, skill `ajustar-curriculo`, `openCvBrowser`

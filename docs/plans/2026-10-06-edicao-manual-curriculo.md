@@ -3,6 +3,9 @@
 Pedido do usuário: em `/vaga/[job_id]`, abrir o texto do currículo da vaga num formato só-texto (ex.: Markdown),
 mudar trechos, salvar, e o PDF sair com o mesmo layout, mudando só o conteúdo. Sem ChatGPT, sem Claude.
 
+> 2026-10-07: o HTML do Claude Design foi exportado e a paridade do template local medida; a opção D3(c) virou o plano
+> `2026-10-07-curriculo-sem-claude-design.md`, que propõe substituir a fonte em Markdown deste plano pelo `cv-doc`.
+
 Atravessa os dois repositórios e a regra do painel ("nenhuma outra free text aos bots", painel sem escrita, PDF
 conferido por sha256): só implementar depois do ok explícito às decisões no fim.
 
