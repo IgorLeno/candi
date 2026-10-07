@@ -126,9 +126,9 @@ Um JSON por currículo; os ids são estáveis e são o endereço que o patch usa
 - Campo **travado** = o que as REGRAS já proíbem mudar: `header.name`, `header.contact`, `date`, `org`, título do item
   de FORMAÇÃO, `certifications`, `languages`. Patch que toca campo travado = inválido (hoje é só regra no prompt).
 - Ids novos são dados pelo host (`b3`, `grimperium-2`…), nunca pelo ChatGPT.
-- Base de cada idioma: `runtime/cv-base-{pt,en}.json` = documento da última exportação daquele idioma (mesma semântica
-  do "currículo de trabalho" de hoje, que parte do estado da vaga anterior). Cada vaga guarda o seu
-  `runtime/applications/<job_id>/cv-doc.json`.
+- Base de cada idioma: `runtime/cv-base-{pt,en}.json`, **fixa** (decisão do usuário, 2026-10-07, no passo 3): cada
+  vaga parte dela e nenhuma exportação a altera (sem deriva de uma vaga para a outra; promover uma vaga a base, se
+  um dia for preciso, é comando explícito). Cada vaga guarda o seu `runtime/applications/<job_id>/cv-doc.json`.
 - Bootstrap: importador determinístico do `.dc.html` (PT agora; EN quando o usuário exportar o outro documento) →
   `cv-base-pt.json`, conferido pelo critério acima.
 
@@ -254,6 +254,20 @@ quando outra vaga editou sem exportar). Os PDFs e `cv.json` já registrados cont
   como na skill; experiência/formação inteiras são travadas); os cortes de ENCAIXE EM UMA PÁGINA são CHANGEs
   REPLACE (mais curto) ou REMOVE numerados em sequência com os demais; uma omissão que quebra outra mudança não é
   feita; "Chemical Engineer" isolado também é recusado. Falta: passo 3 (chave `JSB_CV_RENDERER`, prompt endereçado).
+- 2026-10-07, passo 3 da migração (job-search `64c3005`..`a0c1d09`; com o padrão `claude_design` nada muda, o prompt
+  do Claude Design é idêntico byte a byte): chave `JSB_CV_RENDERER`, senão `$STATE/cv-renderer` (o painel roda o
+  dispatcher com env mínimo), senão `claude_design`, fixada no registro do disparo e exposta no `list`
+  (`cv_renderer`). `hermes/browsers/cv_local.py` (base endereçada com `[TRAVADO]`, formato e REPAIR do cv-patch,
+  encaixe D4a, export: render `-vN`, `cv-doc.json` e handoff da vaga com `.bak`, `cv.json` `cv/3`); `cv_pipeline`
+  (`renderer="local"`, etapa `render`), `cv_edit.review_local` (revisão sempre, D3a), `cv_export` `cv/3` (o
+  `template_sha256` só fica registrado). Decisões do usuário no passo 3: base fixa; chave por env ou arquivo de
+  estado; edição de currículo feito pelo Claude Design no `local` = `CV_DOC_MISSING` (gerar de novo). Escolhas:
+  `CV_JOB_BUSY` (mesma vaga gerando e editando; vale também para o PREENCHER), `CV_LOCAL_HERMES_ONLY` (D5),
+  `PAGE_OVERFLOW:<linhas>` em `PRECISA_HUMANO` com motivo e retomada só "chatgpt", `CHROME_NOT_QUALIFIED` fora do
+  Chrome 154; o `local` não grava o snapshot (rollback). Smoke com Chrome 154 real e ChatGPT falso: PDF A4 de 1
+  página, `cv/3` VALID. Falta: passo 4 (uso real) e o painel (esconder o Claude Design; textos de `PAGE_OVERFLOW`,
+  `PATCH_*`, `CV_JOB_BUSY`, `CV_DOC_MISSING`, `CV_LOCAL_HERMES_ONLY`, `CHROME_NOT_QUALIFIED`; "Pedir edição" com
+  revisão obrigatória no `local`).
 
 ## Itens
 
@@ -264,12 +278,13 @@ job-search
 - [x] `scripts/cv_render.py`: escape, Chrome headless offline (`--print-to-pdf`, sem rede), medida de folga via CDP
       em mídia print, 1 página, `-vN` sem sobrescrever; teste de paridade (critério 1–4) e casos maliciosos
       (`<script>`, `{{`, controle, link fora da lista)
-- [ ] `cv_pipeline`: prompt com base endereçada, parser/validator `cv-patch`, regra D4, etapa `render`
-- [ ] `cv_edit`: revisão → `cv-patch`; opção B conforme D3; remover `CV_DOC_AT_OTHER_JOB` só no caminho `local`
-- [ ] `cv_export` `cv/3` (`doc_sha256`, `template_sha256`) com `verify` aceitando `cv/2` legado; testes de regressão
-- [ ] `dispatch.py`: chave `JSB_CV_RENDERER`, pré-condições do caminho `local` (sem Chrome do Cloud Design/painéis)
-- [ ] Docs: `methodology/resume-handoff.md`, `resume-tailoring.md`, docstrings
-- [ ] Gates: `python3 -m unittest test_dispatch test_cv_edit test_cv_pipeline` + testes novos
+- [x] `cv_pipeline`: prompt com base endereçada, parser/validator `cv-patch`, regra D4, etapa `render`
+- [x] `cv_edit`: revisão → `cv-patch`; opção B conforme D3; remover `CV_DOC_AT_OTHER_JOB` só no caminho `local`
+- [x] `cv_export` `cv/3` (`doc_sha256`, `template_sha256`) com `verify` aceitando `cv/2` legado; testes de regressão
+- [x] `dispatch.py`: chave `JSB_CV_RENDERER`, pré-condições do caminho `local` (sem Chrome do Cloud Design/painéis)
+- [x] Docs: `methodology/resume-handoff.md`, `resume-tailoring.md`, docstrings
+- [x] Gates: `python3 -m unittest test_dispatch test_cv_edit test_cv_pipeline` + testes novos
+- [ ] Passo 4: uso real em algumas vagas com `local` (ChatGPT de verdade), conferindo cada PDF
 
 painel
 
