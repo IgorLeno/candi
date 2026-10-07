@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   analyzeJobBlocker,
   applicationCvWarning,
+  canApplyChanges,
   applicationStopText,
   cvEditStopText,
   canConfirmOpen,
@@ -374,6 +375,42 @@ describe("applicationCvWarning", () => {
   it("does not claim a missing résumé when the job state is unknown", () => {
     // The list failed (e.g. dispatcher error) or is still loading: no verdict, no warning.
     expect(applicationCvWarning(undefined)).toBeNull()
+  })
+})
+
+describe("canApplyChanges", () => {
+  const pending = dispatchSchema.parse({
+    id: "d-20261007T120000Z-abcdef",
+    action: "EDITAR_CURRICULO",
+    platform: "hermes",
+    mode: "host",
+    renderer: "local",
+    edit_mode: "reassess",
+    job_id: "1",
+    status: "PRECISA_HUMANO",
+    code: "CHANGES_PENDING",
+    marker: null,
+    acknowledged: false,
+    created_at: "2026-10-07T12:00:00Z",
+    finished_at: "2026-10-07T12:03:00Z",
+    bot: "ChatGPT + template local (host)",
+    active: false,
+    progress: { percent: 50, stages: [] },
+    superseded_by: null,
+  })
+  // Only the presence of the proposal matters to the gating.
+  const withProposal = { ...pending, progress: { ...pending.progress, proposal: {} } } as unknown as Dispatch
+
+  it("offers the approval only on a pending proposal no newer edit retired", () => {
+    expect(canApplyChanges(withProposal)).toBe(true)
+    expect(canApplyChanges({ ...withProposal, superseded_by: "d-20261007T121000Z-abcdef" })).toBe(false)
+    expect(canApplyChanges({ ...withProposal, code: "NO_CHANGES", status: "CONCLUIDO" })).toBe(false)
+    expect(canApplyChanges(pending)).toBe(false)
+  })
+
+  it("accepts superseded_by only as a dispatch id", () => {
+    expect(dispatchSchema.safeParse({ ...pending, superseded_by: "d-20261007T121000Z-abcdef" }).success).toBe(true)
+    expect(dispatchSchema.safeParse({ ...pending, superseded_by: "../x" }).success).toBe(false)
   })
 })
 

@@ -308,6 +308,7 @@ def view(rec, recs=()):
     if rec["action"] in HOST_ANALYSES or rec.get("mode") == "host":
         out["mode"] = "host"
     if rec["action"] == "EDITAR_CURRICULO":
+        out["superseded_by"] = rec.get("superseded_by")
         if rec.get("renderer") == "local":
             out.update(renderer="local", edit_mode=rec["edit_mode"])
             progress.update(edit_mode=rec["edit_mode"], edit_request=rec.get("edit_request"),
@@ -503,6 +504,13 @@ def main(argv):
             if code:
                 return refuse(code)
             rec.update(source_id=source_id, discarded=False)
+        if action == "EDITAR_CURRICULO":
+            # Como o real: a edição nova aposenta a proposta pendente da mesma vaga.
+            for r in recs:
+                if (r["action"] == "EDITAR_CURRICULO" and r.get("job_id") == job_id
+                        and r["status"] == "PRECISA_HUMANO" and r.get("code") == "CHANGES_PENDING"
+                        and not r.get("superseded_by")):
+                    r.update(superseded_by=rec["id"], acknowledged=True)
         recs.insert(0, rec)
         save(recs)
         print(json.dumps({"ok": True, "dispatch": view(rec, recs)}))
@@ -600,7 +608,7 @@ def main(argv):
         return 0
     if cmd == "apply-cv-changes":
         rec = next((r for r in recs if r["id"] == argv[1]), None)
-        if rec is None or rec.get("code") != "CHANGES_PENDING":
+        if rec is None or rec.get("code") != "CHANGES_PENDING" or rec.get("superseded_by"):
             return refuse("CHANGES_NOT_PENDING")
         selection = flag(argv, "--approve")
         if selection == "none":

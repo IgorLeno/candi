@@ -325,6 +325,7 @@ export function canApplyChanges(dispatch: Dispatch): boolean {
     dispatch.renderer === "local" &&
     dispatch.status === "PRECISA_HUMANO" &&
     dispatch.code === "CHANGES_PENDING" &&
+    !dispatch.superseded_by &&
     !!dispatch.progress.proposal
   )
 }

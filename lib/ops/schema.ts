@@ -325,6 +325,8 @@ export const dispatchSchema = z.object({
   resumes: z.string().regex(DISPATCH_ID_RE).nullable().optional(),
   resume_option: z.enum(CV_RESUME_OPTIONS).nullable().optional(),
   retried_by: z.string().regex(DISPATCH_ID_RE).nullable().optional(),
+  /** EDITAR_CURRICULO: the newer edit of the same job that retired this pending proposal. */
+  superseded_by: z.string().regex(DISPATCH_ID_RE).nullable().optional(),
   result: persistResultSchema.nullable().optional(),
 })
 export type Dispatch = z.infer<typeof dispatchSchema>
