@@ -235,13 +235,25 @@ quando outra vaga editou sem exportar). Os PDFs e `cv.json` já registrados cont
 - D5. **Sim**: currículo só no host (Hermes); Grok/CV Operator saem deste fluxo.
 - D6. **Sim**: este plano substitui o de 2026-10-06, que passa a ser só P1/P2 sobre o `cv-doc`.
 
+## Andamento
+
+- 2026-10-07, passo 2 da migração (job-search `a45f8a5`..`77db4d0`, nada do fluxo atual muda): template
+  `templates/cv/classic-1.{html,css}`, `scripts/cv_doc.py` (schema, validação, travas, limites, ids, importador),
+  `scripts/cv_render.py` (render offline, medida em mídia print via `--remote-debugging-pipe`, `PAGE_OVERFLOW`,
+  `-vN`), testes `scripts/test_cv_doc.py`/`test_cv_render.py` com fixtures em `scripts/fixtures/cv/`. O PDF do
+  renderer tem o stream de desenho idêntico ao do protótipo aprovado, em PT e EN; critérios 1–4 passam no Chrome 154
+  (a paridade é pulada em outra versão do Chrome: requalificar). `runtime/cv-base-{pt,en}.json` gerados pelo
+  importador. Folga medida: PT −v2 156,6 px, EN Hatch 61,4 px. Travado além da lista acima: o cargo da experiência
+  (as REGRAS já proíbem mudar "cargos reais"). Falta: `apply(patch)` e os passos 3+ (chave `JSB_CV_RENDERER`).
+
 ## Itens
 
 job-search
 
-- [ ] `templates/cv/classic-1.html` + CSS, gerados do `.dc.html`; fixtures (PDF de referência PT/EN + `cv-doc`)
+- [x] `templates/cv/classic-1.html` + CSS, gerados do `.dc.html`; fixtures (PDF de referência PT/EN + `cv-doc`)
 - [ ] `scripts/cv_doc.py`: schema `cv-doc/1`, importador do `.dc.html`, `apply(patch)`, campos travados, limites, ids
-- [ ] `scripts/cv_render.py`: escape, Chrome headless offline (`--print-to-pdf`, sem rede), medida de folga via CDP
+      (feito tudo menos `apply(patch)`)
+- [x] `scripts/cv_render.py`: escape, Chrome headless offline (`--print-to-pdf`, sem rede), medida de folga via CDP
       em mídia print, 1 página, `-vN` sem sobrescrever; teste de paridade (critério 1–4) e casos maliciosos
       (`<script>`, `{{`, controle, link fora da lista)
 - [ ] `cv_pipeline`: prompt com base endereçada, parser/validator `cv-patch`, regra D4, etapa `render`
