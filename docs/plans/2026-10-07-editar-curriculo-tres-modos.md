@@ -222,7 +222,8 @@ job-search (commits pequenos, com testes)
 - [x] `cv_edit`: `propose_local` (modos 1 e 2 param em `CHANGES_PENDING` com `proposta.json`), `REASSESS_PROMPT`,
       `apply_approved`, `manual_local`; marcas `CHATGPT/USER_APPROVED` e `USER/MANUAL` em `cv_export` + `verify`
 - [x] `dispatch.py`: `--reassess`, `--manual-stdin`, `apply-cv-changes`, `cv-doc`, filho `_cvapply`, `progress`
-      (`proposal`, `fit`, `edit_mode`, etapas por modo), `superseded_by`, `CV_LOCAL_ONLY`; docstring
+      (`proposal`, `fit`, `edit_mode`, etapas por modo), `CV_LOCAL_ONLY`; docstring
+- [x] `dispatch.py`: `superseded_by` (marcado [x] acima sem existir no código; feito depois, ver "Resultado local")
 - [x] Testes: `test_cv_patch`, `test_cv_edit`, `test_dispatch` (estados, recusas, dependência, doc mudou, stdin)
 - [x] Docs: `methodology/resume-handoff.md` (marcas, proposta, manual), `resume-tailoring.md`
 
@@ -242,4 +243,12 @@ painel
 
 - job-search: `test_dispatch test_cv_edit test_cv_pipeline` 167/167; suíte `scripts` 634/634 com Chrome headless. O teste de falha em `cv_export.record` confirmou restauração de `cv-doc.json`, handoff e `cv.json`; proposta antiga é recusada antes do render.
 - painel: TypeScript e Prettier passaram; lint sem erros (dois avisos anteriores em `app/layout.tsx`); Vitest 234/234. Playwright no Chromium com dispatcher fake: três cenários novos dos modos locais (incluindo `NO_CHANGES` e chave inválida) e dois cenários legados passaram.
+- 2026-10-07, correção: o item do `dispatch.py` marcava `superseded_by` como feito, mas não existia (grep vazio em
+  `hermes/browsers`). Feito em job-search `528d506`: `start` (sob o lock) marca a proposta da mesma vaga ainda em
+  `PRECISA_HUMANO`/`CHANGES_PENDING` com `superseded_by=<id novo>` e `acknowledged`; `apply-cv-changes` recusa
+  `CHANGES_NOT_PENDING`; `view` expõe o campo; teste em `test_dispatch.py` (falha sem a mudança). Painel `f0d42a4`:
+  `dispatchSchema.superseded_by`, `canApplyChanges()` falso numa proposta aposentada, fake do E2E espelhando. O
+  `edicao-manual.json` já saía 0600 (`jsutil.atomic_write_text` usa `mode=0o600`; o teste do modo 3 confere).
+  Gates: job-search 168 + 634; painel lint (2 avisos antigos), tsc, Vitest 236, Prettier; E2E não rodado (servidor
+  real na porta 3000), fake conferido à mão.
 - Pendência fora deste recorte: uso real com ChatGPT e revisão humana dos PDFs do passo 4 do plano de migração. Nenhuma vaga real, bot ou planilha foi acionada nesta validação.

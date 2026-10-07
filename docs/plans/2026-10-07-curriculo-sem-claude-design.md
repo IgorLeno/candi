@@ -272,6 +272,8 @@ quando outra vaga editou sem exportar). Os PDFs e `cv.json` já registrados cont
   edição manual; aprovação ✓/✗ item a item nos dois primeiros): desenho e decisões E1–E5 em
   `2026-10-07-editar-curriculo-tres-modos.md`, que também cobre os itens do painel abaixo. Implementação local e
   gates descritos em "Resultado local" nesse plano; uso real com ChatGPT continua no passo 4.
+- 2026-10-07, `superseded_by` da proposta velha (job-search `528d506`, painel `f0d42a4`): faltava apesar de marcado
+  no plano dos três modos; detalhes em "Resultado local" de lá.
 
 ## Itens
 
