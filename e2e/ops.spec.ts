@@ -1,7 +1,16 @@
 import { test, expect } from "@playwright/test"
+import { execFileSync } from "child_process"
 import { mkdirSync, writeFileSync } from "fs"
+import path from "path"
 import { E2E_AUTH_ENV, signInAs } from "./auth"
-import { E2E_FAKE_DISPATCH_STATE, resetFakeDispatches } from "./ops-env"
+import { E2E_FAKE_DISPATCH_STATE, E2E_OPS_ENV, resetFakeDispatches } from "./ops-env"
+
+/** Drives the fake dispatcher directly, as job-search moving on while the panel shows another page. */
+function fakeDispatch(...args: string[]) {
+  execFileSync("python3", [path.join(E2E_OPS_ENV.JOB_SEARCH_REPO, "hermes", "browsers", "dispatch.py"), ...args], {
+    env: { ...process.env, JOB_SEARCH_BROWSERS_STATE: E2E_FAKE_DISPATCH_STATE },
+  })
+}
 
 function useLocalCvRenderer() {
   mkdirSync(E2E_FAKE_DISPATCH_STATE, { recursive: true })
@@ -897,5 +906,70 @@ test.describe("Central de operações (bots)", () => {
       await expect(page.getByTestId("job-detail")).toBeVisible()
       await expect(page.getByTestId("delete-job")).toHaveCount(0)
     }
+  })
+
+  test("em andamento: a barra lateral lista o que roda e o que precisa de você; some quando o job-search resolve", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    await page.goto("/")
+    const panel = page.getByTestId("in-progress")
+    await expect(panel.getByTestId("in-progress-empty")).toHaveText("Nada rodando nem esperando você.")
+    await expect(panel.getByTestId("in-progress-count")).toHaveCount(0)
+
+    await page.goto("/vaga/fake-1003")
+    await page.getByTestId("job-detail").getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    await page.getByTestId("dispatch-confirm").click()
+    const card = page.getByTestId("job-detail").getByTestId("dispatch-GERAR_CURRICULO")
+    await expect(card).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    // The job page's change makes the sidebar re-read at once; no toast for what this page already shows.
+    const item = panel.getByTestId("in-progress-item")
+    await expect(item).toHaveAttribute("data-kind", "NEEDS_USER", { timeout: 15_000 })
+    await expect(item).toContainText("Mineradora Exemplo")
+    await expect(item).toContainText("Precisa de você")
+    await expect(item).toContainText("Gerar currículo")
+    await expect(panel.getByTestId("in-progress-count")).toContainText("1 precisa de você")
+    await expect(page.getByText("Mineradora Exemplo: precisa de você")).toHaveCount(0)
+
+    // Every page shows it; opening the job does not clear it.
+    await page.getByTestId("sidebar-vagas").click()
+    await expect(page).toHaveURL("/vagas")
+    await expect(item).toHaveAttribute("data-kind", "NEEDS_USER")
+    await item.click()
+    await expect(page).toHaveURL("/vaga/fake-1003")
+    await expect(item).toHaveAttribute("data-kind", "NEEDS_USER")
+
+    // Dismissed on its card (job-search's ack): it leaves the list.
+    await card.getByTestId("dispatch-ack").click()
+    await expect(panel.getByTestId("in-progress-empty")).toBeVisible({ timeout: 15_000 })
+    await expect(panel.getByTestId("in-progress-count")).toHaveCount(0)
+  })
+
+  test("em andamento no celular: chip no topo, toast quando algo novo para em você em outra página", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    await page.setViewportSize({ width: 390, height: 844 })
+    fakeDispatch("start", "GERAR_CURRICULO", "--platform", "hermes", "--job-id", "fake-1003")
+    await page.goto("/vagas")
+    const chip = page.getByTestId("in-progress-chip")
+    await expect(chip).toHaveText("Em andamento")
+    const popover = page.getByTestId("in-progress-popover")
+    await chip.click()
+    await expect(popover.getByTestId("in-progress-item")).toHaveAttribute("data-kind", "RUNNING")
+    await expect(popover.getByTestId("in-progress-item")).toContainText("Rodando")
+    await page.keyboard.press("Escape")
+
+    // job-search moves on while the panel is on another page: the next poll (10 s while something runs) toasts it.
+    fakeDispatch("list", "--job-id", "fake-1003")
+    const toast = page.locator("[data-sonner-toast]").filter({ hasText: "Mineradora Exemplo: precisa de você" })
+    await expect(toast).toBeVisible({ timeout: 20_000 })
+    await expect(chip).toHaveText("1 · precisa de você")
+    // The toast sits over the top bar while it lasts; its own "Abrir" goes to the job.
+    await toast.getByRole("button", { name: "Abrir" }).click()
+    await expect(page).toHaveURL("/vaga/fake-1003")
+    await expect(toast).toHaveCount(0)
+    await chip.click()
+    await expect(popover.getByTestId("in-progress-item")).toHaveAttribute("data-kind", "NEEDS_USER")
   })
 })

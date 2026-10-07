@@ -23,7 +23,8 @@ job (CV_NOT_READY) and no résumé run (CV_DOC_BUSY); once done, `cv-file` answe
 `--chatgpt-review` (Hermes only: CHATGPT_REVIEW_HERMES_ONLY; one ChatGPT host pipeline at a time: CHATGPT_BUSY) it walks
 pedido → ChatGPT → Claude → cv; a request mentioning "sem lastro" stops at the ChatGPT in PRECISA_HUMANO/
 HUMAN_REVIEW_DOUBTS with `edit_doubts`. `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
-CV_JSON_MISSING before). `open-browser clouddesign|application` opens nothing and answers already_open false. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
+CV_JSON_MISSING before). `open-browser clouddesign|application` opens nothing and answers already_open false. `attention` lists, read-only,
+the newest record per job+action that runs, waits on the user or holds an unregistered writeset. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import hashlib
 import json
@@ -781,6 +782,40 @@ def main(argv):
                 return 0
         print(json.dumps({"ok": False, "code": "DISPATCH_NOT_FOUND", "detail": ""}))
         return 1
+    if cmd == "attention":
+        # Read-only, like job-search: never advances a record (only `list` does).
+        items, seen = [], set()
+        for rec in recs:
+            if rec.get("deleted") or rec["action"] == REGISTER:
+                continue
+            key = (rec["action"], rec["id"] if rec["action"] in ("LOCALIZAR_VAGA", "ANALISAR_INDICADA")
+                   else rec["job_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            if rec.get("discarded"):
+                continue
+            extra = {}
+            if rec["status"] == "RODANDO":
+                kind = "RUNNING"
+            elif rec["status"] in ("PRECISA_HUMANO", "INCERTO", "FALHOU", "PARADO", "MANUAL") \
+                    and not rec["acknowledged"]:
+                kind = "NEEDS_USER"
+            elif rec["action"] in WRITESET_ACTIONS and rec["status"] == "CONCLUIDO" \
+                    and rec["step"] >= last_step(rec["action"], rec):
+                reg = registration_of(recs, rec["id"])
+                if reg and reg["status"] == "CONCLUIDO":
+                    continue
+                kind = "RUNNING" if reg else "WRITESET_PENDING"
+                extra = {"writeset_job_ids": WRITESET_JOB_IDS.get(rec["action"]) or [rec["job_id"]]}
+            else:
+                continue
+            items.append({"id": rec["id"], "action": rec["action"], "platform": rec["platform"],
+                          "mode": rec.get("mode") or "bot", "job_id": rec["job_id"],
+                          "source_id": rec.get("source_id"), "status": rec["status"], "code": rec.get("code"),
+                          "created_at": rec["created_at"], "finished_at": None, "kind": kind, **extra})
+        print(json.dumps({"ok": True, "items": items}))
+        return 0
     return 2
 
 

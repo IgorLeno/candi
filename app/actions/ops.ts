@@ -4,6 +4,7 @@ import { updateTag } from "next/cache"
 import { z } from "zod"
 import { getAllowedSession } from "@/lib/auth/session"
 import { JOB_SEARCH_CACHE_TAG, getJobSearchData } from "@/lib/job-search/source"
+import { attentionEntries, type AttentionEntry } from "@/lib/ops/attention"
 import { cvFileInfo } from "@/lib/ops/cv-file"
 import { normalizeManualEdits } from "@/lib/ops/cv-manual"
 import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
@@ -18,6 +19,7 @@ import {
   CV_EDIT_ACTION,
   PLATFORMS,
   SENT_EVIDENCE,
+  attentionResultSchema,
   confirmOpenResultSchema,
   cvDocResultSchema,
   declineResultSchema,
@@ -96,6 +98,23 @@ export async function listDispatches(input: unknown): Promise<ActionResult<Dispa
   const { jobId, action } = parsed.data
   const args = ["list", "--limit", "5", ...(jobId ? ["--job-id", jobId] : []), ...(action ? ["--action", action] : [])]
   return strip(await runDispatcher(args, listResultSchema))
+}
+
+/**
+ * "Em andamento" (sidebar): job-search's `dispatch.py attention`, joined with company and title from the read-only
+ * Sheet snapshot. Only fixed fields reach the client; the bots' text stays on the job page.
+ */
+export async function listAttention(): Promise<ActionResult<AttentionEntry[]>> {
+  await requireSession()
+  const result = await runDispatcher(["attention"], attentionResultSchema)
+  if (!result.ok) return { ok: false, code: result.code }
+  // Without the Sheet the list still works: lines fall back to the job_id.
+  const views = await getJobSearchData().then(
+    (data) => data.views,
+    () => []
+  )
+  const jobs = new Map(views.map((view) => [view.job.job_id, { empresa: view.job.empresa, cargo: view.job.cargo }]))
+  return { ok: true, value: attentionEntries(result.value.items, jobs) }
 }
 
 /**

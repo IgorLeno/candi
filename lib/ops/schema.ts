@@ -331,6 +331,32 @@ export const dispatchSchema = z.object({
 })
 export type Dispatch = z.infer<typeof dispatchSchema>
 
+/**
+ * `dispatch.py attention` ("Em andamento", 2026-10-07): job-search picks the newest record of each job+action that is
+ * running, waiting on the user (terminal status not acknowledged) or holding a valid writeset not yet registered.
+ * No progress and no bot text: the details stay on the job page.
+ */
+export const ATTENTION_KINDS = ["RUNNING", "NEEDS_USER", "WRITESET_PENDING"] as const
+export type AttentionKind = (typeof ATTENTION_KINDS)[number]
+
+export const attentionItemSchema = z.object({
+  id: z.string().regex(DISPATCH_ID_RE),
+  action: z.enum(DISPATCH_ACTIONS),
+  platform: z.enum(RECORD_PLATFORMS),
+  mode: z.enum(["host", "bot"]),
+  job_id: z.string().regex(JOB_ID_RE).nullable(),
+  source_id: z.string().regex(DISPATCH_ID_RE).nullable(),
+  status: z.enum(DISPATCH_STATUSES),
+  code: z.string().max(80).nullable(),
+  created_at: z.string().max(40),
+  finished_at: z.string().max(40).nullable(),
+  kind: z.enum(ATTENTION_KINDS),
+  writeset_job_ids: z.array(z.string().max(200)).max(200).optional(),
+})
+export type AttentionItem = z.infer<typeof attentionItemSchema>
+
+export const attentionResultSchema = z.object({ ok: z.literal(true), items: z.array(attentionItemSchema).max(500) })
+
 export const jobArtifactsSchema = z.object({
   job_id: z.string(),
   dossier: z.enum(["VALID", "MISSING"]),

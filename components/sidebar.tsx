@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { BarChart3, Flame, LayoutGrid, LogOut, Radar, Settings2 } from "lucide-react"
 import { signOutAction } from "@/app/actions/auth"
 import { CandiMark } from "@/components/brand/candi-logo"
+import { InProgressChip, InProgressSection, useAttention } from "@/components/in-progress"
 import { cn } from "@/lib/utils"
 
 const menuItems = [
@@ -24,9 +25,13 @@ function isActive(pathname: string, href: string): boolean {
 
 // No prefetch, as on the overview links: every dashboard page is a full dynamic render.
 
-/** Fixed sidebar on large screens; a compact top bar with the same links below `lg`. */
-export function Sidebar() {
+/**
+ * Fixed sidebar on large screens; a compact top bar with the same links below `lg`. With bot dispatch on, both carry
+ * "Em andamento" (one shared poll).
+ */
+export function Sidebar({ opsEnabled = false }: { opsEnabled?: boolean }) {
   const pathname = usePathname()
+  const attention = useAttention(opsEnabled)
 
   return (
     <>
@@ -73,6 +78,8 @@ export function Sidebar() {
           })}
         </nav>
 
+        <InProgressSection attention={attention} />
+
         <form action={signOutAction} className="relative px-3 pb-6">
           <button
             type="submit"
@@ -93,7 +100,10 @@ export function Sidebar() {
         <div className="flex items-center gap-2 px-4 pt-3">
           <CandiMark className="w-7 h-7" />
           <span className="font-display text-sidebar-primary text-base font-bold">Candi</span>
-          <form action={signOutAction} className="ml-auto">
+          <div className="ml-auto">
+            <InProgressChip attention={attention} />
+          </div>
+          <form action={signOutAction}>
             <button
               type="submit"
               data-testid="mobile-sair"

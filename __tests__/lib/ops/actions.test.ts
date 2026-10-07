@@ -28,6 +28,7 @@ import {
   editCv,
   applyCvChanges,
   getCvDoc,
+  listAttention,
   listDispatches,
   markJobClosed,
   openApplicationBrowser,
@@ -75,7 +76,48 @@ describe("ops server actions", () => {
     await expect(applyCvChanges("d-20260929T120000Z-abcdef", [1])).rejects.toThrow("UNAUTHENTICATED")
     await expect(getCvDoc("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(saveCvManual("fake-1001", {})).rejects.toThrow("UNAUTHENTICATED")
+    await expect(listAttention()).rejects.toThrow("UNAUTHENTICATED")
     expect(runDispatcher).not.toHaveBeenCalled()
+  })
+
+  it("listAttention runs the fixed `attention` command and names jobs from the Sheet snapshot", async () => {
+    const item = {
+      id: "d-20261007T214532Z-63425e",
+      action: "GERAR_CURRICULO",
+      platform: "hermes",
+      mode: "host",
+      job_id: "fake-1001",
+      source_id: null,
+      status: "PRECISA_HUMANO",
+      code: "HUMAN_REVIEW_DOUBTS",
+      created_at: "2026-10-07T21:45:32Z",
+      finished_at: null,
+      kind: "NEEDS_USER",
+    }
+    runDispatcher.mockResolvedValue({
+      ok: true,
+      value: { ok: true, items: [item, { ...item, id: "d-20261007T214533Z-63425f", job_id: "gone" }] },
+    })
+    const result = await listAttention()
+    expect(runDispatcher).toHaveBeenCalledWith(["attention"], expect.anything())
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const known = (views.current as { job: { job_id: string; empresa: string } }[]).find(
+      (v) => v.job.job_id === "fake-1001"
+    )
+    expect(result.value.map((entry) => [entry.jobId, entry.empresa, entry.href])).toEqual([
+      ["fake-1001", known?.job.empresa, "/vaga/fake-1001"],
+      ["gone", null, "/vaga/gone"],
+    ])
+  })
+
+  it("listAttention passes refusals through and still works without the Sheet", async () => {
+    runDispatcher.mockResolvedValue({ ok: false, code: "DISPATCH_DISABLED" })
+    expect(await listAttention()).toEqual({ ok: false, code: "DISPATCH_DISABLED" })
+    const source = await import("@/lib/job-search/source")
+    vi.mocked(source.getJobSearchData).mockRejectedValueOnce(new Error("SHEET_DOWN"))
+    runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, items: [] } })
+    expect(await listAttention()).toEqual({ ok: true, value: [] })
   })
 
   it("passes back only a validated job_id of the application holding the slot", async () => {

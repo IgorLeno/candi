@@ -68,6 +68,7 @@ import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
 import { normalizeManualEdits } from "@/lib/ops/cv-manual"
 import { usePlatform, writePlatform } from "@/lib/ops/platform-pref"
 import { useClosed, useCollapsed, writeClosed, writeCollapsed } from "@/lib/ops/collapse-pref"
+import { ATTENTION_REFRESH_EVENT } from "@/lib/ops/attention"
 import {
   applicationStopText,
   ACTION_META,
@@ -138,12 +139,18 @@ function useDispatches(filter: { jobId?: string; action?: DispatchAction }) {
   const [error, setError] = useState<string | null>(null)
   const { jobId, action } = filter
   const alive = useRef(true)
+  const seen = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
       const result = await listDispatches({ jobId, action })
       if (!alive.current) return
       if (result.ok) {
+        // A status change seen here ("Em andamento" may list it): the sidebar re-reads now, not on its next poll.
+        const signature = result.value.dispatches.map((item) => `${item.id}:${item.status}:${item.acknowledged}`).join()
+        if (seen.current !== null && seen.current !== signature)
+          window.dispatchEvent(new Event(ATTENTION_REFRESH_EVENT))
+        seen.current = signature
         setData(result.value)
         setError(null)
       } else {
