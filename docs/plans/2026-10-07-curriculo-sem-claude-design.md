@@ -48,12 +48,40 @@ Paridade medida contra `curriculo_igor-fernandes_pt_enforce-grupo-btg-pactual-v2
 | caixas de linha (`-bbox-layout`, 45 linhas)           | 45/45, mesmas quebras; x idêntico (≤ 0,02 px); 6 linhas 1 px abaixo |
 | stream do PDF (fonte, tamanho, cor, posição)          | igual exceto o baseline dessas 6 linhas (+1 px)                     |
 | `compare -metric AE -fuzz 10%` a 150 dpi              | 0,28% dos pixels (só as 6 linhas: 2 de contato, 4 títulos de seção) |
-| aprovação visual do usuário                           | **pendente** (imagem lado a lado enviada no chat)                   |
+| aprovação visual do usuário                           | **aprovada** (D1, 2026-10-07)                                       |
 
 O +1 px é arredondamento do baseline (posição fracionária dentro do editor); não some com deslocamentos sub-pixel
 nem carregando as web fonts. 1 px a 96 dpi = 0,26 mm. Medição da folga também prototipada: o render informa
 `free_px` = 154 no -v2 (≈ 9 linhas de corpo, bate com "cerca de 10 linhas" da skill) e `overflow: true` num caso
 forçado, que mesmo assim sai com `Pages: 1`.
+
+### Paridade EN (2026-10-07)
+
+Fonte: o usuário exportou o documento EN (`RESUMES.zip`, mesmo nome de arquivo `Currículo Igor Fernandes.dc.html`;
+`support.js`, `doc-page.js` e `export/…source.html` idênticos aos do zip PT). Estado do documento = o PDF
+`resume_igor-fernandes_en_hatch.pdf` (2026-09-22, Chrome 153), o mesmo de `runtime/resume-master-snapshot-en.md`. O
+ramo impresso é o padrão do documento: sem `language`, `isPt` fica verdadeiro, e esse ramo traz o cabeçalho EN do
+Hatch; o ramo `isEn` e o dicionário `EN` estão desatualizados (são do Griffith). Quase todo o conteúdo é literal.
+
+Diferenças do documento EN em relação ao PT, que o template precisa carregar por idioma:
+
+- `<doc-page>` sem o deslocamento −8/−22 px que o PT tem: as margens efetivas dos dois idiomas diferem em 8/22 px;
+- rótulo de competência em `#5B6C77` (no PT, `#283945`); linha da organização do CPQBA sem `<strong>`;
+- `&nbsp;` antes do ano em três certificações; FORMAÇÃO com dois bullets (IC e TCC), ambos `margin-bottom: 0`.
+
+Mesmo CSS próprio do PT (`@page`, página A4 com `overflow: hidden`, os dois `text-wrap`), só com deslocamento 0. O
+mesmo gerador reproduz o PT aprovado com stream de desenho idêntico.
+
+| Critério                                   | Resultado                                                                              |
+| ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `pdfinfo` / `pdffonts`                     | A4, 1 página; mesmas fontes (LiberationSans + 2 subsets bold); Skia m154 contra m153   |
+| `pdftotext -raw`                           | **idêntico**                                                                           |
+| `pdftotext -layout` (sem linhas em branco) | **idêntico**                                                                           |
+| caixas de linha (52 linhas)                | 52/52, mesmas quebras; Δx = 0; 9 linhas 1 px abaixo (2 de contato, 7 títulos de seção) |
+| `compare -metric AE -fuzz 10%` a 150 dpi   | 0,33% dos pixels (só essas 9 linhas)                                                   |
+| aprovação visual do usuário                | **pendente** (imagem lado a lado enviada no chat)                                      |
+
+O +1 px aparece também sem deslocamento e com o Chrome 153 na referência: é o mesmo arredondamento de baseline do PT.
 
 **Conclusão: viável com o layout exato.** O layout passa a ser um template versionado no job-search, derivado do HTML
 do próprio Claude Design, não uma réplica feita a olho.
@@ -169,7 +197,7 @@ Aposentar depois do corte (não antes): `cv_claude_chrome.py`, `dispatch.py open
 
 ## Migração e rollback
 
-1. **Paridade** (PT feito no protótipo; EN depende do export do outro documento) e aprovação visual do usuário.
+1. **Paridade** (PT e EN medidos no protótipo; PT aprovado, EN pendente) e aprovação visual do usuário.
 2. Template + renderer + importador no job-search, com o teste de paridade. Nada do fluxo muda.
 3. Chave `JSB_CV_RENDERER=claude_design|local` (padrão `claude_design`). Com `local`, GERAR/EDITAR usam o caminho
    novo; o Claude Design fica intocado.
@@ -198,8 +226,9 @@ quando outra vaga editou sem exportar). Os PDFs e `cv.json` já registrados cont
 ## Decisões abertas (preciso do ok)
 
 - D1. Template derivado do HTML do Claude Design com CSS próprio (sem `doc-page.js`/`support.js` versionados) e o
-  critério de paridade acima, incluindo o +1 px em 6 linhas. Aprova o lado a lado?
-- D2. Exportar também o documento EN (mesmo zip) para fechar a paridade EN antes de seguir.
+  critério de paridade acima, incluindo o +1 px. **PT aprovado (2026-10-07).** EN medido (+1 px em 9 linhas, 0,33%):
+  aprovação visual pendente.
+- D2. ~~Exportar também o documento EN.~~ Feito (`RESUMES.zip`, 2026-10-07); paridade EN na tabela acima.
 - D3. Opção B do "Pedir edição": (a) revisão pelo ChatGPT passa a ser obrigatória (recomendado); (b) B vira a edição
   manual estruturada (P1/P2 do plano anterior); (c) as duas.
 - D4. Regra de uma página: (a) cortes determinísticos + PRECISA_HUMANO (recomendado), (b) + rodada extra no ChatGPT,
