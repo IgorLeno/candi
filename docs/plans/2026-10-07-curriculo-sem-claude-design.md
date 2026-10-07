@@ -245,14 +245,22 @@ quando outra vaga editou sem exportar). Os PDFs e `cv.json` já registrados cont
   (a paridade é pulada em outra versão do Chrome: requalificar). `runtime/cv-base-{pt,en}.json` gerados pelo
   importador. Folga medida: PT −v2 156,6 px, EN Hatch 61,4 px. Travado além da lista acima: o cargo da experiência
   (as REGRAS já proíbem mudar "cargos reais"). Falta: `apply(patch)` e os passos 3+ (chave `JSB_CV_RENDERER`).
+- 2026-10-07, `cv-patch` (job-search `a528e3a`..`d16383e`, nada do fluxo atual muda): `cv_doc.apply` (puro, as seis
+  operações, ids novos do host, `PatchError` com códigos `PATCH_*`), `scripts/cv_patch.py` (`parse`, `check` com todos
+  os erros por CHANGE para o FORMAT_REPAIR, fatos checáveis sem LLM, `fit` da D4 com `measure` injetável e
+  `PAGE_OVERFLOW`), testes `test_cv_doc.py`/`test_cv_patch.py` (inclusive patch real PT e estouro real EN medidos no
+  Chrome 154). Escolhas: `expect` de item inteiro = título (projeto) ou rótulo (competência); INSERT só de bullet
+  (linhas são travadas), DUPLICATE só de projeto e de categoria de competência (os itens de FORMAÇÃO são bullets,
+  como na skill; experiência/formação inteiras são travadas); os cortes de ENCAIXE EM UMA PÁGINA são CHANGEs
+  REPLACE (mais curto) ou REMOVE numerados em sequência com os demais; uma omissão que quebra outra mudança não é
+  feita; "Chemical Engineer" isolado também é recusado. Falta: passo 3 (chave `JSB_CV_RENDERER`, prompt endereçado).
 
 ## Itens
 
 job-search
 
 - [x] `templates/cv/classic-1.html` + CSS, gerados do `.dc.html`; fixtures (PDF de referência PT/EN + `cv-doc`)
-- [ ] `scripts/cv_doc.py`: schema `cv-doc/1`, importador do `.dc.html`, `apply(patch)`, campos travados, limites, ids
-      (feito tudo menos `apply(patch)`)
+- [x] `scripts/cv_doc.py`: schema `cv-doc/1`, importador do `.dc.html`, `apply(patch)`, campos travados, limites, ids
 - [x] `scripts/cv_render.py`: escape, Chrome headless offline (`--print-to-pdf`, sem rede), medida de folga via CDP
       em mídia print, 1 página, `-vN` sem sobrescrever; teste de paridade (critério 1–4) e casos maliciosos
       (`<script>`, `{{`, controle, link fora da lista)
