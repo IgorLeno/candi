@@ -5,6 +5,7 @@ mudar trechos, salvar, e o PDF sair com o mesmo layout, mudando só o conteúdo.
 
 > 2026-10-07: o HTML do Claude Design foi exportado e a paridade do template local medida; a opção D3(c) virou o plano
 > `2026-10-07-curriculo-sem-claude-design.md`, que propõe substituir a fonte em Markdown deste plano pelo `cv-doc`.
+> Decisão D6 (2026-10-07): aquele plano substitui este; daqui fica só P1/P2 sobre o `cv-doc`, sem a fonte em Markdown.
 
 Atravessa os dois repositórios e a regra do painel ("nenhuma outra free text aos bots", painel sem escrita, PDF
 conferido por sha256): só implementar depois do ok explícito às decisões no fim.

@@ -6,8 +6,8 @@ template pronto + um aplicador determinístico das mudanças propostas pelo Chat
 precisão. Ganhos: sem uso do Claude Design/Claude in Chrome e tudo no fluxo painel → job-search.
 
 Amplia e substitui a opção D3(c) do plano `2026-10-06-edicao-manual-curriculo.md` (ver "Relação com a edição manual").
-Atravessa os dois repositórios e mexe em GERAR_CURRICULO e EDITAR_CURRICULO: **nada é implementado antes do ok às
-decisões no fim.**
+Atravessa os dois repositórios e mexe em GERAR_CURRICULO e EDITAR_CURRICULO: decisões aprovadas em 2026-10-07 (ver
+"Decisões").
 
 ## Resultado da investigação (protótipo descartável no scratchpad, fora dos repositórios)
 
@@ -79,7 +79,7 @@ mesmo gerador reproduz o PT aprovado com stream de desenho idêntico.
 | `pdftotext -layout` (sem linhas em branco) | **idêntico**                                                                           |
 | caixas de linha (52 linhas)                | 52/52, mesmas quebras; Δx = 0; 9 linhas 1 px abaixo (2 de contato, 7 títulos de seção) |
 | `compare -metric AE -fuzz 10%` a 150 dpi   | 0,33% dos pixels (só essas 9 linhas)                                                   |
-| aprovação visual do usuário                | **pendente** (imagem lado a lado enviada no chat)                                      |
+| aprovação visual do usuário                | **aprovada** (D1, 2026-10-07)                                                          |
 
 O +1 px aparece também sem deslocamento e com o Chrome 153 na referência: é o mesmo arredondamento de baseline do PT.
 
@@ -197,7 +197,7 @@ Aposentar depois do corte (não antes): `cv_claude_chrome.py`, `dispatch.py open
 
 ## Migração e rollback
 
-1. **Paridade** (PT e EN medidos no protótipo; PT aprovado, EN pendente) e aprovação visual do usuário.
+1. **Paridade** (PT e EN medidos no protótipo e aprovados) e aprovação visual do usuário.
 2. Template + renderer + importador no job-search, com o teste de paridade. Nada do fluxo muda.
 3. Chave `JSB_CV_RENDERER=claude_design|local` (padrão `claude_design`). Com `local`, GERAR/EDITAR usam o caminho
    novo; o Claude Design fica intocado.
@@ -223,20 +223,19 @@ quando outra vaga editou sem exportar). Os PDFs e `cv.json` já registrados cont
   - **PDF por sha256**: inalterado e mais forte: `cv.json` passa a ancorar também o documento e o template, e o PDF
     é reproduzível a partir deles.
 
-## Decisões abertas (preciso do ok)
+## Decisões (aprovadas pelo usuário em 2026-10-07)
 
 - D1. Template derivado do HTML do Claude Design com CSS próprio (sem `doc-page.js`/`support.js` versionados) e o
-  critério de paridade acima, incluindo o +1 px. **PT aprovado (2026-10-07).** EN medido (+1 px em 9 linhas, 0,33%):
-  aprovação visual pendente.
-- D2. ~~Exportar também o documento EN.~~ Feito (`RESUMES.zip`, 2026-10-07); paridade EN na tabela acima.
-- D3. Opção B do "Pedir edição": (a) revisão pelo ChatGPT passa a ser obrigatória (recomendado); (b) B vira a edição
-  manual estruturada (P1/P2 do plano anterior); (c) as duas.
-- D4. Regra de uma página: (a) cortes determinísticos + PRECISA_HUMANO (recomendado), (b) + rodada extra no ChatGPT,
-  (c) só medir.
-- D5. Currículo só no host (Hermes), sem Grok/CV Operator neste fluxo?
-- D6. Este plano substitui o de 2026-10-06 (que vira só P1/P2 sobre o `cv-doc`)?
+  critério de paridade acima, incluindo o +1 px. **Aprovado: PT e EN** (lado a lado de cada idioma).
+- D2. Exportar também o documento EN. **Feito** (`RESUMES.zip`); paridade EN na tabela acima.
+- D3. Opção B do "Pedir edição": **(a) a revisão pelo ChatGPT passa a ser obrigatória** no caminho `local`. Não há
+  aplicador para texto livre; a edição manual estruturada (P1/P2) fica fora deste plano.
+- D4. Regra de uma página: **(a) cortes determinísticos** (ENCAIXE EM UMA PÁGINA, depois `mandatory: no` em ordem
+  inversa, re-renderizando) e, se ainda estourar, PRECISA_HUMANO `PAGE_OVERFLOW`.
+- D5. **Sim**: currículo só no host (Hermes); Grok/CV Operator saem deste fluxo.
+- D6. **Sim**: este plano substitui o de 2026-10-06, que passa a ser só P1/P2 sobre o `cv-doc`.
 
-## Itens (depois do ok)
+## Itens
 
 job-search
 
