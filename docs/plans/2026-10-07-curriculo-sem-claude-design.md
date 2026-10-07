@@ -268,6 +268,9 @@ quando outra vaga editou sem exportar). Os PDFs e `cv.json` já registrados cont
   página, `cv/3` VALID. Falta: passo 4 (uso real) e o painel (esconder o Claude Design; textos de `PAGE_OVERFLOW`,
   `PATCH_*`, `CV_JOB_BUSY`, `CV_DOC_MISSING`, `CV_LOCAL_HERMES_ONLY`, `CHROME_NOT_QUALIFIED`; "Pedir edição" com
   revisão obrigatória no `local`).
+- 2026-10-07, "Editar currículo" em três modos no `local` (revisão do ChatGPT sem comentário, edição com comentário,
+  edição manual; aprovação ✓/✗ item a item nos dois primeiros): desenho e decisões E1–E5 em
+  `2026-10-07-editar-curriculo-tres-modos.md`, que também cobre os itens do painel abaixo.
 
 ## Itens
 
