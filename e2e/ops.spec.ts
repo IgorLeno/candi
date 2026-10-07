@@ -1,6 +1,12 @@
 import { test, expect } from "@playwright/test"
+import { mkdirSync, writeFileSync } from "fs"
 import { E2E_AUTH_ENV, signInAs } from "./auth"
-import { resetFakeDispatches } from "./ops-env"
+import { E2E_FAKE_DISPATCH_STATE, resetFakeDispatches } from "./ops-env"
+
+function useLocalCvRenderer() {
+  mkdirSync(E2E_FAKE_DISPATCH_STATE, { recursive: true })
+  writeFileSync(`${E2E_FAKE_DISPATCH_STATE}/cv-renderer`, "local\n")
+}
 
 // Bot dispatch against the fake job-search dispatcher (e2e/fixtures/job-search-fake): no bot, no gateway.
 test.describe("Central de operações (bots)", () => {
@@ -453,6 +459,90 @@ test.describe("Central de operações (bots)", () => {
     const application = page.getByTestId("job-detail").getByTestId("dispatch-PREENCHER_CANDIDATURA")
     await expect(application).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
     await expect(application.locator('[data-stage="aprovacao"]')).toHaveAttribute("data-state", "done")
+  })
+
+  test("currículo local: segunda avaliação exige aprovação individual antes do PDF", async ({ page }) => {
+    test.setTimeout(120_000)
+    useLocalCvRenderer()
+    await page.goto("/vaga/fake-1001")
+    const section = page.getByTestId("job-section-curriculo")
+    await expect(section.getByTestId("cv-local-edit")).toBeVisible()
+    await expect(section.getByTestId("cv-edit")).toHaveCount(0)
+    await expect(section.getByTestId("platform-toggle")).toHaveCount(0)
+    await section.getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    await page.getByTestId("dispatch-confirm").click()
+    await expect(section.getByTestId("dispatch-GERAR_CURRICULO")).toHaveAttribute("data-status", "CONCLUIDO", {
+      timeout: 30_000,
+    })
+    await section.getByTestId("cv-reassess-submit").click()
+    const edit = section.getByTestId("dispatch-EDITAR_CURRICULO")
+    await expect(edit).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    const proposal = edit.getByTestId("cv-proposal")
+    await expect(proposal.getByTestId("cv-change-1")).toContainText("Resumo profissional")
+    await expect(proposal.getByTestId("cv-change-3")).toContainText("Corte apenas se faltar espaço")
+    await proposal.getByTestId("cv-reject-1").click()
+    await expect(proposal.getByTestId("cv-approve-2")).toBeDisabled()
+    await proposal.getByTestId("cv-approve-1").click()
+    await proposal.getByTestId("cv-reject-2").click()
+    await proposal.getByTestId("cv-reject-3").click()
+    await proposal.getByTestId("cv-apply-changes").click()
+    await expect(edit).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    await expect(section.getByTestId("cv-preview-filename")).toHaveText("curriculo_igor-fernandes_pt_fake-v2.pdf")
+  })
+
+  test("currículo local: comentários e edição manual geram PDF; rejeição preserva o arquivo", async ({ page }) => {
+    test.setTimeout(150_000)
+    useLocalCvRenderer()
+    await page.goto("/vaga/fake-1001")
+    const section = page.getByTestId("job-section-curriculo")
+    await section.getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    await page.getByTestId("dispatch-confirm").click()
+    await expect(section.getByTestId("dispatch-GERAR_CURRICULO")).toHaveAttribute("data-status", "CONCLUIDO", {
+      timeout: 30_000,
+    })
+    const form = section.getByTestId("cv-local-edit")
+    await form.getByTestId("cv-mode-request").click()
+    await form.getByTestId("cv-local-request").fill("Deixe o resumo mais direto para esta vaga.")
+    await form.getByTestId("cv-local-request-submit").click()
+    const edit = section.getByTestId("dispatch-EDITAR_CURRICULO")
+    await expect(edit).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    await edit.getByTestId("cv-reject-all").click()
+    await expect(edit.getByTestId("cv-all-rejected")).toBeVisible()
+    await expect(section.getByTestId("cv-preview-filename")).toHaveText("curriculo_igor-fernandes_pt_fake.pdf")
+
+    await form.getByTestId("cv-mode-manual").click()
+    const manual = form.getByTestId("cv-manual-editor")
+    await expect(manual.getByText("contato protegido")).toBeVisible()
+    await expect(manual.getByTestId("cv-manual-submit")).toBeDisabled()
+    await manual.getByTestId("cv-manual-summary/text").fill("Resumo escrito manualmente para esta vaga.")
+    await expect(manual.getByTestId("cv-manual-submit")).toBeEnabled()
+    await manual.getByTestId("cv-manual-submit").click()
+    await expect(section.getByTestId("dispatch-EDITAR_CURRICULO")).toHaveAttribute("data-status", "CONCLUIDO", {
+      timeout: 30_000,
+    })
+    await expect(section.getByTestId("cv-preview-filename")).toHaveText("curriculo_igor-fernandes_pt_fake-v2.pdf")
+  })
+
+  test("currículo local: sem mudanças preserva o PDF e renderer inválido bloqueia novas ações", async ({ page }) => {
+    test.setTimeout(90_000)
+    useLocalCvRenderer()
+    await page.goto("/vaga/fake-1004")
+    const section = page.getByTestId("job-section-curriculo")
+    await section.getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    await page.getByTestId("dispatch-confirm").click()
+    await expect(section.getByTestId("dispatch-GERAR_CURRICULO")).toHaveAttribute("data-status", "CONCLUIDO", {
+      timeout: 30_000,
+    })
+    await section.getByTestId("cv-reassess-submit").click()
+    const edit = section.getByTestId("dispatch-EDITAR_CURRICULO")
+    await expect(edit).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    await expect(edit.getByTestId("cv-no-changes")).toBeVisible()
+    await expect(section.getByTestId("cv-preview-filename")).toHaveText("curriculo_igor-fernandes_pt_fake.pdf")
+
+    writeFileSync(`${E2E_FAKE_DISPATCH_STATE}/cv-renderer`, "invalid\n")
+    await page.reload()
+    await expect(section.getByRole("alert")).toContainText("chave do renderer do currículo está inválida")
+    await expect(section.getByTestId("dispatch-button-GERAR_CURRICULO")).toBeDisabled()
   })
 
   test("pedir edição do currículo: seu texto vai ao Claude (Hermes) ou vira comando do CV Operator (Grok)", async ({

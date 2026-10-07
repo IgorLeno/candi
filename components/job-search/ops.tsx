@@ -32,16 +32,20 @@ import {
   analyzeIntake,
   analyzeJob,
   analyzeLeftOut,
+  applyCvChanges,
   deleteDispatch,
   editCv,
   discardDispatch,
   getCvFile,
+  getCvDoc,
   listDispatches,
   openApplicationBrowser,
   openCvBrowser,
   refineIntake,
   registerWriteset,
+  reassessCv,
   resumeCv,
+  saveCvManual,
   startDispatch,
   startIntake,
 } from "@/app/actions/ops"
@@ -61,6 +65,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ToneBadge } from "@/components/job-search/tone-badge"
 import { formatTimestamp, safeHttpUrl } from "@/lib/job-search/present"
 import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
+import { normalizeManualEdits } from "@/lib/ops/cv-manual"
 import { usePlatform, writePlatform } from "@/lib/ops/platform-pref"
 import { useClosed, useCollapsed, writeClosed, writeCollapsed } from "@/lib/ops/collapse-pref"
 import {
@@ -80,6 +85,7 @@ import {
   canRefineIntake,
   canRegisterWriteset,
   canResumeCv,
+  canApplyChanges,
   cvFileText,
   discardedIntakes,
   isActiveStatus,
@@ -100,6 +106,8 @@ import {
   PLATFORMS,
   type BotAction,
   type CvFileInfo,
+  type CvDoc,
+  type CvChange,
   type CvResumeOption,
   type Dispatch,
   type DispatchAction,
@@ -1067,6 +1075,119 @@ function LeftOutJobs({
 
 const ACKABLE = new Set(["INCERTO", "FALHOU", "PRECISA_HUMANO", "PARADO", "MANUAL"])
 
+function CvProposalApproval({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () => void }) {
+  const proposal = dispatch.progress.proposal
+  const [decisions, setDecisions] = useState<Record<number, boolean>>({})
+  const [pending, startTransition] = useTransition()
+  if (!proposal) return null
+  const items = [...proposal.changes, ...proposal.cuts]
+  const approved = items.filter((item) => decisions[item.n] === true).map((item) => item.n)
+  const allDecided = items.every((item) => decisions[item.n] !== undefined)
+  const send = (numbers: number[]) =>
+    startTransition(async () => {
+      try {
+        const result = await applyCvChanges(dispatch.id, numbers)
+        if (result.ok) {
+          toast.success(
+            numbers.length ? "Mudanças aprovadas; o PDF está sendo gerado." : "Todas as mudanças foram rejeitadas."
+          )
+          onChanged()
+        } else toastRefusal(result.code)
+      } catch {
+        toast.error(refusalText("UNAUTHENTICATED"))
+      }
+    })
+  const choose = (item: CvChange, value: boolean) =>
+    setDecisions((current) => {
+      const next = { ...current, [item.n]: value }
+      if (!value) for (const dependent of items) if (dependent.requires.includes(item.n)) delete next[dependent.n]
+      return next
+    })
+  const group = (entries: CvChange[]) =>
+    entries.map((item) => {
+      const rejected = item.requires.find((n) => decisions[n] === false)
+      return (
+        <li key={item.n} className="space-y-2 rounded-lg border border-border p-3" data-testid={`cv-change-${item.n}`}>
+          <p className="text-xs font-semibold">
+            Mudança {item.n} · {item.section} · {item.op}
+          </p>
+          <p className="break-words text-sm">
+            <span className="text-muted-foreground line-through">{item.before ?? "sem texto"}</span>
+            <span aria-hidden="true"> → </span>
+            <span>{item.after ?? "remover"}</span>
+          </p>
+          <p className="break-words text-xs text-muted-foreground">{item.reason}</p>
+          {rejected && <p className="text-xs text-st-review-fg">Depende da mudança {rejected}, rejeitada.</p>}
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant={decisions[item.n] === true ? "default" : "outline"}
+              aria-pressed={decisions[item.n] === true}
+              disabled={pending || !!rejected}
+              data-testid={`cv-approve-${item.n}`}
+              onClick={() => choose(item, true)}
+            >
+              ✓ Aprovar
+            </Button>
+            <Button
+              size="sm"
+              variant={decisions[item.n] === false ? "destructive" : "outline"}
+              aria-pressed={decisions[item.n] === false}
+              disabled={pending}
+              data-testid={`cv-reject-${item.n}`}
+              onClick={() => choose(item, false)}
+            >
+              ✗ Rejeitar
+            </Button>
+          </div>
+        </li>
+      )
+    })
+  return (
+    <div className="space-y-3" data-testid="cv-proposal">
+      <p className="text-sm font-semibold">Revise cada mudança proposta</p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending}
+          onClick={() => setDecisions(Object.fromEntries(items.map((item) => [item.n, true])))}
+        >
+          Aprovar todas
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pending}
+          onClick={() => setDecisions(Object.fromEntries(items.map((item) => [item.n, false])))}
+        >
+          Rejeitar todas
+        </Button>
+      </div>
+      <ul className="space-y-2">{group(proposal.changes)}</ul>
+      {proposal.cuts.length > 0 && (
+        <>
+          <h4 className="text-xs font-semibold">Cortes se não couber em uma página</h4>
+          <ul className="space-y-2">{group(proposal.cuts)}</ul>
+        </>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          disabled={pending || !allDecided || approved.length === 0}
+          data-testid="cv-apply-changes"
+          onClick={() => send(approved)}
+        >
+          Aplicar {approved.length} aprovada(s)
+        </Button>
+        <Button size="sm" variant="outline" disabled={pending} data-testid="cv-reject-all" onClick={() => send([])}>
+          Rejeitar todas
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function DispatchCard({
   dispatch,
   knownJobIds,
@@ -1214,6 +1335,26 @@ export function DispatchCard({
             </ul>
           </div>
         )}
+        {canApplyChanges(dispatch) && (
+          <CvProposalApproval key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />
+        )}
+        {dispatch.action === "EDITAR_CURRICULO" && dispatch.renderer === "local" && dispatch.code === "NO_CHANGES" && (
+          <p className="text-sm" data-testid="cv-no-changes">
+            O ChatGPT não viu nada a ajustar: currículo sem mudanças.
+          </p>
+        )}
+        {dispatch.action === "EDITAR_CURRICULO" &&
+          dispatch.renderer === "local" &&
+          dispatch.code === "ALL_REJECTED" && (
+            <p className="text-sm" data-testid="cv-all-rejected">
+              Todas as mudanças foram rejeitadas; currículo sem mudanças.
+            </p>
+          )}
+        {dispatch.action === "EDITAR_CURRICULO" && (progress.fit?.omitted.length ?? 0) > 0 && (
+          <p className="text-xs text-muted-foreground" data-testid="cv-fit-omitted">
+            Para caber em uma página, o job-search omitiu as mudanças {progress.fit?.omitted.join(", ")}.
+          </p>
+        )}
         {(dispatch.action === "ANALISAR_VAGA" || dispatch.action === "ANALISAR_DESCOBERTA") && (
           <DiagnosisList progress={progress} testId="analysis-diagnosis" />
         )}
@@ -1241,7 +1382,7 @@ export function DispatchCard({
                       : canResumeCv(dispatch)
                         ? " — veja o motivo acima e escolha como seguir."
                         : dispatch.action === "EDITAR_CURRICULO"
-                          ? ` — ${cvEditStopText(dispatch.code)}`
+                          ? ` — ${cvEditStopText(dispatch.code, dispatch.renderer)}`
                           : dispatch.action === "PREENCHER_CANDIDATURA"
                             ? ` — ${applicationStopText(dispatch.code)}`
                             : " — ação sua necessária (veja o código)."
@@ -1263,7 +1404,7 @@ export function DispatchCard({
             stale={progress.prompt_stale === true}
           />
         )}
-        {ACKABLE.has(dispatch.status) && !dispatch.acknowledged && (
+        {ACKABLE.has(dispatch.status) && !canApplyChanges(dispatch) && !dispatch.acknowledged && (
           <Button
             size="sm"
             variant="ghost"
@@ -1402,6 +1543,7 @@ function DispatchButton({
   warning,
   primary,
   verb,
+  fixedPlatform,
   onStarted,
 }: {
   action: BotAction
@@ -1411,13 +1553,15 @@ function DispatchButton({
   primary?: boolean
   /** Button text when it differs from the action's verb ("Nova cotação"). */
   verb?: string
+  fixedPlatform?: "hermes"
   onStarted: () => void
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [command, setCommand] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
-  const platform = usePlatform()
+  const preferredPlatform = usePlatform()
+  const platform = fixedPlatform ?? preferredPlatform
   const meta = ACTION_META[action]
   const Icon = ACTION_ICON[action]
 
@@ -1457,11 +1601,15 @@ function DispatchButton({
                   Vaga <span className="font-mono">{jobId}</span>
                 </p>
               )}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-muted-foreground">Plataforma:</span>
-                <PlatformToggle />
-              </div>
-              {action === "GERAR_CURRICULO" && platform === "hermes" && <OpenBrowserButton browser="clouddesign" />}
+              {!fixedPlatform && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground">Plataforma:</span>
+                  <PlatformToggle />
+                </div>
+              )}
+              {action === "GERAR_CURRICULO" && platform === "hermes" && !fixedPlatform && (
+                <OpenBrowserButton browser="clouddesign" />
+              )}
               {action === "PREENCHER_CANDIDATURA" && platform === "hermes" && (
                 <OpenBrowserButton browser="application" />
               )}
@@ -1939,17 +2087,30 @@ export function JobAnalysisOps({ analyzed }: { analyzed: boolean }) {
 /** "Currículo": status, the PDF job-search registered for this job, Gerar currículo and its card. */
 export function JobCvOps() {
   const { jobId, data, refresh } = useJobOps()
+  const renderer = data?.cv_renderer ?? "claude_design"
   const cv = latest(data?.dispatches ?? [], "GERAR_CURRICULO")
   const edit = latest(data?.dispatches ?? [], CV_EDIT_ACTION)
   const job = data?.job
   const cvReady = job?.cv === "VALID"
   return (
     <div className="space-y-4">
+      {renderer === "INVALID" && (
+        <p className="rounded-lg border border-st-review/45 bg-st-review/15 p-3 text-sm text-st-review-fg" role="alert">
+          A chave do renderer do currículo está inválida no job-search. Gerar e editar ficam recusados até corrigir.
+        </p>
+      )}
       <OpsBar testId="job-ops-cv" label="Currículo desta vaga pelos bots">
         <DispatchButton
           action="GERAR_CURRICULO"
           jobId={jobId}
-          disabledReason={cv?.active ? "Geração de currículo em andamento." : null}
+          fixedPlatform={renderer === "local" ? "hermes" : undefined}
+          disabledReason={
+            renderer === "INVALID"
+              ? "Renderer do currículo inválido."
+              : cv?.active
+                ? "Geração de currículo em andamento."
+                : null
+          }
           onStarted={refresh}
         />
         {job && (
@@ -1965,19 +2126,37 @@ export function JobCvOps() {
       </OpsBar>
       {/* Re-read the file whenever job-search's verdict on the résumé changes (a new PDF was just recorded). */}
       <CvPreview key={`${job?.cv ?? "?"}:${cv?.finished_at ?? ""}:${edit?.finished_at ?? ""}`} jobId={jobId} />
-      <CvEditForm
-        jobId={jobId}
-        disabledReason={
-          edit?.active
-            ? "Edição em andamento."
-            : cv?.active
-              ? "Geração de currículo em andamento."
-              : job && !cvReady
-                ? "Gere o currículo desta vaga antes de pedir edição."
-                : null
-        }
-        onStarted={refresh}
-      />
+      {renderer === "local" ? (
+        <CvLocalEditForm
+          jobId={jobId}
+          disabledReason={
+            edit?.active
+              ? "Edição em andamento."
+              : cv?.active
+                ? "Geração de currículo em andamento."
+                : job && !cvReady
+                  ? "Gere o currículo desta vaga antes de editar."
+                  : null
+          }
+          onStarted={refresh}
+        />
+      ) : (
+        <CvEditForm
+          jobId={jobId}
+          disabledReason={
+            renderer === "INVALID"
+              ? "Renderer do currículo inválido."
+              : edit?.active
+                ? "Edição em andamento."
+                : cv?.active
+                  ? "Geração de currículo em andamento."
+                  : job && !cvReady
+                    ? "Gere o currículo desta vaga antes de pedir edição."
+                    : null
+          }
+          onStarted={refresh}
+        />
+      )}
       {edit && <DispatchCard dispatch={edit} onChanged={refresh} />}
     </div>
   )
@@ -2003,6 +2182,242 @@ export function JobApplicationOps() {
         </div>
       )}
     </OpsBar>
+  )
+}
+
+type CvLocalTab = "reassess" | "request" | "manual"
+
+/** Three local edit modes. The panel sends intent; job-search owns the patch, validation and PDF. */
+function CvLocalEditForm({
+  jobId,
+  disabledReason,
+  onStarted,
+}: {
+  jobId: string
+  disabledReason: string | null
+  onStarted: () => void
+}) {
+  const [tab, setTab] = useState<CvLocalTab>("reassess")
+  const [text, setText] = useState("")
+  const [pending, startTransition] = useTransition()
+  const check = normalizeIntake(text)
+  const tabs: { key: CvLocalTab; label: string }[] = [
+    { key: "reassess", label: "Revisão do ChatGPT" },
+    { key: "request", label: "Com seus comentários" },
+    { key: "manual", label: "Manual" },
+  ]
+  return (
+    <section
+      className="space-y-3 rounded-2xl border border-border p-4"
+      data-testid="cv-local-edit"
+      aria-label="Editar currículo"
+    >
+      <h3 className="text-sm font-semibold">Editar currículo</h3>
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Modo de edição">
+        {tabs.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.key}
+            data-testid={`cv-mode-${item.key}`}
+            onClick={() => setTab(item.key)}
+            className={cn(
+              "rounded-lg border px-3 py-1.5 text-xs font-medium",
+              tab === item.key ? "border-primary bg-primary/15 text-foreground" : "border-border text-muted-foreground"
+            )}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {tab === "reassess" && (
+        <div className="space-y-3" role="tabpanel">
+          <p className="text-xs text-muted-foreground">
+            O ChatGPT reavalia o currículo desta vaga com a vaga, a análise e as evidências. Você aprova ou rejeita cada
+            sugestão antes de gerar outro PDF.
+          </p>
+          <Button
+            size="sm"
+            disabled={!!disabledReason || pending}
+            data-testid="cv-reassess-submit"
+            onClick={() =>
+              startTransition(async () => {
+                try {
+                  const result = await reassessCv(jobId)
+                  if (result.ok) {
+                    toast.success("Segunda avaliação pedida ao job-search.")
+                    onStarted()
+                  } else toastRefusal(result.code)
+                } catch {
+                  toast.error(refusalText("UNAUTHENTICATED"))
+                }
+              })
+            }
+          >
+            {pending ? "Pedindo…" : "Pedir segunda avaliação"}
+          </Button>
+        </div>
+      )}
+      {tab === "request" && (
+        <div className="space-y-3" role="tabpanel">
+          <Label htmlFor="cv-local-request">Seus comentários</Label>
+          <p className="text-xs text-muted-foreground">
+            O ChatGPT transforma seu pedido em mudanças. Você decide cada uma antes do PDF novo.
+          </p>
+          <Textarea
+            id="cv-local-request"
+            rows={4}
+            value={text}
+            maxLength={INTAKE_MAX + 200}
+            disabled={!!disabledReason}
+            data-testid="cv-local-request"
+            onChange={(event) => setText(event.target.value)}
+          />
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {intakeLength(text.trim())}/{INTAKE_MAX}
+            </span>
+            {!check.ok && text.trim() && (
+              <span className="text-xs text-st-review-fg">
+                {refusalText(check.code.replace("INTAKE_", "REQUEST_"))}
+              </span>
+            )}
+            <Button
+              size="sm"
+              className="ml-auto"
+              disabled={!!disabledReason || !check.ok || pending}
+              data-testid="cv-local-request-submit"
+              onClick={() =>
+                startTransition(async () => {
+                  if (!check.ok) return
+                  try {
+                    const result = await editCv(jobId, { text: check.text })
+                    if (result.ok) {
+                      toast.success("Pedido enviado para revisão do ChatGPT.")
+                      setText("")
+                      onStarted()
+                    } else toastRefusal(result.code)
+                  } catch {
+                    toast.error(refusalText("UNAUTHENTICATED"))
+                  }
+                })
+              }
+            >
+              {pending ? "Pedindo…" : "Pedir edição"}
+            </Button>
+          </div>
+        </div>
+      )}
+      {tab === "manual" && <CvManualEditor jobId={jobId} disabledReason={disabledReason} onStarted={onStarted} />}
+      {disabledReason && (
+        <p className="text-xs text-muted-foreground" data-testid="cv-local-disabled">
+          {disabledReason}
+        </p>
+      )}
+    </section>
+  )
+}
+
+function CvManualEditor({
+  jobId,
+  disabledReason,
+  onStarted,
+}: {
+  jobId: string
+  disabledReason: string | null
+  onStarted: () => void
+}) {
+  const [doc, setDoc] = useState<CvDoc | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [pending, startTransition] = useTransition()
+  useEffect(() => {
+    let alive = true
+    getCvDoc(jobId)
+      .then((result) => {
+        if (!alive) return
+        if (result.ok) setDoc(result.value)
+        else setError(result.code)
+      })
+      .catch(() => {
+        if (alive) setError("DISPATCHER_UNAVAILABLE")
+      })
+    return () => {
+      alive = false
+    }
+  }, [jobId])
+  const raw = Object.entries(edits).map(([path, text]) => ({ path, text }))
+  const checked = doc && raw.length ? normalizeManualEdits(doc, raw) : null
+  return (
+    <div className="space-y-3" role="tabpanel" data-testid="cv-manual-editor">
+      <p className="text-xs text-muted-foreground">
+        Troque apenas o texto de campos existentes. Nome, contato, datas, instituições, cargos, certificados e idiomas
+        ficam travados. Esta edição não usa IA.
+      </p>
+      {error && (
+        <p role="alert" className="text-xs text-st-review-fg">
+          {refusalText(error)}
+        </p>
+      )}
+      {!doc && !error && <p className="text-xs text-muted-foreground">Carregando currículo editável…</p>}
+      {doc?.sections.map((section) => (
+        <div key={section.id} className="space-y-2 border-t border-border pt-3">
+          <h4 className="text-sm font-semibold">{section.title}</h4>
+          {section.fields.map((field) => (
+            <div key={field.path} className="space-y-1">
+              <Label htmlFor={`manual-${field.path}`} className="text-xs">
+                {field.item ? `${field.item} · ` : ""}
+                {field.label} {field.locked && "🔒"}
+              </Label>
+              {field.locked ? (
+                <p className="rounded-lg bg-muted/40 p-2 text-xs text-muted-foreground">{field.text}</p>
+              ) : (
+                <Textarea
+                  id={`manual-${field.path}`}
+                  value={edits[field.path] ?? field.text}
+                  rows={field.kind === "paragraph" ? 4 : 2}
+                  disabled={!!disabledReason || pending}
+                  data-testid={`cv-manual-${field.path}`}
+                  onChange={(event) => setEdits((current) => ({ ...current, [field.path]: event.target.value }))}
+                />
+              )}
+              {!field.locked && (
+                <p className="text-right text-xs text-muted-foreground">
+                  {[...(edits[field.path] ?? field.text)].length}/{field.max}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+      {checked && !checked.ok && checked.code !== "MANUAL_NO_CHANGES" && (
+        <p role="alert" className="text-xs text-st-review-fg">
+          {refusalText(checked.code)}
+        </p>
+      )}
+      <Button
+        size="sm"
+        disabled={!!disabledReason || pending || !checked?.ok}
+        data-testid="cv-manual-submit"
+        onClick={() =>
+          startTransition(async () => {
+            if (!doc || !checked?.ok) return
+            try {
+              const result = await saveCvManual(jobId, { docSha256: doc.doc_sha256, edits: checked.edits })
+              if (result.ok) {
+                toast.success("Edição manual enviada para gerar o PDF.")
+                onStarted()
+              } else toastRefusal(result.code)
+            } catch {
+              toast.error(refusalText("UNAUTHENTICATED"))
+            }
+          })
+        }
+      >
+        {pending ? "Gerando…" : "Salvar e gerar PDF"}
+      </Button>
+    </div>
   )
 }
 

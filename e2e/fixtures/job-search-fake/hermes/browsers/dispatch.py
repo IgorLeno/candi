@@ -36,6 +36,7 @@ from pathlib import Path
 FAKE_PDF = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj "
             b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n")
 STATE = Path(os.environ["JOB_SEARCH_BROWSERS_STATE"]) / "fake-dispatch.json"
+RENDERER_FILE = STATE.parent / "cv-renderer"
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 APPROVAL_RE = re.compile(r"(?i)\b(ok|n[aã]o)\s+[0-9a-f]{8}\b")
 BOTS = {"BUSCAR_VAGAS": ("Lince", "Job Scout"), "GERAR_CURRICULO": ("CVerino", "CV Strategist"),
@@ -88,6 +89,9 @@ STAGES = {
     "GERAR_CURRICULO": [("cverino", "CVerino + ChatGPT (patch editorial)"),
                         ("curriculinho", "Curriculinho (cópia do MASTER no Claude Design)"),
                         ("cv", "Currículo registrado (cv.pdf + cv.json)")],
+    "GERAR_LOCAL": [("chatgpt", "Patch editorial no ChatGPT (host)"),
+                    ("render", "PDF no template local (host)"),
+                    ("cv", "Currículo registrado (cv.pdf + cv.json)")],
     "PREENCHER_CANDIDATURA": [("claim", "Claim e preflight"), ("preenchimento", "Preenchimento do formulário"),
                               ("revisao", "Revisão e gate"), ("aprovacao", "Aguardando sua aprovação")],
     # Host path (Claude in Chrome), only for HOST_APPLY: the dispatch ends asking the user to paste the prompt.
@@ -104,6 +108,11 @@ STAGES = {
     "EDITAR_REVIEW": [("pedido", "Pedido de edição (seu texto, revisado pelo ChatGPT)"),
                       ("chatgpt", "Revisão do pedido no ChatGPT (host)"),
                       ("claude", "Edição no Claude in Chrome"), ("cv", "Currículo novo registrado")],
+    "EDITAR_LOCAL": [("chatgpt", "Revisão no ChatGPT (host)"),
+                      ("aprovacao", "Sua aprovação das mudanças"),
+                      ("render", "PDF no template local (host)"), ("cv", "Currículo novo registrado")],
+    "EDITAR_MANUAL": [("manual", "Edição manual validada"),
+                       ("render", "PDF no template local (host)"), ("cv", "Currículo novo registrado")],
     "ANALISAR_DESCOBERTA": [("posting", "Texto da vaga"), ("analise", "Análise no ChatGPT (host)"),
                             ("writeset", "Writeset pronto"), ("registro", "Registro na planilha")],
     "ANALISAR_VAGA": [("planilha", "Dados da vaga (planilha, só leitura)"), ("posting", "Texto da vaga"),
@@ -152,6 +161,37 @@ def save(recs):
     STATE.write_text(json.dumps(recs))
 
 
+def renderer():
+    try:
+        value = RENDERER_FILE.read_text().strip()
+    except OSError:
+        return "claude_design"
+    return value if value in ("local", "claude_design") else "INVALID"
+
+
+def cv_hash(recs, job_id):
+    version = sum(1 for r in recs if r["job_id"] == job_id and r["action"] == "EDITAR_CURRICULO"
+                  and r["status"] == "CONCLUIDO" and r.get("code") not in ("NO_CHANGES", "ALL_REJECTED"))
+    return f"{version + 10:064x}"
+
+
+def proposal(rec, recs):
+    return {"schema": "cv-proposal/1", "job_id": rec["job_id"], "mode": rec["edit_mode"],
+            "doc_sha256": rec["doc_sha256"], "free_px": 54.0,
+            "changes": [
+                {"n": 1, "op": "REPLACE", "path": "summary/text", "section": "Resumo profissional",
+                 "before": "Resumo atual da vaga.", "after": "Resumo ajustado à vaga.",
+                 "reason": "Destaca a experiência pertinente à vaga.", "evidence_source": "knowledge/",
+                 "mandatory": True, "requires": []},
+                {"n": 2, "op": "REPLACE", "path": "experience/acme/bullets/b1", "section": "Experiência",
+                 "before": "Análise de dados.", "after": "Análise de dados de processos.",
+                 "reason": "Torna a atividade específica.", "evidence_source": "knowledge/",
+                 "mandatory": False, "requires": [1]}],
+            "cuts": [{"n": 3, "op": "REMOVE", "path": "projects/old/bullets/b1", "section": "Projetos",
+                      "before": "Projeto antigo.", "after": None, "reason": "Corte apenas se faltar espaço.",
+                      "mandatory": False, "requires": []}]}
+
+
 def registration_of(recs, search_id):
     return next((r for r in recs if r["action"] == REGISTER and r["source_id"] == search_id), None)
 
@@ -173,12 +213,16 @@ def view_register(rec):
 def stage_key(rec):
     if rec.get("host_apply"):
         return "PREENCHER_HOST"
+    if rec.get("renderer") == "local" and rec["action"] == "GERAR_CURRICULO":
+        return "GERAR_LOCAL"
+    if rec.get("renderer") == "local" and rec["action"] == "EDITAR_CURRICULO":
+        return "EDITAR_MANUAL" if rec["edit_mode"] == "manual" else "EDITAR_LOCAL"
     return "EDITAR_REVIEW" if rec.get("chatgpt_review") else rec["action"]
 
 
 def last_step(action, rec=None):
     # Only the reviewed edit has its own stage list here; the host "Preencher vaga" keeps the action's count.
-    key = "EDITAR_REVIEW" if rec and rec.get("chatgpt_review") else action
+    key = stage_key(rec) if rec else action
     return len(STAGES[key]) - (1 if action in WRITESET_ACTIONS else 0)
 
 
@@ -258,18 +302,35 @@ def view(rec, recs=()):
         out.update(refines=rec.get("refines"), refined_by=rec.get("refined_by"))
     out.update(code=rec.get("code"), marker=rec.get("code"), turns=step, updated_at=rec["created_at"], delivered_at=rec["created_at"],
                finished_at=None if rec["status"] == "RODANDO" else rec["created_at"],
-               bot=BOTS[rec["action"]][1 if rec["platform"] == "grok" else 0],
+               bot="job-search (host)" if rec.get("renderer") == "local" else
+                   BOTS[rec["action"]][1 if rec["platform"] == "grok" else 0],
                active=rec["status"] == "RODANDO", progress=progress)
     if rec["action"] in HOST_ANALYSES or rec.get("mode") == "host":
         out["mode"] = "host"
     if rec["action"] == "EDITAR_CURRICULO":
-        progress.update(edit_request=rec["edit_request"], edit_output="curriculo_igor-fernandes_pt_fake-v2.pdf",
-                        chatgpt_review=bool(rec.get("chatgpt_review")), edit_doubts=[])
-        if step == 0:
-            out_stages[0]["state"] = "done"   # o pedido já está gravado
-        if rec.get("code") == "HUMAN_REVIEW_DOUBTS":
-            out_stages[1]["note"] = rec["code"]
-            progress["edit_doubts"] = REVIEW_DOUBTS
+        if rec.get("renderer") == "local":
+            out.update(renderer="local", edit_mode=rec["edit_mode"])
+            progress.update(edit_mode=rec["edit_mode"], edit_request=rec.get("edit_request"),
+                            edit_output="curriculo_igor-fernandes_pt_fake-v2.pdf",
+                            proposal=proposal(rec, recs) if rec.get("code") == "CHANGES_PENDING" else None,
+                            fit={"free_px": 22.0, "cuts": [3] if 3 in rec.get("approved", []) else [],
+                                 "omitted": []} if rec.get("approved") else None,
+                            edited=rec.get("edited"))
+            if rec["status"] == "CONCLUIDO":
+                progress["percent"] = 100
+            if rec.get("code") == "CHANGES_PENDING":
+                out_stages[0]["state"] = "done"
+                out_stages[1]["state"] = "active"
+            elif rec["edit_mode"] == "manual" and step == 0:
+                out_stages[0]["state"] = "done"
+        else:
+            progress.update(edit_request=rec["edit_request"], edit_output="curriculo_igor-fernandes_pt_fake-v2.pdf",
+                            chatgpt_review=bool(rec.get("chatgpt_review")), edit_doubts=[])
+            if step == 0:
+                out_stages[0]["state"] = "done"   # o pedido já está gravado
+            if rec.get("code") == "HUMAN_REVIEW_DOUBTS":
+                out_stages[1]["note"] = rec["code"]
+                progress["edit_doubts"] = REVIEW_DOUBTS
     if rec.get("host_apply") and rec["status"] == "PRECISA_HUMANO":
         out_stages[-1].update(state="active", note="ação sua: abrir o painel do Claude na aba e colar")
         # Newest first: the records before this one were started after it.
@@ -280,6 +341,8 @@ def view(rec, recs=()):
                         claude_prompt="Você vai preencher a candidatura da vaga abaixo nesta aba do navegador.\n"
                                       "CURRÍCULO: anexe exatamente o arquivo /fake/curriculo_igor-fernandes_pt_fake.pdf")
     if rec["action"] == "GERAR_CURRICULO":
+        if rec.get("renderer") == "local":
+            out["renderer"] = "local"
         out.update(resumes=rec.get("resumes"), resume_option=rec.get("resume_option"),
                    retried_by=rec.get("retried_by"))
         stuck = rec["status"] == "PRECISA_HUMANO" and not rec.get("retried_by")
@@ -312,6 +375,18 @@ def main(argv):
     if cmd == "start":
         action, platform = argv[1], flag(argv, "--platform")
         job_id, source_id = flag(argv, "--job-id"), flag(argv, "--from")
+        cv_renderer = renderer()
+        local_edit = action == "EDITAR_CURRICULO" and cv_renderer == "local"
+        reassess = "--reassess" in argv
+        manual = "--manual-stdin" in argv
+        if action in ("GERAR_CURRICULO", "EDITAR_CURRICULO") and cv_renderer == "INVALID":
+            return refuse("CV_RENDERER_INVALID")
+        if (reassess or manual) and not local_edit:
+            return refuse("CV_LOCAL_ONLY")
+        if local_edit and platform != "hermes":
+            return refuse("CV_LOCAL_HERMES_ONLY")
+        if local_edit and sum((reassess, manual, "--request-stdin" in argv)) != 1:
+            return refuse("EDIT_MODE_INVALID")
         if action in HERMES_ONLY and platform != "hermes":
             return refuse("PLATFORM_NOT_SUPPORTED")
         if any(r["action"] == action and r["job_id"] == job_id and r["status"] == "RODANDO" for r in recs):
@@ -340,6 +415,8 @@ def main(argv):
                "created_at": now()}
         if action == "GERAR_CURRICULO" and platform == "hermes":
             rec["mode"] = "host"
+            if cv_renderer == "local":
+                rec["renderer"] = "local"
         if action == "PREENCHER_CANDIDATURA" and platform == "hermes" and job_id == HOST_APPLY:
             rec.update(mode="host", host_apply=True)
         if action == "LOCALIZAR_VAGA":
@@ -379,17 +456,35 @@ def main(argv):
                 origin.update(refined_by=rec["id"], acknowledged=True)
         if action == "EDITAR_CURRICULO":
             text = sys.stdin.read() if "--request-stdin" in argv else ""
-            if not 10 <= len(text.strip()) <= 1500:
-                return refuse("REQUEST_INVALID")
-            if APPROVAL_RE.search(text):
-                return refuse("REQUEST_LOOKS_LIKE_APPROVAL")
+            if not (local_edit and (reassess or manual)):
+                if not 10 <= len(text.strip()) <= 1500:
+                    return refuse("REQUEST_INVALID")
+                if APPROVAL_RE.search(text):
+                    return refuse("REQUEST_LOOKS_LIKE_APPROVAL")
             if any(r["action"] in ("GERAR_CURRICULO", "EDITAR_CURRICULO") and r["status"] == "RODANDO" for r in recs):
                 return refuse("CV_DOC_BUSY")
             if not cv_done(recs, job_id):
                 return refuse("CV_NOT_READY")
-            rec.update(edit_request=text.strip(), mode="host" if platform == "hermes" else "bot")
-            if review:
-                rec["chatgpt_review"] = True
+            if local_edit:
+                rec.update(renderer="local", edit_mode="manual" if manual else "reassess" if reassess else "request",
+                           mode="host", doc_sha256=cv_hash(recs, job_id))
+                if manual:
+                    try:
+                        payload = json.loads(sys.stdin.read())
+                    except ValueError:
+                        return refuse("MANUAL_INVALID")
+                    if payload.get("doc_sha256") != rec["doc_sha256"]:
+                        return refuse("CV_DOC_CHANGED")
+                    edits = payload.get("edits")
+                    if not isinstance(edits, list) or not edits:
+                        return refuse("MANUAL_INVALID")
+                    rec["edited"] = [item.get("path") for item in edits]
+                elif not reassess:
+                    rec["edit_request"] = text.strip()
+            else:
+                rec.update(edit_request=text.strip(), mode="host" if platform == "hermes" else "bot")
+                if review:
+                    rec["chatgpt_review"] = True
         if action == "ANALISAR_DESCOBERTA":
             search = next((r for r in recs if r["id"] == source_id), None)
             card = next((e for e in LEFT_OUT["excluded"] + LEFT_OUT["deferred"] if e["job_id"] == job_id), None)
@@ -449,7 +544,14 @@ def main(argv):
                     rec["status"] = "CONCLUIDO"
             elif rec["status"] == "RODANDO":
                 rec["step"] += 1
-                if rec["action"] == "ANALISAR_VAGA" and rec["job_id"] == NO_POSTING and rec["step"] >= 1:
+                if rec.get("renderer") == "local" and rec["action"] == "EDITAR_CURRICULO" and not rec.get("approved"):
+                    if rec["edit_mode"] == "manual":
+                        rec.update(step=last_step(rec["action"], rec), status="CONCLUIDO")
+                    elif rec["edit_mode"] == "reassess" and rec["job_id"] == "fake-1004":
+                        rec.update(step=last_step(rec["action"], rec), status="CONCLUIDO", code="NO_CHANGES")
+                    else:
+                        rec.update(step=1, status="PRECISA_HUMANO", code="CHANGES_PENDING")
+                elif rec["action"] == "ANALISAR_VAGA" and rec["job_id"] == NO_POSTING and rec["step"] >= 1:
                     rec.update(step=1, status="PRECISA_HUMANO", code="POSTING_UNAVAILABLE")
                 elif (rec["action"] == "GERAR_CURRICULO" and rec["job_id"] == STUCK_CV and rec.get("mode") == "host"
                       and not rec.get("resumes") and rec["step"] >= 1):
@@ -468,12 +570,57 @@ def main(argv):
         save(recs)
         shown = [r for r in recs if not r.get("deleted") and (job_id is None or r["job_id"] == job_id)
                  and (action is None or r["action"] == action)]
-        out = {"ok": True, "gateway": "running", "dispatches": [view(r, recs) for r in shown[:5]]}
+        out = {"ok": True, "gateway": "running", "cv_renderer": renderer(),
+               "dispatches": [view(r, recs) for r in shown[:5]]}
         if job_id is not None:
             ready = cv_done(recs, job_id)
             out["job"] = {"job_id": job_id, "dossier": "VALID", "actionable": True, "cv_allowed": True,
                           "cv": "VALID" if ready else "MISSING", "application_state": None}
         print(json.dumps(out))
+        return 0
+    if cmd == "cv-doc":
+        job_id = argv[1] if len(argv) > 1 else ""
+        if renderer() != "local":
+            return refuse("CV_LOCAL_ONLY")
+        if not JOB_ID_RE.match(job_id):
+            return refuse("JOB_ID_INVALID")
+        if not cv_done(recs, job_id):
+            return refuse("CV_NOT_READY")
+        doc = {"job_id": job_id, "lang": "pt", "filename": "curriculo_igor-fernandes_pt_fake.pdf",
+               "doc_sha256": cv_hash(recs, job_id), "sections": [
+                   {"id": "summary", "title": "Resumo profissional", "fields": [
+                       {"path": "summary/text", "item": None, "label": "Resumo", "text": "Resumo atual da vaga.",
+                        "kind": "paragraph", "max": 900, "locked": False},
+                       {"path": "contact/email", "item": None, "label": "E-mail", "text": "contato protegido",
+                        "kind": "field", "max": 200, "locked": True}]},
+                   {"id": "experience", "title": "Experiência", "fields": [
+                       {"path": "experience/acme/bullets/b1", "item": "acme", "label": "Atividade",
+                        "text": "Análise de dados.", "kind": "bullet", "max": 400, "locked": False}]}]}
+        print(json.dumps({"ok": True, "cv_doc": doc}))
+        return 0
+    if cmd == "apply-cv-changes":
+        rec = next((r for r in recs if r["id"] == argv[1]), None)
+        if rec is None or rec.get("code") != "CHANGES_PENDING":
+            return refuse("CHANGES_NOT_PENDING")
+        selection = flag(argv, "--approve")
+        if selection == "none":
+            approved = []
+        elif selection and re.fullmatch(r"\d{1,2}(,\d{1,2})*", selection):
+            approved = [int(part) for part in selection.split(",")]
+        else:
+            return refuse("APPROVAL_INVALID")
+        if len(set(approved)) != len(approved) or any(n not in (1, 2, 3) for n in approved):
+            return refuse("APPROVAL_INVALID")
+        if rec["doc_sha256"] != cv_hash(recs, rec["job_id"]):
+            return refuse("CV_DOC_CHANGED")
+        if 2 in approved and 1 not in approved:
+            return refuse("CHANGES_DEPEND:2")
+        if not approved:
+            rec.update(status="CONCLUIDO", code="ALL_REJECTED", step=last_step(rec["action"], rec))
+        else:
+            rec.update(status="RODANDO", code=None, step=2, approved=approved)
+        save(recs)
+        print(json.dumps({"ok": True, "dispatch": view(rec, recs)}))
         return 0
     if cmd == "resume-cv":
         origin = next((r for r in recs if r["id"] == argv[1]), None)
@@ -560,6 +707,7 @@ def main(argv):
             return 1
         # A finished "Pedir edição" leaves a new PDF (-v2, other bytes) as the registered résumé.
         edited = any(r["job_id"] == job_id and r["action"] == "EDITAR_CURRICULO" and r["status"] == "CONCLUIDO"
+                     and r.get("code") not in ("NO_CHANGES", "ALL_REJECTED")
                      for r in recs)
         body = FAKE_PDF + (b"%editado\n" if edited else b"")
         pdf = STATE.parent / "curriculos" / f"curriculo_igor-fernandes_pt_fake{'-v2' if edited else ''}.pdf"

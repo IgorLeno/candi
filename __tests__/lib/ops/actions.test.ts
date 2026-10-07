@@ -26,14 +26,18 @@ import {
   deleteJob,
   discardDispatch,
   editCv,
+  applyCvChanges,
+  getCvDoc,
   listDispatches,
   markJobClosed,
   openApplicationBrowser,
   openCvBrowser,
   recordSent,
+  reassessCv,
   refineIntake,
   registerWriteset,
   resumeCv,
+  saveCvManual,
   startDispatch,
   startIntake,
 } from "@/app/actions/ops"
@@ -67,6 +71,10 @@ describe("ops server actions", () => {
     await expect(deleteJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(resumeCv("d-20260929T120000Z-abcdef", { option: "claude" })).rejects.toThrow("UNAUTHENTICATED")
+    await expect(reassessCv("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(applyCvChanges("d-20260929T120000Z-abcdef", [1])).rejects.toThrow("UNAUTHENTICATED")
+    await expect(getCvDoc("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(saveCvManual("fake-1001", {})).rejects.toThrow("UNAUTHENTICATED")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
@@ -132,6 +140,38 @@ describe("ops server actions", () => {
     // Persistence: only the search id; never a path, a flag or a credential.
     await registerWriteset("d-20260929T120000Z-abcdef")
     expect(runDispatcher.mock.calls[3][0]).toEqual(["persist", "d-20260929T120000Z-abcdef"])
+  })
+
+  it("keeps local CV proposal text out of argv and validates approval numbers", async () => {
+    await reassessCv("fake-1001")
+    expect(runDispatcher.mock.calls[0][0]).toEqual([
+      "start",
+      "EDITAR_CURRICULO",
+      "--platform",
+      "hermes",
+      "--job-id",
+      "fake-1001",
+      "--reassess",
+    ])
+    await editCv("fake-1001", { text: "Deixe o resumo mais direto para a vaga." })
+    expect(runDispatcher.mock.calls[1][0]).toEqual([
+      "start",
+      "EDITAR_CURRICULO",
+      "--platform",
+      "hermes",
+      "--job-id",
+      "fake-1001",
+      "--request-stdin",
+    ])
+    expect(runDispatcher.mock.calls[1][3]).toEqual({ stdin: "Deixe o resumo mais direto para a vaga." })
+    const id = "d-20260929T120000Z-abcdef"
+    for (const numbers of [[1, 1], [0], [100], [1, "--platform"]]) {
+      await expect(applyCvChanges(id, numbers)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
+    await applyCvChanges(id, [1, 3])
+    expect(runDispatcher.mock.calls[2][0]).toEqual(["apply-cv-changes", id, "--approve", "1,3"])
+    await applyCvChanges(id, [])
+    expect(runDispatcher.mock.calls[3][0]).toEqual(["apply-cv-changes", id, "--approve", "none"])
   })
 
   it("pass dispatcher refusals through as codes only", async () => {

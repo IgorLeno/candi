@@ -270,7 +270,8 @@ quando outra vaga editou sem exportar). Os PDFs e `cv.json` já registrados cont
   revisão obrigatória no `local`).
 - 2026-10-07, "Editar currículo" em três modos no `local` (revisão do ChatGPT sem comentário, edição com comentário,
   edição manual; aprovação ✓/✗ item a item nos dois primeiros): desenho e decisões E1–E5 em
-  `2026-10-07-editar-curriculo-tres-modos.md`, que também cobre os itens do painel abaixo.
+  `2026-10-07-editar-curriculo-tres-modos.md`, que também cobre os itens do painel abaixo. Implementação local e
+  gates descritos em "Resultado local" nesse plano; uso real com ChatGPT continua no passo 4.
 
 ## Itens
 
@@ -291,10 +292,10 @@ job-search
 
 painel
 
-- [ ] Esconder "Abrir navegador do currículo" e o toast `CLOUDDESIGN_CDP_DOWN` quando o job-search informar o
+- [x] Esconder "Abrir navegador do currículo" e o toast `CLOUDDESIGN_CDP_DOWN` quando o job-search informar o
       renderer `local`; textos de recusa novos (`PAGE_OVERFLOW`, `PATCH_*`)
-- [ ] CLAUDE.md: fluxo do currículo sem Claude Design (e a 4ª exceção, só se P2)
-- [ ] Gates: `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm format:check`; E2E só sem o servidor real
+- [x] CLAUDE.md: fluxo do currículo sem Claude Design (e a 4ª exceção, só se P2)
+- [x] Gates: `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`, `pnpm test`, `pnpm format:check`; E2E só sem o servidor real
       na porta 3000
 
 aposentadoria (depois de D-corte)

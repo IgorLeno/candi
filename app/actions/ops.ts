@@ -5,6 +5,7 @@ import { z } from "zod"
 import { getAllowedSession } from "@/lib/auth/session"
 import { JOB_SEARCH_CACHE_TAG, getJobSearchData } from "@/lib/job-search/source"
 import { cvFileInfo } from "@/lib/ops/cv-file"
+import { normalizeManualEdits } from "@/lib/ops/cv-manual"
 import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
 import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
 import {
@@ -18,6 +19,7 @@ import {
   PLATFORMS,
   SENT_EVIDENCE,
   confirmOpenResultSchema,
+  cvDocResultSchema,
   declineResultSchema,
   deleteJobResultSchema,
   deleteResultSchema,
@@ -29,6 +31,7 @@ import {
   startInputSchema,
   type ConfirmOpenResult,
   type CvFileInfo,
+  type CvDoc,
   type DeclineResult,
   type DeleteJobResult,
   type DeleteResult,
@@ -192,6 +195,7 @@ export async function resumeCv(dispatchId: unknown, choice: unknown): Promise<Ac
 const cvEditInputSchema = z
   .object({ platform: z.enum(PLATFORMS), text: z.string().max(12_000), chatgptReview: z.boolean().optional() })
   .strict()
+const cvLocalEditInputSchema = z.object({ text: z.string().max(12_000) }).strict()
 
 /**
  * "Pedir edição": the user's own edit of this job's résumé (decision 2026-10-03, option B, no ChatGPT). The job must
@@ -202,6 +206,21 @@ const cvEditInputSchema = z
  */
 export async function editCv(jobId: unknown, input: unknown): Promise<ActionResult<Dispatch>> {
   await requireSession()
+  const local = cvLocalEditInputSchema.safeParse(input)
+  if (local.success) {
+    if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+    const request = normalizeIntake(local.data.text)
+    if (!request.ok) return { ok: false, code: request.code.replace("INTAKE_", "REQUEST_") }
+    const data = await getJobSearchData()
+    if (!data.views.some((item) => item.job.job_id === jobId)) return { ok: false, code: "JOB_NOT_FOUND" }
+    const result = await runDispatcher(
+      ["start", CV_EDIT_ACTION, "--platform", "hermes", "--job-id", jobId, "--request-stdin"],
+      oneResultSchema,
+      undefined,
+      { stdin: request.text }
+    )
+    return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+  }
   const parsed = cvEditInputSchema.safeParse(input)
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId) || !parsed.success)
     return { ok: false, code: "INPUT_INVALID" }
@@ -214,6 +233,75 @@ export async function editCv(jobId: unknown, input: unknown): Promise<ActionResu
   const args = ["start", CV_EDIT_ACTION, "--platform", parsed.data.platform, "--job-id", jobId, "--request-stdin"]
   if (review) args.push("--chatgpt-review")
   const result = await runDispatcher(args, oneResultSchema, undefined, { stdin: request.text })
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/** Second ChatGPT assessment of this job's current local résumé, without a user comment. */
+export async function reassessCv(jobId: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const data = await getJobSearchData()
+  if (!data.views.some((item) => item.job.job_id === jobId)) return { ok: false, code: "JOB_NOT_FOUND" }
+  const result = await runDispatcher(
+    ["start", CV_EDIT_ACTION, "--platform", "hermes", "--job-id", jobId, "--reassess"],
+    oneResultSchema
+  )
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/** The selected change numbers go in argv; all patch text remains in job-search's private proposal. */
+export async function applyCvChanges(dispatchId: unknown, approved: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (
+    typeof dispatchId !== "string" ||
+    !DISPATCH_ID_RE.test(dispatchId) ||
+    !Array.isArray(approved) ||
+    approved.length > 30 ||
+    approved.some((n) => !Number.isInteger(n) || n < 1 || n > 99) ||
+    new Set(approved).size !== approved.length
+  )
+    return { ok: false, code: "INPUT_INVALID" }
+  const selection = approved.length ? approved.join(",") : "none"
+  const result = await runDispatcher(["apply-cv-changes", dispatchId, "--approve", selection], oneResultSchema)
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+export async function getCvDoc(jobId: unknown): Promise<ActionResult<CvDoc>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["cv-doc", jobId], cvDocResultSchema)
+  return result.ok ? { ok: true, value: result.value.cv_doc } : { ok: false, code: result.code }
+}
+
+const manualInputSchema = z
+  .object({
+    docSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    edits: z
+      .array(z.object({ path: z.string(), text: z.string() }).strict())
+      .min(1)
+      .max(80),
+  })
+  .strict()
+
+export async function saveCvManual(jobId: unknown, input: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const parsed = manualInputSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, code: "MANUAL_INVALID" }
+  const current = await runDispatcher(["cv-doc", jobId], cvDocResultSchema)
+  if (!current.ok) return { ok: false, code: current.code }
+  const doc = current.value.cv_doc
+  if (doc.doc_sha256 !== parsed.data.docSha256) return { ok: false, code: "CV_DOC_CHANGED" }
+  const checked = normalizeManualEdits(doc, parsed.data.edits)
+  if (!checked.ok) return checked
+  const payload = JSON.stringify({ doc_sha256: doc.doc_sha256, edits: checked.edits })
+  if (new TextEncoder().encode(payload).length > 24 * 1024) return { ok: false, code: "MANUAL_INVALID" }
+  const result = await runDispatcher(
+    ["start", CV_EDIT_ACTION, "--platform", "hermes", "--job-id", jobId, "--manual-stdin"],
+    oneResultSchema,
+    undefined,
+    { stdin: payload }
+  )
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }
 

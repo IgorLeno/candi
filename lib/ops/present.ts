@@ -175,6 +175,21 @@ const REFUSAL_TEXT: Record<string, string> = {
   CV_DOC_AT_OTHER_JOB:
     "O currículo de trabalho no Claude Design está com o currículo de outra vaga. Gere de novo o desta vaga e depois peça a edição.",
   CV_DOC_BUSY: "Outro currículo está sendo gerado ou editado no Claude Design: espere terminar.",
+  CV_LOCAL_ONLY: "Esta ação só está disponível com o renderer local do currículo.",
+  CV_LOCAL_HERMES_ONLY: "O currículo no template local roda pelo Hermes.",
+  CV_JOB_BUSY: "O currículo desta vaga já está sendo gerado ou editado: espere terminar.",
+  CV_DOC_MISSING: "Este currículo ainda não tem documento editável local. Gere de novo com o renderer local.",
+  CV_DOC_INVALID: "O documento editável da vaga está inválido. Gere o currículo de novo.",
+  CV_DOC_CHANGED: "O currículo mudou desde que esta edição foi aberta. Peça uma proposta nova.",
+  CV_BASE_MISSING: "A base local do currículo não foi encontrada no job-search.",
+  CV_RENDERER_INVALID: "A chave do renderer de currículo está inválida no job-search.",
+  CHROME_NOT_QUALIFIED: "A versão atual do Chrome não foi qualificada para manter o layout do currículo.",
+  CHROME_MISSING: "O Chrome necessário ao template local não foi encontrado.",
+  CHANGES_NOT_PENDING: "Esta proposta já foi aplicada ou não espera mais aprovação. Atualize o card.",
+  APPROVAL_INVALID: "A seleção contém número fora da proposta ou repetido. Atualize o card.",
+  EDIT_MODE_INVALID: "Escolha exatamente um modo de edição do currículo.",
+  MANUAL_INVALID: "A edição manual não está no formato esperado. Reabra o formulário.",
+  MANUAL_NO_CHANGES: "Nenhum campo foi alterado.",
   // "Pedir edição" com a revisão do pedido no ChatGPT (dispatch.py start EDITAR_CURRICULO --chatgpt-review).
   CHATGPT_REVIEW_HERMES_ONLY:
     "A revisão do pedido no ChatGPT só roda pelo Hermes: troque para Hermes ou desligue a revisão.",
@@ -218,6 +233,14 @@ export function leftOutBlocker(job: LeftOutJob, analysis: Dispatch | null): stri
 }
 
 export function refusalText(code: string): string {
+  if (code.startsWith("CHANGES_DEPEND:"))
+    return `Uma mudança aprovada depende de outra rejeitada (${code.split(":")[1]}).`
+  if (code.startsWith("MANUAL_PATH_LOCKED:")) return "Este campo do currículo é travado e não pode ser alterado."
+  if (code.startsWith("MANUAL_PATH_MISSING:")) return "Um campo não existe mais no currículo. Reabra o editor."
+  if (code.startsWith("MANUAL_TEXT_")) return "Há texto inválido na edição manual. Revise o campo indicado."
+  if (code.startsWith("PAGE_OVERFLOW:")) return "O currículo passou de uma página. Encurte o texto e tente de novo."
+  if (code.startsWith("PATCH_") || code.startsWith("CHANGES_"))
+    return "A proposta não passou na validação do job-search. Peça uma nova avaliação."
   return REFUSAL_TEXT[code] ?? `Disparo recusado (${code}).`
 }
 
@@ -277,7 +300,16 @@ export const CV_EDIT_REVIEW_DESCRIPTION =
   "O ChatGPT lê seu pedido antes: transforma em mudanças conferidas contra os seus fatos (knowledge/) e o currículo atual, e põe em dúvida o que não tiver lastro. Sem dúvida, o Claude in Chrome aplica e exporta um PDF novo (-v2, -v3...) sem apagar o anterior; com dúvida, para e mostra aqui, sem mexer no currículo."
 
 /** Why a "Pedir edição" stopped in PRECISA_HUMANO (job-search's code; the ChatGPT ones only with the review on). */
-export function cvEditStopText(code: string | null | undefined): string {
+export function cvEditStopText(code: string | null | undefined, renderer?: "claude_design" | "local"): string {
+  if (renderer === "local") {
+    if (code === "CHANGES_PENDING") return "Revise e aprove ou rejeite cada mudança abaixo."
+    if (code?.startsWith("PAGE_OVERFLOW:"))
+      return `o currículo não coube em uma página; faltam cerca de ${code.split(":")[1]} linha(s).`
+    if (code === "CV_DOC_CHANGED") return "o currículo mudou após esta proposta. Peça uma avaliação nova."
+    if (code === "HUMAN_REVIEW_DOUBTS") return "o ChatGPT deixou dúvidas; confira o card e peça de novo."
+    if (code === "FORMAT_INVALID") return "o patch não passou na validação; peça uma avaliação nova."
+    return "a edição local parou antes de registrar um PDF novo. Confira o código e tente de novo."
+  }
   if (code === "HUMAN_REVIEW_DOUBTS")
     return "o ChatGPT deixou dúvidas sobre o pedido (acima) e nada foi ao Claude: reescreva o pedido e peça de novo."
   if (code === "FORMAT_INVALID")
@@ -285,6 +317,16 @@ export function cvEditStopText(code: string | null | undefined): string {
   if (code === "HUMAN_AUTH_REQUIRED")
     return "o ChatGPT pediu login no Chrome do ChatGPT: entre na conta e peça a edição de novo."
   return "o Claude parou sem PDF novo: veja a resposta no painel do Claude e peça a edição de novo, se quiser."
+}
+
+export function canApplyChanges(dispatch: Dispatch): boolean {
+  return (
+    dispatch.action === "EDITAR_CURRICULO" &&
+    dispatch.renderer === "local" &&
+    dispatch.status === "PRECISA_HUMANO" &&
+    dispatch.code === "CHANGES_PENDING" &&
+    !!dispatch.progress.proposal
+  )
 }
 
 /**

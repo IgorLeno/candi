@@ -218,22 +218,28 @@ como `retried_by`).
 
 job-search (commits pequenos, com testes)
 
-- [ ] `cv_patch`: `SEM MUDANÇAS` (zero CHANGE válido só com a linha), `requires` por CHANGE, check de subconjunto
-- [ ] `cv_edit`: `propose_local` (modos 1 e 2 param em `CHANGES_PENDING` com `proposta.json`), `REASSESS_PROMPT`,
+- [x] `cv_patch`: `SEM MUDANÇAS` (zero CHANGE válido só com a linha), `requires` por CHANGE, check de subconjunto
+- [x] `cv_edit`: `propose_local` (modos 1 e 2 param em `CHANGES_PENDING` com `proposta.json`), `REASSESS_PROMPT`,
       `apply_approved`, `manual_local`; marcas `CHATGPT/USER_APPROVED` e `USER/MANUAL` em `cv_export` + `verify`
-- [ ] `dispatch.py`: `--reassess`, `--manual-stdin`, `apply-cv-changes`, `cv-doc`, filho `_cvapply`, `progress`
+- [x] `dispatch.py`: `--reassess`, `--manual-stdin`, `apply-cv-changes`, `cv-doc`, filho `_cvapply`, `progress`
       (`proposal`, `fit`, `edit_mode`, etapas por modo), `superseded_by`, `CV_LOCAL_ONLY`; docstring
-- [ ] Testes: `test_cv_patch`, `test_cv_edit`, `test_dispatch` (estados, recusas, dependência, doc mudou, stdin)
-- [ ] Docs: `methodology/resume-handoff.md` (marcas, proposta, manual), `resume-tailoring.md`
+- [x] Testes: `test_cv_patch`, `test_cv_edit`, `test_dispatch` (estados, recusas, dependência, doc mudou, stdin)
+- [x] Docs: `methodology/resume-handoff.md` (marcas, proposta, manual), `resume-tailoring.md`
 
 painel
 
-- [ ] `schema.ts` (`cv_renderer`, `renderer`, `proposal`, `fit`, `cvDocSchema`) + testes
-- [ ] `app/actions/ops.ts` (`reassessCv`, `applyCvChanges`, `getCvDoc`, `saveCvManual`, `editCv` local) +
+- [x] `schema.ts` (`cv_renderer`, `renderer`, `proposal`, `fit`, `cvDocSchema`) + testes
+- [x] `app/actions/ops.ts` (`reassessCv`, `applyCvChanges`, `getCvDoc`, `saveCvManual`, `editCv` local) +
       `lib/ops/cv-manual.ts` com testes
-- [ ] `present.ts`: textos de recusa, `cvEditStopText` local, `canApplyChanges()` (UX)
-- [ ] `ops.tsx`: abas do "Editar currículo", card de aprovação, formulário manual, esconder Claude Design e plataforma
+- [x] `present.ts`: textos de recusa, `cvEditStopText` local, `canApplyChanges()` (UX)
+- [x] `ops.tsx`: abas do "Editar currículo", card de aprovação, formulário manual, esconder Claude Design e plataforma
       no local, faixa `INVALID`
-- [ ] Fake do E2E (`e2e/fixtures/job-search-fake`): lê `$STATE/cv-renderer`, os comandos novos; `e2e/ops.spec.ts`
-- [ ] CLAUDE.md do painel; plano `2026-10-07-curriculo-sem-claude-design.md` (Andamento/Itens)
-- [ ] Gates: `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm test`, `pnpm format:check`; E2E só sem servidor real na 3000
+- [x] Fake do E2E (`e2e/fixtures/job-search-fake`): lê `$STATE/cv-renderer`, os comandos novos; `e2e/ops.spec.ts`
+- [x] CLAUDE.md do painel; plano `2026-10-07-curriculo-sem-claude-design.md` (Andamento/Itens)
+- [x] Gates: `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`, `pnpm test`, `pnpm format:check`; E2E só sem servidor real na 3000
+
+## Resultado local (2026-10-07)
+
+- job-search: `test_dispatch test_cv_edit test_cv_pipeline` 167/167; suíte `scripts` 634/634 com Chrome headless. O teste de falha em `cv_export.record` confirmou restauração de `cv-doc.json`, handoff e `cv.json`; proposta antiga é recusada antes do render.
+- painel: TypeScript e Prettier passaram; lint sem erros (dois avisos anteriores em `app/layout.tsx`); Vitest 234/234. Playwright no Chromium com dispatcher fake: três cenários novos dos modos locais (incluindo `NO_CHANGES` e chave inválida) e dois cenários legados passaram.
+- Pendência fora deste recorte: uso real com ChatGPT e revisão humana dos PDFs do passo 4 do plano de migração. Nenhuma vaga real, bot ou planilha foi acionada nesta validação.

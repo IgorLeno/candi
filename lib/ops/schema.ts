@@ -33,6 +33,8 @@ export const LEFT_OUT_ACTION = "ANALISAR_DESCOBERTA"
  * (`editCv`), stored as a private file; Hermes runs it on the host, Grok gets a fixed command for the CV Operator.
  */
 export const CV_EDIT_ACTION = "EDITAR_CURRICULO"
+export const CV_RENDERERS = ["claude_design", "local", "INVALID"] as const
+export type CvRenderer = (typeof CV_RENDERERS)[number]
 
 /**
  * Every record kind in the dispatcher's list. REGISTRAR_WRITESET is not a bot: it is `dispatch.py persist`,
@@ -171,6 +173,69 @@ const leftOutJobSchema = z.object({
 })
 export type LeftOutJob = z.infer<typeof leftOutJobSchema>
 
+const cvChangeSchema = z.object({
+  n: z.number().int().min(1).max(99),
+  op: z.enum(["REPLACE", "INSERT_AFTER", "INSERT_BEFORE", "DUPLICATE", "REMOVE", "MOVE_AFTER"]),
+  path: z.string().max(200),
+  section: z.string().max(900),
+  before: z.string().max(900).nullable(),
+  after: z.string().max(900).nullable(),
+  reason: z.string().max(900),
+  evidence_source: z.string().max(900).optional(),
+  mandatory: z.boolean().optional(),
+  requires: z.array(z.number().int().min(1).max(99)).max(30),
+})
+export type CvChange = z.infer<typeof cvChangeSchema>
+
+export const cvProposalSchema = z
+  .object({
+    schema: z.literal("cv-proposal/1"),
+    job_id: z.string().regex(JOB_ID_RE),
+    mode: z.enum(["reassess", "request"]),
+    doc_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    free_px: z.number(),
+    changes: z.array(cvChangeSchema).max(30),
+    cuts: z.array(cvChangeSchema).max(30),
+  })
+  .refine((proposal) => proposal.changes.length + proposal.cuts.length <= 30)
+export type CvProposal = z.infer<typeof cvProposalSchema>
+
+const cvFitSchema = z.object({
+  free_px: z.number(),
+  cuts: z.array(z.number().int()).max(30),
+  omitted: z.array(z.number().int()).max(30),
+})
+
+export const cvDocSchema = z.object({
+  job_id: z.string().regex(JOB_ID_RE),
+  lang: z.enum(["pt", "en"]),
+  filename: z.string().max(200),
+  doc_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  sections: z
+    .array(
+      z.object({
+        id: z.string().max(100),
+        title: z.string().max(200),
+        fields: z
+          .array(
+            z.object({
+              path: z.string().max(200),
+              item: z.string().max(900).nullable(),
+              label: z.string().max(200),
+              text: z.string().max(900),
+              kind: z.enum(["paragraph", "bullet", "field"]),
+              max: z.number().int().positive().max(900),
+              locked: z.boolean(),
+            })
+          )
+          .max(100),
+      })
+    )
+    .max(20),
+})
+export type CvDoc = z.infer<typeof cvDocSchema>
+export const cvDocResultSchema = z.object({ ok: z.literal(true), cv_doc: cvDocSchema })
+
 const progressSchema = z.object({
   percent: z.number().min(0).max(100),
   stages: z.array(stageSchema),
@@ -217,6 +282,10 @@ const progressSchema = z.object({
   /** "Pedir edição" with the ChatGPT review (2026-10-05) and, stopped on them, the ChatGPT's doubts (plain text). */
   chatgpt_review: z.boolean().optional(),
   edit_doubts: z.array(z.string().max(300)).max(5).optional(),
+  edit_mode: z.enum(["reassess", "request", "manual"]).optional(),
+  proposal: cvProposalSchema.nullable().optional(),
+  fit: cvFitSchema.nullable().optional(),
+  edited: z.array(z.string().max(200)).max(80).nullable().optional(),
   /** "Gerar currículo" stuck in PRECISA_HUMANO (host): reason and resume options. */
   recovery: cvRecoverySchema.nullable().optional(),
 })
@@ -233,6 +302,8 @@ export const dispatchSchema = z.object({
   bot: z.string(),
   /** `host` = job-search pipeline on this machine (no gateway); `bot` = Hermes Bot Chat (legacy/fallback). */
   mode: z.enum(["host", "bot"]).optional(),
+  renderer: z.enum(["claude_design", "local"]).optional(),
+  edit_mode: z.enum(["reassess", "request", "manual"]).optional(),
   active: z.boolean(),
   acknowledged: z.boolean(),
   created_at: z.string(),
@@ -273,6 +344,7 @@ export type JobArtifacts = z.infer<typeof jobArtifactsSchema>
 export const listResultSchema = z.object({
   ok: z.literal(true),
   gateway: z.string(),
+  cv_renderer: z.enum(CV_RENDERERS).optional(),
   dispatches: z.array(dispatchSchema),
   job: jobArtifactsSchema.optional(),
 })

@@ -16,4 +16,5 @@ export const E2E_OPS_ENV = {
 
 export function resetFakeDispatches() {
   rmSync(path.join(E2E_FAKE_DISPATCH_STATE, "fake-dispatch.json"), { force: true })
+  rmSync(path.join(E2E_FAKE_DISPATCH_STATE, "cv-renderer"), { force: true })
 }
