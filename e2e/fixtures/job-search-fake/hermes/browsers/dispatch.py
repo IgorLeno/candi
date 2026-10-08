@@ -109,10 +109,11 @@ STAGES = {
                     ("cv", "Currículo registrado (cv.pdf + cv.json)")],
     "PREENCHER_CANDIDATURA": [("claim", "Claim e preflight"), ("preenchimento", "Preenchimento do formulário"),
                               ("revisao", "Revisão e gate"), ("aprovacao", "Aguardando sua aprovação")],
-    # Host path (Claude in Chrome), only for HOST_APPLY: the dispatch ends asking the user to paste the prompt.
+    # Host path (Claude in Chrome, 2026-10-08), only for HOST_APPLY: Claude fills, the panel gets pending items.
     "PREENCHER_HOST": [("preflight", "Preflight (dossier e estado)"), ("cv", "Currículo (gera se faltar)"),
                        ("open", "Página da vaga aberta (Chrome application)"),
-                       ("paste", "Cole o prompt no Claude in Chrome")],
+                       ("claude", "Claude in Chrome preenche (documentos e currículo pelo host)"),
+                       ("review", "Revise na página e clique em enviar (você)")],
     "LOCALIZAR_VAGA": [("localizar", "Localizar a vaga (Lince)"), ("prefilter", "Análise preliminar (prefilter)")],
     "ANALISAR_INDICADA": [("posting", "Texto da vaga e planilha (só leitura)"),
                           ("analise", "Análise no ChatGPT (host)"), ("writeset", "Writeset pronto"),
@@ -137,9 +138,22 @@ STAGES = {
 REGISTER = "REGISTRAR_WRITESET"
 # What the ChatGPT doubts in a reviewed "Pedir edição" whose request mentions "sem lastro" (plain text).
 REVIEW_DOUBTS = ["O pedido cita Python na Acme, mas as evidências não mostram Python nesse trabalho."]
-# "Preencher vaga" of this job on Hermes follows the host path (the others keep the Candidatinho stages): it ends in
-# PRECISA_HUMANO/PASTE_PROMPT_IN_CLAUDE, and a "Pedir edição" finished afterwards makes the prompt stale.
+# "Preencher vaga" of this job on Hermes follows the host path (the others keep the Candidatinho stages): Claude
+# fills, the host types the CPF it has and attaches the résumé, and the run stops in PRECISA_HUMANO/FILL_PENDING with
+# these items; once all are answered the next round ends in PRECISA_HUMANO/READY_TO_SUBMIT.
 HOST_APPLY = "fake-1007"
+FILL_ITEMS = [
+    {"n": 1, "campo": "RG", "tipo": "DOCUMENTO", "opcoes": [], "documento": "RG",
+     "detalhe": "Digite o RG. Ele fica guardado só neste computador e o sistema preenche na página; não vai para o Claude."},
+    {"n": 2, "campo": "Disponibilidade para início", "tipo": "TEXTO", "opcoes": [], "documento": None,
+     "detalhe": "A página pergunta quando você pode começar."},
+    {"n": 3, "campo": "Como soube da vaga", "tipo": "ESCOLHA", "opcoes": ["LinkedIn", "Site da empresa"],
+     "documento": None, "detalhe": ""},
+    {"n": 4, "campo": "Página da vaga", "tipo": "ACAO", "opcoes": [], "documento": None,
+     "detalhe": "Faça login na Gupy e clique em Feito."},
+]
+FILL_HOST = [{"campo": "CPF", "resultado": "FILLED"}, {"campo": "Adicionar currículo", "resultado": "ATTACHED"}]
+DONE_STATUS = {"DOCUMENTO": "GUARDADA", "ACAO": "FEITA", "TEXTO": "RESPONDIDA", "ESCOLHA": "RESPONDIDA"}
 # fake-9001 is not in the fixture Sheet: the registration stage stays open until the panel persists it.
 WRITESET_JOB_IDS = {"BUSCAR_VAGAS": ["fake-1001", "fake-9001"], "ANALISAR_INDICADA": ["fake-9002"]}
 LOCATED = {"found": True, "reason": None, "already_in_registry": False, "posting": True,
@@ -347,15 +361,19 @@ def view(rec, recs=()):
             if rec.get("code") == "HUMAN_REVIEW_DOUBTS":
                 out_stages[1]["note"] = rec["code"]
                 progress["edit_doubts"] = REVIEW_DOUBTS
-    if rec.get("host_apply") and rec["status"] == "PRECISA_HUMANO":
-        out_stages[-1].update(state="active", note="ação sua: abrir o painel do Claude na aba e colar")
-        # Newest first: the records before this one were started after it.
-        newer = list(recs)[: list(recs).index(rec)] if rec in recs else []
-        stale = any(r["job_id"] == rec["job_id"] and r["action"] == "EDITAR_CURRICULO" and r["status"] == "CONCLUIDO"
-                    for r in newer)
-        progress.update(stage="paste", claude_url="https://exemplo.com/candidatura/1007", prompt_stale=stale,
-                        claude_prompt="Você vai preencher a candidatura da vaga abaixo nesta aba do navegador.\n"
-                                      "CURRÍCULO: anexe exatamente o arquivo /fake/curriculo_igor-fernandes_pt_fake.pdf")
+    if rec.get("host_apply"):
+        waiting = rec["status"] == "PRECISA_HUMANO" and rec.get("code") == "FILL_PENDING"
+        review = rec.get("code") == "READY_TO_SUBMIT"
+        if waiting:
+            out_stages[3].update(state="active", note=f"{len([i for i in rec['fill'] if i['status'] == 'PENDENTE'])} "
+                                                       "pendência(s) para você")
+        if review:
+            out_stages[3]["state"] = "done"
+            out_stages[4].update(state="active", note="ação sua: revisar e enviar")
+        progress.update(stage="review" if review else "pending" if waiting else "claude", claude_prompt=None,
+                        fill={"state": "READY" if review else "WAITING_USER" if waiting else "SENDING",
+                              "rodada": 2 if review else 1, "code": None, "items": rec.get("fill") or [],
+                              "host": FILL_HOST if rec.get("fill") else []} if rec.get("fill") is not None else None)
     if rec["action"] == "GERAR_CURRICULO":
         if rec.get("renderer") == "local":
             out["renderer"] = "local"
@@ -588,9 +606,11 @@ def main(argv):
                 elif rec.get("chatgpt_review") and "sem lastro" in rec["edit_request"] and rec["step"] >= 1:
                     rec.update(step=1, status="PRECISA_HUMANO", code="HUMAN_REVIEW_DOUBTS")
                 elif rec["step"] >= last_step(rec["action"], rec):
-                    if rec.get("host_apply"):
-                        rec.update(step=last_step(rec["action"]) - 1, status="PRECISA_HUMANO",
-                                   code="PASTE_PROMPT_IN_CLAUDE")
+                    if rec.get("host_apply") and rec.get("fill"):
+                        rec.update(step=4, status="PRECISA_HUMANO", code="READY_TO_SUBMIT")
+                    elif rec.get("host_apply"):
+                        rec.update(step=3, status="PRECISA_HUMANO", code="FILL_PENDING",
+                                   fill=[dict(item, status="PENDENTE") for item in FILL_ITEMS])
                     elif rec["action"] == "LOCALIZAR_VAGA" and not rec["found"]:
                         rec.update(status="PRECISA_HUMANO", code="NEEDS_CONTEXT")
                     else:
@@ -682,6 +702,30 @@ def main(argv):
                "note": note, "resume_answers": chosen or None}
         origin.update(retried_by=rec["id"], acknowledged=True)
         recs.insert(0, rec)
+        save(recs)
+        print(json.dumps({"ok": True, "dispatch": view(rec, recs)}))
+        return 0
+    if cmd == "answer":
+        # Like job-search: the item number in argv, the answer over stdin; a document is checked and never kept here.
+        rec = next((r for r in recs if r["id"] == argv[1]), None)
+        n = int(flag(argv, "--item"))
+        value = sys.stdin.read().strip() if "--value-stdin" in argv else None
+        if rec is None or not rec.get("host_apply") or rec["status"] != "PRECISA_HUMANO" or rec.get("code") != "FILL_PENDING":
+            return refuse("NOT_WAITING")
+        item = next((i for i in rec["fill"] if i["n"] == n), None)
+        if item is None:
+            return refuse("ITEM_UNKNOWN")
+        if item["status"] != "PENDENTE":
+            return refuse("ITEM_DONE")
+        if item["tipo"] == "DOCUMENTO" and not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.\- ]{3,19}", value or ""):
+            return refuse("DOCUMENT_INVALID")
+        if item["tipo"] == "ESCOLHA" and value not in item["opcoes"]:
+            return refuse("OPTION_INVALID")
+        if item["tipo"] in ("TEXTO", "ESCOLHA") and not value:
+            return refuse("ANSWER_INVALID")
+        item["status"] = DONE_STATUS[item["tipo"]]
+        if all(i["status"] != "PENDENTE" for i in rec["fill"]):
+            rec.update(status="RODANDO", step=3, code=None)
         save(recs)
         print(json.dumps({"ok": True, "dispatch": view(rec, recs)}))
         return 0

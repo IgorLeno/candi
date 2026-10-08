@@ -823,6 +823,49 @@ test.describe("Central de operações (bots)", () => {
     )
   })
 
+  test("preencher vaga: o Claude preenche e o painel pede só o que falta, uma pendência por vez", async ({ page }) => {
+    test.setTimeout(120_000)
+    await page.goto("/vaga/fake-1007")
+    await page.getByTestId("job-detail").getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
+    await page.getByTestId("dispatch-dialog").getByTestId("platform-hermes").click()
+    await page.getByTestId("dispatch-confirm").click()
+    const card = page.getByTestId("job-detail").getByTestId("dispatch-PREENCHER_CANDIDATURA")
+    await expect(card).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    const fill = card.getByTestId("fill-pending")
+    await expect(fill).toContainText("Faltam 4 informações")
+    await expect(fill.getByTestId("fill-host")).toHaveText([
+      "CPF preenchido pelo sistema (não passa pelo Claude)",
+      "Currículo anexado pelo sistema (Adicionar currículo)",
+    ])
+    await expect(card.locator('[data-stage="claude"]')).toHaveAttribute("data-state", "active")
+    await expect(card.getByText("Cole o prompt", { exact: false })).toHaveCount(0)
+
+    // Documento: job-search recusa o formato; o válido vira ✓ "guardado só neste computador".
+    await fill.getByTestId("fill-item-1-input").fill("x")
+    await fill.getByTestId("fill-item-1-send").click()
+    await expect(page.getByText("Número inválido. Confira e digite de novo (CPF com os 11 dígitos).")).toBeVisible()
+    await fill.getByTestId("fill-item-1-input").fill("MG-12.345.678")
+    await fill.getByTestId("fill-item-1-send").click()
+    await expect(fill.getByTestId("fill-item-1")).toHaveAttribute("data-status", "GUARDADA")
+    await expect(fill.getByTestId("fill-item-1")).toContainText("guardado só neste computador")
+
+    await expect(fill.getByTestId("fill-item-2-send")).toBeDisabled()
+    await fill.getByTestId("fill-item-2-input").fill("Imediata")
+    await fill.getByTestId("fill-item-2-input").press("Enter")
+    await expect(fill.getByTestId("fill-item-2")).toHaveAttribute("data-status", "RESPONDIDA")
+    await fill.getByTestId("fill-item-3-select").selectOption("LinkedIn")
+    await fill.getByTestId("fill-item-3-send").click()
+    await expect(fill.getByTestId("fill-item-3")).toHaveAttribute("data-status", "RESPONDIDA")
+    await expect(fill.getByTestId("fill-item-4-send")).toHaveText("Feito")
+    await fill.getByTestId("fill-item-4-send").click()
+
+    // Sem pendência aberta, a próxima rodada termina pronta para a revisão (o envio é seu).
+    await expect(card).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    await expect(card.locator('[data-stage="review"]')).toHaveAttribute("data-state", "active", { timeout: 30_000 })
+    await expect(card).toContainText("clique você mesmo no envio final")
+    await expect(fill.getByTestId("fill-item-4")).toHaveAttribute("data-status", "FEITA")
+  })
+
   test("nenhum estado da vaga desativa currículo e candidatura; sem análise o job-search explica", async ({ page }) => {
     // ENVIO INCERTO, ENVIADA, NÃO CONFIRMADA and ENCERRADA + NÃO PRIORIZADA: the user chooses (decision 2026-10-02).
     for (const id of ["fake-1007", "fake-1006", "fake-1008", "fake-1010"]) {

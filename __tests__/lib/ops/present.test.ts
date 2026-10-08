@@ -4,6 +4,9 @@ import {
   applicationCvWarning,
   canApplyChanges,
   applicationStopText,
+  answerFillRefusalText,
+  fillHostText,
+  fillItemDoneText,
   cvEditStopText,
   canConfirmOpen,
   canDeclineJob,
@@ -144,6 +147,15 @@ describe("applicationStopText", () => {
       expect(applicationStopText(code)).toMatch(/Gerar currículo/)
     }
     expect(applicationStopText("APPLICATION_CDP_DOWN")).toMatch(/abra o navegador da candidatura/)
+  })
+
+  it("explains the pending items and the final review of the Claude fill", () => {
+    expect(applicationStopText("FILL_PENDING")).toMatch(/pendências abaixo/)
+    expect(applicationStopText("READY_TO_SUBMIT")).toMatch(/clique você mesmo no envio final/)
+    expect(answerFillRefusalText("DOCUMENT_INVALID")).toMatch(/Número inválido/)
+    expect(fillItemDoneText("GUARDADA")).toMatch(/só neste computador/)
+    expect(fillHostText("CPF", "FILLED")).toMatch(/não passa pelo Claude/)
+    expect(fillHostText("Currículo", "ATTACHED")).toMatch(/Currículo anexado/)
   })
 })
 

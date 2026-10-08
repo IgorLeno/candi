@@ -32,6 +32,7 @@ import {
   analyzeIntake,
   analyzeJob,
   analyzeLeftOut,
+  answerFill,
   applyCvChanges,
   deleteDispatch,
   editCv,
@@ -71,6 +72,9 @@ import { useClosed, useCollapsed, writeClosed, writeCollapsed } from "@/lib/ops/
 import { ATTENTION_REFRESH_EVENT } from "@/lib/ops/attention"
 import {
   applicationStopText,
+  answerFillRefusalText,
+  fillHostText,
+  fillItemDoneText,
   ACTION_META,
   CV_EDIT_REVIEW_DESCRIPTION,
   cvEditStopText,
@@ -115,6 +119,7 @@ import {
   type DispatchList,
   type DispatchProgress,
   type DispatchStage,
+  type FillItem,
   type OpenBrowserResult,
 } from "@/lib/ops/schema"
 import { cn } from "@/lib/utils"
@@ -825,6 +830,137 @@ function CvResume({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () =
 }
 
 /** "Mandar para o ChatGPT" (located intake) and "Descartar" (panel only), each behind a confirmation. */
+/**
+ * "Preencher vaga" (2026-10-08): one field per piece of information job-search still needs. Each "Enviar" (or "Feito"
+ * for something done in the page) turns into a check; with nothing open, job-search starts the next Claude round.
+ * A document (CPF/RG) is kept only in job-search's private store and typed into the page by the host.
+ */
+function FillPending({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () => void }) {
+  const fill = dispatch.progress.fill
+  if (!fill || (fill.items.length === 0 && fill.host.length === 0)) return null
+  const waiting = dispatch.status === "PRECISA_HUMANO" && dispatch.code === "FILL_PENDING"
+  const open = fill.items.filter((item) => item.status === "PENDENTE").length
+  return (
+    <div className="space-y-2 rounded-lg border border-border p-3 text-sm" data-testid="fill-pending">
+      <p className="text-xs font-semibold text-foreground">
+        {waiting && open > 0
+          ? `Falta${open > 1 ? "m" : ""} ${open} informaç${open > 1 ? "ões" : "ão"}: responda uma de cada vez.`
+          : dispatch.status === "RODANDO"
+            ? "Respostas recebidas: o Claude está continuando o preenchimento."
+            : "Pendências desta candidatura"}
+      </p>
+      <ul className="space-y-2">
+        {fill.host.map((done, index) => (
+          <li key={`host-${index}`} className="flex items-start gap-2 text-xs" data-testid="fill-host">
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden="true" />
+            <span>{fillHostText(done.campo, done.resultado)}</span>
+          </li>
+        ))}
+        {fill.items.map((item) => (
+          <FillItemRow key={item.n} dispatch={dispatch} item={item} enabled={waiting} onChanged={onChanged} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function FillItemRow({
+  dispatch,
+  item,
+  enabled,
+  onChanged,
+}: {
+  dispatch: Dispatch
+  item: FillItem
+  enabled: boolean
+  onChanged: () => void
+}) {
+  const [value, setValue] = useState("")
+  const [pending, startTransition] = useTransition()
+  const testId = `fill-item-${item.n}`
+  if (item.status !== "PENDENTE") {
+    return (
+      <li className="flex items-start gap-2 text-xs" data-testid={testId} data-status={item.status}>
+        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden="true" />
+        <span>
+          <span className="font-medium text-foreground">{item.campo}</span> — {fillItemDoneText(item.status)}
+        </span>
+      </li>
+    )
+  }
+  const action = item.tipo === "ACAO"
+  const ready = action || value.trim().length > 0
+  const send = () =>
+    startTransition(async () => {
+      try {
+        const result = await answerFill(dispatch.id, action ? { item: item.n } : { item: item.n, value })
+        if (!result.ok) {
+          toast.error(answerFillRefusalText(result.code))
+          return
+        }
+        setValue("")
+        onChanged()
+      } catch {
+        toast.error(refusalText("UNAUTHENTICATED"))
+      }
+    })
+  return (
+    <li className="space-y-1.5 rounded-md border border-border/70 p-2" data-testid={testId} data-status={item.status}>
+      <div className="flex items-start gap-2 text-xs">
+        <Circle className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <div className="space-y-0.5">
+          <p className="font-medium text-foreground">{item.campo}</p>
+          {item.detalhe && <p className="text-muted-foreground">{item.detalhe}</p>}
+        </div>
+      </div>
+      <form
+        className="flex flex-wrap items-center gap-2 pl-6"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (ready && enabled && !pending) send()
+        }}
+      >
+        {item.tipo === "ESCOLHA" ? (
+          <select
+            className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            disabled={!enabled || pending}
+            aria-label={item.campo}
+            data-testid={`${testId}-select`}
+          >
+            <option value="">Escolha…</option>
+            {item.opcoes.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        ) : (
+          !action && (
+            <input
+              className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              disabled={!enabled || pending}
+              aria-label={item.campo}
+              autoComplete="off"
+              spellCheck={false}
+              inputMode={item.tipo === "DOCUMENTO" && item.documento === "CPF" ? "numeric" : undefined}
+              maxLength={1000}
+              data-testid={`${testId}-input`}
+            />
+          )
+        )}
+        <Button type="submit" size="sm" disabled={!enabled || !ready || pending} data-testid={`${testId}-send`}>
+          {pending && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+          {action ? "Feito" : "Enviar"}
+        </Button>
+      </form>
+    </li>
+  )
+}
+
 function IntakeDecisions({
   dispatch,
   analysis,
@@ -1447,6 +1583,7 @@ export function DispatchCard({
                 : " — o acompanhamento caiu; confira o Bot Chat no Hermes Desktop antes de liberar um novo disparo.")}
           </p>
         )}
+        {dispatch.action === "PREENCHER_CANDIDATURA" && <FillPending dispatch={dispatch} onChanged={onChanged} />}
         {dispatch.command && <CommandBox command={dispatch.command} />}
         {progress.claude_prompt && (
           <ClaudePromptBox

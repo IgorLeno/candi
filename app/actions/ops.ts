@@ -233,6 +233,40 @@ export async function resumeCv(dispatchId: unknown, choice: unknown): Promise<Ac
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }
 
+// One pending item of "Preencher vaga": its number and, except for a page action ("Feito"), the user's answer.
+const FILL_ANSWER_MAX = 1000
+const fillAnswerSchema = z
+  .object({
+    item: z.number().int().min(1).max(999),
+    value: z
+      .string()
+      .max(FILL_ANSWER_MAX * 4)
+      .optional(),
+  })
+  .strict()
+
+/**
+ * "Enviar"/"Feito" on a pending item of "Preencher vaga" (2026-10-08). The answer goes over stdin, never argv;
+ * job-search re-validates it, keeps a document (CPF/RG) only in its private store (it never reaches Claude) and,
+ * when nothing is left open, starts the next Claude round.
+ */
+export async function answerFill(dispatchId: unknown, input: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  const parsed = fillAnswerSchema.safeParse(input)
+  if (typeof dispatchId !== "string" || !DISPATCH_ID_RE.test(dispatchId) || !parsed.success) {
+    return { ok: false, code: "INPUT_INVALID" }
+  }
+  const args = ["answer", dispatchId, "--item", String(parsed.data.item)]
+  if (parsed.data.value === undefined) {
+    const result = await runDispatcher(args, oneResultSchema)
+    return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+  }
+  const value = parsed.data.value.trim()
+  if (value.length === 0 || value.length > FILL_ANSWER_MAX) return { ok: false, code: "ANSWER_INVALID" }
+  const result = await runDispatcher([...args, "--value-stdin"], oneResultSchema, undefined, { stdin: value })
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
 const cvEditInputSchema = z
   .object({ platform: z.enum(PLATFORMS), text: z.string().max(12_000), chatgptReview: z.boolean().optional() })
   .strict()

@@ -241,6 +241,31 @@ export const cvDocSchema = z.object({
 export type CvDoc = z.infer<typeof cvDocSchema>
 export const cvDocResultSchema = z.object({ ok: z.literal(true), cv_doc: cvDocSchema })
 
+/**
+ * "Preencher vaga" (2026-10-08): what job-search still needs from the user, one item per field, and what the host did
+ * itself (documents typed into the page, résumé attached). Never carries an answer, not even a common one.
+ */
+export const FILL_ITEM_TYPES = ["TEXTO", "ESCOLHA", "ACAO", "DOCUMENTO"] as const
+export const FILL_ITEM_STATUSES = ["PENDENTE", "RESPONDIDA", "FEITA", "GUARDADA"] as const
+const fillItemSchema = z.object({
+  n: z.number().int().min(1).max(999),
+  campo: z.string().max(200),
+  tipo: z.enum(FILL_ITEM_TYPES),
+  opcoes: z.array(z.string().max(200)).max(30),
+  detalhe: z.string().max(600),
+  status: z.enum(FILL_ITEM_STATUSES),
+  documento: z.string().max(10).nullable().optional(),
+})
+export type FillItem = z.infer<typeof fillItemSchema>
+const fillSchema = z.object({
+  state: z.string().max(40).nullable(),
+  rodada: z.number().int().min(0).max(99).nullable(),
+  code: z.string().max(80).nullable(),
+  items: z.array(fillItemSchema).max(200),
+  host: z.array(z.object({ campo: z.string().max(200), resultado: z.string().max(40) })).max(50),
+})
+export type FillProgress = z.infer<typeof fillSchema>
+
 const progressSchema = z.object({
   percent: z.number().min(0).max(100),
   stages: z.array(stageSchema),
@@ -276,6 +301,8 @@ const progressSchema = z.object({
   stage: z.string().nullable().optional(),
   discovery_code: z.string().nullable().optional(),
   claude_prompt: z.string().max(60_000).nullable().optional(),
+  /** "Preencher vaga" since 2026-10-08: pending items for the user (the prompt is no longer pasted). */
+  fill: fillSchema.nullable().optional(),
   claude_url: z.string().max(2000).nullable().optional(),
   // The résumé job-search registered for the job changed after the prompt was prepared: it points to the old PDF.
   prompt_stale: z.boolean().optional(),

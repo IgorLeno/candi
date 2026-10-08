@@ -21,6 +21,7 @@ import {
   confirmJobOpen,
   analyzeJob,
   analyzeLeftOut,
+  answerFill,
   declineJob,
   deleteDispatch,
   deleteJob,
@@ -77,6 +78,7 @@ describe("ops server actions", () => {
     await expect(getCvDoc("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(saveCvManual("fake-1001", {})).rejects.toThrow("UNAUTHENTICATED")
     await expect(listAttention()).rejects.toThrow("UNAUTHENTICATED")
+    await expect(answerFill("d-20260929T120000Z-abcdef", { item: 1 })).rejects.toThrow("UNAUTHENTICATED")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
@@ -594,5 +596,32 @@ describe("ops server actions", () => {
     runDispatcher.mockResolvedValue({ ok: false, code: "DELETE_PARTIAL", detail: "x" })
     await expect(deleteJob("fake-1001")).resolves.toEqual({ ok: false, code: "DELETE_PARTIAL" })
     expect(updateTag).toHaveBeenCalledTimes(2)
+  })
+
+  it("answerFill sends the item number in argv and the answer only over stdin", async () => {
+    const id = "d-20261008T120000Z-abcdef"
+    for (const [dispatchId, input, code] of [
+      ["x", { item: 1 }, "INPUT_INVALID"],
+      [id, { item: 0 }, "INPUT_INVALID"],
+      [id, { item: 1.5 }, "INPUT_INVALID"],
+      [id, { item: "1; rm" }, "INPUT_INVALID"],
+      [id, { item: 1, value: 3 }, "INPUT_INVALID"],
+      [id, { item: 1, extra: true }, "INPUT_INVALID"],
+      [id, { item: 1, value: "   " }, "ANSWER_INVALID"],
+      [id, { item: 1, value: "x".repeat(1001) }, "ANSWER_INVALID"],
+    ] as const) {
+      await expect(answerFill(dispatchId, input)).resolves.toEqual({ ok: false, code })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    await answerFill(id, { item: 2 })
+    expect(runDispatcher.mock.calls[0][0]).toEqual(["answer", id, "--item", "2"])
+    expect(runDispatcher.mock.calls[0]).toHaveLength(2)
+    await answerFill(id, { item: 3, value: "  529.982.247-25 " })
+    const [args, , , options] = runDispatcher.mock.calls[1]
+    expect(args).toEqual(["answer", id, "--item", "3", "--value-stdin"])
+    expect(args.join(" ")).not.toContain("529")
+    expect(options).toEqual({ stdin: "529.982.247-25" })
+    runDispatcher.mockResolvedValue({ ok: false, code: "DOCUMENT_INVALID" })
+    await expect(answerFill(id, { item: 3, value: "123" })).resolves.toEqual({ ok: false, code: "DOCUMENT_INVALID" })
   })
 })

@@ -336,6 +336,12 @@ export function canApplyChanges(dispatch: Dispatch): boolean {
  * "Gerar currículo" card, so the user goes there.
  */
 export function applicationStopText(code: string | null | undefined): string {
+  if (code === "FILL_PENDING")
+    return "responda as pendências abaixo, uma de cada vez; o Claude continua sozinho depois."
+  if (code === "READY_TO_SUBMIT")
+    return "tudo preenchido: revise a página da vaga e clique você mesmo no envio final. Depois, registre o envio."
+  if (code === "TOO_MANY_ROUNDS")
+    return "o Claude passou de 10 rodadas sem terminar: confira a página e termine o preenchimento por lá."
   if (code === "APPLICATION_CDP_DOWN") {
     return "o Chrome da candidatura fechou: abra o navegador da candidatura e clique em \u201cPreencher vaga\u201d de novo."
   }
@@ -570,6 +576,34 @@ const RESUME_CV_REFUSAL_TEXT: Record<string, string> = {
   ANSWERS_INCOMPLETE: "Escolha uma resposta para cada dúvida ou escreva a sua em \u201cOutro\u201d.",
   ANSWERS_INVALID: "A resposta escolhida não está mais entre as sugeridas. Atualize a página e escolha de novo.",
   ANSWERS_NOT_EXPECTED: "Este currículo parado não tem dúvidas com respostas. Atualize a página e escolha de novo.",
+}
+
+const ANSWER_FILL_REFUSAL_TEXT: Record<string, string> = {
+  ANSWER_INVALID: "Resposta vazia, longa demais ou com caractere inválido.",
+  OPTION_INVALID: "Escolha uma das opções da página.",
+  DOCUMENT_INVALID: "Número inválido. Confira e digite de novo (CPF com os 11 dígitos).",
+  ITEM_DONE: "Esta pendência já foi respondida.",
+  ITEM_UNKNOWN: "Esta pendência não existe mais. Atualize a página.",
+  NOT_WAITING: "Este preenchimento não está esperando resposta agora. Atualize a página.",
+  NOT_FILLING: "Este card não é de um preenchimento com pendências.",
+}
+
+/** Refusals of "Enviar"/"Feito" on a "Preencher vaga" pending item; job-search's private-store codes fall back. */
+export function answerFillRefusalText(code: string): string {
+  return ANSWER_FILL_REFUSAL_TEXT[code] ?? refusalText(code)
+}
+
+/** Done mark of a pending item: what happened to the answer (a document stays only on this computer). */
+export function fillItemDoneText(status: string): string {
+  if (status === "GUARDADA") return "guardado só neste computador; o sistema preenche na página"
+  if (status === "FEITA") return "feito"
+  return "respondida; vai para o Claude na próxima rodada"
+}
+
+/** What the host did by itself in the page, shown with a check. */
+export function fillHostText(campo: string, resultado: string): string {
+  if (resultado.startsWith("ATTACHED")) return `Currículo anexado pelo sistema (${campo})`
+  return `${campo} preenchido pelo sistema (não passa pelo Claude)`
 }
 
 export function resumeCvRefusalText(code: string): string {
