@@ -654,25 +654,40 @@ function IntakeRefine({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: 
 /**
  * "Gerar currículo" stuck on the user: job-search's reason, the Claude panel's own reason and reply, the ChatGPT
  * doubts, then the options job-search offers and, always last, "Outro" with free text (a new ChatGPT patch with the
- * user's note). All of it is untrusted text from job-search and the bots: rendered as text, never as HTML.
+ * user's note). When the ChatGPT doubts carry ready answers (2026-10-08), each doubt gets its own choice and "Outro"
+ * becomes a complement: every doubt needs an answer unless the note is written. All of it is untrusted text from
+ * job-search and the bots: rendered as text, never as HTML. Answers go back as positions only.
  */
 function CvResume({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () => void }) {
   const recovery = dispatch.progress.recovery
   const [choice, setChoice] = useState<CvResumeOption | "outro" | null>(null)
+  const [answers, setAnswers] = useState<(number | null)[]>([])
+  const [otherOn, setOtherOn] = useState(false)
   const [text, setText] = useState("")
   const [pending, startTransition] = useTransition()
   if (!recovery) return null
-  const other = choice === "outro"
+  const answering = recovery.doubts.some((doubt) => doubt.answers.length > 0)
+  const other = answering ? otherOn : choice === "outro"
   const check = normalizeIntake(text)
   const length = intakeLength(text.trim())
   const problem = !other || text.trim().length === 0 ? null : check.ok ? null : resumeCvRefusalText(check.code)
-  const ready = choice !== null && (!other || check.ok)
+  const chosen = recovery.doubts.map((_, index) => answers[index] ?? null)
+  const ready = answering
+    ? (!other || check.ok) && (other || chosen.every((answer) => answer !== null))
+    : choice !== null && (!other || check.ok)
   const name = `cv-resume-${dispatch.id}`
 
   const submit = () =>
     startTransition(async () => {
       try {
-        const result = await resumeCv(dispatch.id, other ? { note: text } : { option: choice })
+        const payload = answering
+          ? chosen.some((answer) => answer !== null)
+            ? { answers: chosen, ...(other ? { note: text } : {}) }
+            : { note: text }
+          : other
+            ? { note: text }
+            : { option: choice }
+        const result = await resumeCv(dispatch.id, payload)
         if (!result.ok) {
           toast.error(resumeCvRefusalText(result.code))
           return
@@ -705,18 +720,45 @@ function CvResume({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () =
           </p>
         </div>
       )}
-      {recovery.doubts.length > 0 && (
+      {!answering && recovery.doubts.length > 0 && (
         <div className="space-y-1">
           <p className="text-xs font-semibold text-muted-foreground">Dúvidas do ChatGPT</p>
           <ul className="list-disc space-y-0.5 pl-5 text-xs" data-testid="cv-recovery-doubts">
             {recovery.doubts.map((doubt, index) => (
-              <li key={index}>{doubt}</li>
+              <li key={index}>{doubt.text}</li>
             ))}
           </ul>
         </div>
       )}
       <fieldset className="space-y-2" data-testid="cv-resume">
         <legend className="px-1 text-xs font-semibold text-foreground">Como seguir?</legend>
+        {answering &&
+          recovery.doubts.map((doubt, index) => (
+            <fieldset key={index} className="space-y-1.5" data-testid={`cv-doubt-${index + 1}`}>
+              <legend className="text-xs text-foreground">
+                <span className="font-semibold">Dúvida {index + 1}:</span> {doubt.text}
+              </legend>
+              {doubt.answers.length === 0 && (
+                <p className="text-xs text-muted-foreground">Sem respostas sugeridas: responda em “Outro”.</p>
+              )}
+              {doubt.answers.map((answer, position) => (
+                <label
+                  key={position}
+                  className="flex items-start gap-2 text-xs"
+                  data-testid={`cv-doubt-${index + 1}-answer-${position + 1}`}
+                >
+                  <input
+                    type="radio"
+                    name={`${name}-doubt-${index + 1}`}
+                    className="mt-0.5 accent-primary"
+                    checked={chosen[index] === position + 1}
+                    onChange={() => setAnswers(chosen.map((value, at) => (at === index ? position + 1 : value)))}
+                  />
+                  <span>{answer}</span>
+                </label>
+              ))}
+            </fieldset>
+          ))}
         {recovery.options.map((option) => (
           <label key={option.key} className="flex items-start gap-2" data-testid={`cv-resume-option-${option.key}`}>
             <input
@@ -735,16 +777,18 @@ function CvResume({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () =
         {recovery.note_allowed && (
           <label className="flex items-start gap-2" data-testid="cv-resume-option-outro">
             <input
-              type="radio"
-              name={name}
+              type={answering ? "checkbox" : "radio"}
+              name={answering ? `${name}-outro` : name}
               className="mt-1 accent-primary"
               checked={other}
-              onChange={() => setChoice("outro")}
+              onChange={(event) => (answering ? setOtherOn(event.target.checked) : setChoice("outro"))}
             />
             <span>
               <span className="font-semibold text-foreground">Outro</span>
               <span className="block text-xs text-muted-foreground">
-                Escreva o que acha que deve ser feito: vai para o ChatGPT, que refaz o patch.
+                {answering
+                  ? "Nenhuma serve ou quer acrescentar algo? Escreva: vai para o ChatGPT junto das respostas escolhidas."
+                  : "Escreva o que acha que deve ser feito: vai para o ChatGPT, que refaz o patch."}
               </span>
             </span>
           </label>

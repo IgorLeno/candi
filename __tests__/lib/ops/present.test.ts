@@ -468,13 +468,20 @@ describe("canResumeCv", () => {
       dispatchSchema.safeParse({ ...stuck, progress: { ...stuck.progress, recovery: { ...recovery, ...patch } } })
     expect(bad({}).success).toBe(true)
     expect(bad({ options: [{ key: "aprovar", label: "x", description: "y" }] }).success).toBe(false)
-    expect(bad({ options: [] }).success).toBe(false)
     expect(bad({ claude_reply: "x".repeat(601) }).success).toBe(false)
-    expect(bad({ doubts: ["a", "b", "c", "d", "e", "f"] }).success).toBe(false)
+    const doubt = (answers: string[]) => ({ text: "o TCC pode ser citado?", answers })
+    expect(bad({ doubts: ["a", "b", "c", "d", "e", "f"].map(() => doubt([])) }).success).toBe(false)
+    expect(bad({ doubts: ["o TCC pode ser citado?"] }).success).toBe(false)
+    expect(bad({ doubts: [doubt(["a", "b", "c", "d", "e", "f"])] }).success).toBe(false)
+    expect(bad({ doubts: [doubt(["x".repeat(301)])] }).success).toBe(false)
+    // Doubts with ready answers come without options: a new patch without an answer repeats the doubt.
+    expect(bad({ options: [], doubts: [doubt(["Sim, citar.", "Não citar."])] }).success).toBe(true)
   })
 
   it("words the note guards for the résumé and keeps the shared texts", () => {
     expect(resumeCvRefusalText("INTAKE_INVALID")).toMatch(/^O texto precisa/)
+    expect(resumeCvRefusalText("ANSWERS_INCOMPLETE")).toMatch(/cada dúvida/)
+    expect(resumeCvRefusalText("ANSWERS_INVALID")).toMatch(/Atualize a página/)
     expect(resumeCvRefusalText("ALREADY_RESUMED")).toBe(refusalText("ALREADY_RESUMED"))
     expect(refusalText("ALREADY_RESUMED")).not.toMatch(/recusado/)
   })

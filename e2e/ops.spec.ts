@@ -694,6 +694,49 @@ test.describe("Central de operações (bots)", () => {
     await expect(resumed).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
   })
 
+  test("currículo travado com dúvidas: respostas prontas do ChatGPT, sem refazer o patch às cegas", async ({
+    page,
+  }) => {
+    // The fake advances one stage per poll (5 s); fake-1002 stops at the ChatGPT with two doubts that carry answers.
+    test.setTimeout(90_000)
+    await page.goto("/vaga/fake-1002")
+    const ops = page.getByTestId("job-detail")
+    await ops.getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    await page.getByTestId("dispatch-confirm").click()
+    const stuck = ops.getByTestId("dispatch-GERAR_CURRICULO")
+    await expect(stuck).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    const recovery = stuck.getByTestId("cv-recovery")
+    await expect(recovery.getByTestId("cv-recovery-reason")).toContainText("Escolha uma resposta para cada dúvida")
+
+    // No "Refazer o patch": each doubt (plain text, no HTML) with its ready answers, plus "Outro".
+    await expect(recovery.getByTestId("cv-resume-option-chatgpt")).toHaveCount(0)
+    await expect(recovery.getByTestId("cv-resume-option-claude")).toHaveCount(0)
+    await expect(recovery.getByTestId("cv-recovery-doubts")).toHaveCount(0)
+    await expect(recovery.getByTestId("cv-doubt-1")).toContainText("<b>formação</b>")
+    await expect(recovery.locator("b")).toHaveCount(0)
+    await expect(recovery.getByTestId("cv-doubt-1-answer-1")).toContainText("Manter as datas canônicas")
+    await expect(recovery.getByTestId("cv-doubt-2-answer-2")).toContainText("Não citar o TCC.")
+
+    // Every doubt needs an answer, unless "Outro" is written.
+    const submit = recovery.getByTestId("cv-resume-submit")
+    await expect(submit).toBeDisabled()
+    await recovery.getByTestId("cv-doubt-1-answer-1").click()
+    await expect(submit).toBeDisabled()
+    await recovery.getByTestId("cv-resume-option-outro").click()
+    await expect(submit).toBeDisabled()
+    await recovery.getByTestId("cv-resume-input").fill("sobre o TCC: pode citar, foi aprovado")
+    await expect(submit).toBeEnabled()
+    await recovery.getByTestId("cv-resume-option-outro").click()
+    await expect(recovery.getByTestId("cv-resume-input")).toHaveCount(0)
+    await recovery.getByTestId("cv-doubt-2-answer-1").click()
+    await expect(submit).toBeEnabled()
+    await submit.click()
+
+    const resumed = ops.getByTestId("dispatch-GERAR_CURRICULO")
+    await expect(resumed.getByTestId("cv-recovery")).toHaveCount(0)
+    await expect(resumed).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+  })
+
   test("analisar vaga enviada: confirmação, etapas, diagnóstico e registro na planilha", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)

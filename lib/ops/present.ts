@@ -567,6 +567,9 @@ const RESUME_CV_REFUSAL_TEXT: Record<string, string> = {
   INTAKE_INVALID:
     "O texto precisa ter de 10 a 1500 caracteres e não pode conter marca do painel nem marcador de contrato dos bots.",
   INTAKE_LOOKS_LIKE_APPROVAL: "O texto não pode parecer uma aprovação (ok ou não seguido de 8 caracteres hex).",
+  ANSWERS_INCOMPLETE: "Escolha uma resposta para cada dúvida ou escreva a sua em \u201cOutro\u201d.",
+  ANSWERS_INVALID: "A resposta escolhida não está mais entre as sugeridas. Atualize a página e escolha de novo.",
+  ANSWERS_NOT_EXPECTED: "Este currículo parado não tem dúvidas com respostas. Atualize a página e escolha de novo.",
 }
 
 export function resumeCvRefusalText(code: string): string {

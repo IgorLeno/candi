@@ -15,8 +15,9 @@ writing anything (fake-1005 → DOSSIER_NOT_VALID, also for GERAR_CURRICULO/PREE
 the job's verdict, availability or application never refuse, like job-search on the host). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
 for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
 with ChatGPT refuses another with CHATGPT_BUSY. GERAR_CURRICULO of fake-1003 on Hermes stops in PRECISA_HUMANO with
-`progress.recovery` (Claude stopped without PDF); `resume-cv <id> --option claude|chatgpt [--note-stdin]` starts a new
-run that finishes. A finished BUSCAR_VAGAS lists the jobs it left out (`LEFT_OUT`);
+`progress.recovery` (Claude stopped without PDF); GERAR_CURRICULO of fake-1002 on Hermes stops with ChatGPT doubts that
+carry ready answers (HUMAN_REVIEW_DOUBTS, no options); `resume-cv <id> --option claude|chatgpt [--answers 1=2,2=1]
+[--note-stdin]` starts a new run that finishes (every doubt needs an answer unless there is a note). A finished BUSCAR_VAGAS lists the jobs it left out (`LEFT_OUT`);
 `ANALISAR_DESCOBERTA --from <search> --job-id` walks posting → ChatGPT → writeset for one of them (fake-1001:
 ALREADY_IN_RUNTIME, fake-9104: LEFT_OUT_WITHOUT_CARD). EDITAR_CURRICULO (stdin) needs a finished GERAR_CURRICULO of the
 job (CV_NOT_READY) and no résumé run (CV_DOC_BUSY); once done, `cv-file` answers the `-v2` PDF. With
@@ -71,6 +72,7 @@ LEFT_OUT = {"excluded": [left_out("fake-9101", "PREFILTRO", "estágio/aprendiz (
                                   "Engenheiro de Processos", url=False)]}
 NO_POSTING = "fake-1008"
 STUCK_CV = "fake-1003"
+DOUBTS_CV = "fake-1002"
 MARKERS_RE = re.compile(r"\b(PATCH_READY|NEEDS_CONTEXT|BLOCKED|WAITING|AWAITING_APPROVAL)\b")
 RECOVERY = {
     "reason": "O Claude in Chrome parou sem exportar o PDF.",
@@ -82,6 +84,18 @@ RECOVERY = {
                  "description": "Reaproveita o patch do ChatGPT desta tentativa e abre uma tarefa nova no painel."},
                 {"key": "chatgpt", "label": "Refazer o patch no ChatGPT",
                  "description": "Pede um patch novo ao ChatGPT e depois edita e exporta no Claude."}],
+    "note_allowed": True,
+}
+RECOVERY_DOUBTS = {
+    "reason": "O ChatGPT deixou dúvidas para você responder antes de editar o currículo. Escolha uma resposta para "
+              "cada dúvida ou escreva a sua em \u201cOutro\u201d: o ChatGPT refaz o patch com as suas respostas.",
+    "claude_reason": None,
+    "claude_reply": None,
+    "doubts": [{"text": "A vaga pede <b>formação</b> em 12/2026; os fatos dizem conclusão em out/2026.",
+                "answers": ["Manter as datas canônicas: conclusão em out/2026, colação em mar/2027.",
+                            "Citar só a conclusão das atividades acadêmicas em out/2026."]},
+               {"text": "O TCC pode ser citado?", "answers": ["Sim, citar o TCC.", "Não citar o TCC."]}],
+    "options": [],
     "note_allowed": True,
 }
 STAGES = {
@@ -348,9 +362,11 @@ def view(rec, recs=()):
         out.update(resumes=rec.get("resumes"), resume_option=rec.get("resume_option"),
                    retried_by=rec.get("retried_by"))
         stuck = rec["status"] == "PRECISA_HUMANO" and not rec.get("retried_by")
-        progress["recovery"] = RECOVERY if stuck else None
+        doubts = rec.get("code") == "HUMAN_REVIEW_DOUBTS"
+        progress["recovery"] = (RECOVERY_DOUBTS if doubts else RECOVERY) if stuck else None
         if rec["status"] == "PRECISA_HUMANO":
-            out_stages[1].update(state="failed", note="CLAUDE_STOPPED_WITHOUT_PDF")
+            out_stages[0 if doubts else 1].update(state="failed",
+                                                  note="HUMAN_REVIEW_DOUBTS" if doubts else "CLAUDE_STOPPED_WITHOUT_PDF")
     if rec["status"] == "MANUAL":
         out["command"] = f"[painel:dispatch {rec['id']} · {rec['action']}]\n\nComando fixo de teste." + (
             f" python3 hermes/browsers/cv_claude_chrome.py edit {rec['job_id']} --op-dir runtime/operations/{rec['id']}"
@@ -566,6 +582,9 @@ def main(argv):
                       and not rec.get("resumes") and rec["step"] >= 1):
                     rec.update(step=1, status="PRECISA_HUMANO",
                                code="BLOCKED_CLAUDE_CHROME:CLAUDE_STOPPED_WITHOUT_PDF")
+                elif (rec["action"] == "GERAR_CURRICULO" and rec["job_id"] == DOUBTS_CV and rec.get("mode") == "host"
+                      and not rec.get("resumes") and rec["step"] >= 1):
+                    rec.update(step=0, status="PRECISA_HUMANO", code="HUMAN_REVIEW_DOUBTS")
                 elif rec.get("chatgpt_review") and "sem lastro" in rec["edit_request"] and rec["step"] >= 1:
                     rec.update(step=1, status="PRECISA_HUMANO", code="HUMAN_REVIEW_DOUBTS")
                 elif rec["step"] >= last_step(rec["action"], rec):
@@ -635,8 +654,20 @@ def main(argv):
         origin = next((r for r in recs if r["id"] == argv[1]), None)
         option = flag(argv, "--option")
         note = sys.stdin.read().strip() if "--note-stdin" in argv else None
+        answers = flag(argv, "--answers")
+        well_formed = answers is None or re.fullmatch(r"[1-9]=[1-9](,[1-9]=[1-9]){0,4}", answers) is not None
+        chosen = dict(item.split("=") for item in answers.split(",")) if answers and well_formed else {}
+        doubts = origin is not None and origin.get("code") == "HUMAN_REVIEW_DOUBTS"
+        offered = [] if doubts else ["claude", "chatgpt"]
         code = ("OPTION_INVALID" if option not in ("claude", "chatgpt")
                 else "NOTE_NOT_EXPECTED" if note is not None and option != "chatgpt"
+                else "ANSWERS_NOT_EXPECTED" if answers is not None and (option != "chatgpt" or not doubts)
+                else "ANSWERS_INVALID" if answers is not None and (
+                    not well_formed or len(chosen) != answers.count(",") + 1
+                    or any(int(i) > len(RECOVERY_DOUBTS["doubts"])
+                           or int(j) > len(RECOVERY_DOUBTS["doubts"][int(i) - 1]["answers"]) for i, j in chosen.items()))
+                else "ANSWERS_INCOMPLETE" if answers is not None and note is None and len(chosen) < 2
+                else "OPTION_INVALID" if option not in offered and not (option == "chatgpt" and (note or answers))
                 else "INTAKE_LOOKS_LIKE_APPROVAL" if note and APPROVAL_RE.search(note)
                 else "INTAKE_INVALID" if note is not None and (not 10 <= len(note) <= 1500 or MARKERS_RE.search(note))
                 else "DISPATCH_NOT_FOUND" if origin is None
@@ -648,7 +679,7 @@ def main(argv):
         rec = {"id": f"d-20260929T14{len(recs) + 1:04d}Z-abcdef", "action": "GERAR_CURRICULO", "platform": "hermes",
                "job_id": origin["job_id"], "status": "RODANDO", "step": 0, "acknowledged": False,
                "created_at": now(), "mode": "host", "resumes": origin["id"], "resume_option": option,
-               "note": note}
+               "note": note, "resume_answers": chosen or None}
         origin.update(retried_by=rec["id"], acknowledged=True)
         recs.insert(0, rec)
         save(recs)

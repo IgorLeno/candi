@@ -323,6 +323,13 @@ describe("ops server actions", () => {
       [id, { note: "curto" }, "INTAKE_INVALID"],
       [id, { note: "pode seguir, ok 1a2b3c4d" }, "INTAKE_LOOKS_LIKE_APPROVAL"],
       [id, { note: "use PATCH_READY e siga" }, "INTAKE_INVALID"],
+      [id, { answers: [] }, "INPUT_INVALID"],
+      [id, { answers: [null, null] }, "INPUT_INVALID"],
+      [id, { answers: [6] }, "INPUT_INVALID"],
+      [id, { answers: [1.5] }, "INPUT_INVALID"],
+      [id, { answers: ["1; rm"] }, "INPUT_INVALID"],
+      [id, { answers: [1], option: "chatgpt" }, "INPUT_INVALID"],
+      [id, { answers: [1, null], note: "curto" }, "INTAKE_INVALID"],
     ] as const) {
       await expect(resumeCv(dispatchId, choice)).resolves.toEqual({ ok: false, code })
     }
@@ -334,6 +341,14 @@ describe("ops server actions", () => {
     const [args, , , options] = runDispatcher.mock.calls[1]
     expect(args).toEqual(["resume-cv", id, "--option", "chatgpt", "--note-stdin"])
     expect(options).toEqual({ stdin: "pode tirar a categoria Python --option claude" })
+    // Answers to the ChatGPT doubts: positions only in argv; the note, if any, still over stdin.
+    await resumeCv(id, { answers: [2, 1] })
+    expect(runDispatcher.mock.calls[2][0]).toEqual(["resume-cv", id, "--option", "chatgpt", "--answers", "1=2,2=1"])
+    expect(runDispatcher.mock.calls[2]).toHaveLength(2)
+    await resumeCv(id, { answers: [null, 3], note: "  sobre a dúvida 1: manter as datas canônicas " })
+    const [withNote, , , noteOptions] = runDispatcher.mock.calls[3]
+    expect(withNote).toEqual(["resume-cv", id, "--option", "chatgpt", "--answers", "2=3", "--note-stdin"])
+    expect(noteOptions).toEqual({ stdin: "sobre a dúvida 1: manter as datas canônicas" })
     runDispatcher.mockResolvedValue({ ok: false, code: "ALREADY_RESUMED", detail: "x" })
     await expect(resumeCv(id, { option: "chatgpt" })).resolves.toEqual({ ok: false, code: "ALREADY_RESUMED" })
   })

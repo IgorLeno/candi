@@ -143,10 +143,15 @@ const cvRecoverySchema = z.object({
   claude_reason: z.string().max(300).nullable(),
   /** End of the Claude panel reply, without the panel UI. */
   claude_reply: z.string().max(600).nullable(),
-  doubts: z.array(z.string().max(300)).max(5),
+  /**
+   * ChatGPT doubts (HUMAN_REVIEW_DOUBTS) or format errors (FORMAT_INVALID), each with the ready answers the ChatGPT
+   * suggested (2026-10-08; none in older handoffs). The user picks an answer by its position only: job-search reads
+   * the text back itself.
+   */
+  doubts: z.array(z.object({ text: z.string().max(300), answers: z.array(z.string().max(300)).max(5) })).max(5),
+  /** Empty on HUMAN_REVIEW_DOUBTS: a new patch without an answer only repeats the doubt. */
   options: z
     .array(z.object({ key: z.enum(CV_RESUME_OPTIONS), label: z.string().max(100), description: z.string().max(300) }))
-    .min(1)
     .max(2),
   /** "Outro": free text that goes with a new ChatGPT patch. */
   note_allowed: z.boolean(),

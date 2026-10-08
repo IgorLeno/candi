@@ -185,12 +185,24 @@ export async function refineIntake(intakeId: unknown, choice: unknown): Promise<
 const resumeCvChoiceSchema = z.union([
   z.object({ option: z.enum(CV_RESUME_OPTIONS) }).strict(),
   z.object({ note: z.string().max(INTAKE_MAX * 4) }).strict(),
+  z
+    .object({
+      /** Position (1-based) of the chosen answer for each doubt, in order; null = not answered (needs the note). */
+      answers: z.array(z.number().int().min(1).max(5).nullable()).min(1).max(5),
+      note: z
+        .string()
+        .max(INTAKE_MAX * 4)
+        .optional(),
+    })
+    .strict(),
 ])
 
 /**
  * "Tentar de novo" on a stuck "Gerar currículo": job-search starts a new run with the chosen option and retires the
  * stuck card. "Outro" goes as `--option chatgpt` with the note over stdin, never argv; job-search re-applies the
- * guards and keeps it as untrusted data that the ChatGPT prompt quotes as the user's guidance.
+ * guards and keeps it as untrusted data that the ChatGPT prompt quotes as the user's guidance. Answers to the
+ * ChatGPT doubts (2026-10-08) go as positions only (`--answers 1=2,2=1`): job-search reads the answer text back from
+ * its own handoff and checks that every doubt has one unless there is a note.
  */
 export async function resumeCv(dispatchId: unknown, choice: unknown): Promise<ActionResult<Dispatch>> {
   await requireSession()
@@ -203,9 +215,19 @@ export async function resumeCv(dispatchId: unknown, choice: unknown): Promise<Ac
     const result = await runDispatcher([...args, parsed.data.option], oneResultSchema)
     return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
   }
+  const pairs =
+    "answers" in parsed.data
+      ? parsed.data.answers.flatMap((answer, index) => (answer === null ? [] : [`${index + 1}=${answer}`]))
+      : []
+  if ("answers" in parsed.data && pairs.length === 0) return { ok: false, code: "INPUT_INVALID" }
+  const answers = pairs.length > 0 ? ["--answers", pairs.join(",")] : []
+  if (parsed.data.note === undefined) {
+    const result = await runDispatcher([...args, "chatgpt", ...answers], oneResultSchema)
+    return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+  }
   const note = normalizeIntake(parsed.data.note)
   if (!note.ok) return { ok: false, code: note.code }
-  const result = await runDispatcher([...args, "chatgpt", "--note-stdin"], oneResultSchema, undefined, {
+  const result = await runDispatcher([...args, "chatgpt", ...answers, "--note-stdin"], oneResultSchema, undefined, {
     stdin: note.text,
   })
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
