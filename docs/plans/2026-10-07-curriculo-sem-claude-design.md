@@ -274,6 +274,17 @@ quando outra vaga editou sem exportar). Os PDFs e `cv.json` já registrados cont
   gates descritos em "Resultado local" nesse plano; uso real com ChatGPT continua no passo 4.
 - 2026-10-07, `superseded_by` da proposta velha (job-search `528d506`, painel `f0d42a4`): faltava apesar de marcado
   no plano dos três modos; detalhes em "Resultado local" de lá.
+- 2026-10-07/08, passo 4 em andamento (uso real, ChatGPT de verdade, Chrome 154; `$STATE/cv-renderer` = `local`
+  com o ok do usuário, que escolheu deixar assim). GERAR: XP 4471115696, Equifax j00178981 e MRV&CO gupy-12484524
+  (tinha `cv/2` do Claude Design; o PDF antigo ficou e saiu o `-v2`) em 1 página A4, `cv/3` VALID, layout do
+  template conferido na imagem de cada PDF; a MRV&CO passou por 1 FORMAT_REPAIR. Hatch 4463543061 e Tokio Marine
+  4450471269 pararam em `HUMAN_REVIEW_DOUBTS` (espanhol básico; Airflow e seguros), esperando a resposta do usuário.
+  Modo 1 (segunda avaliação) na Equifax: 2 CHANGEs, ambos aprovados pelo usuário, `-v2` com
+  `CHATGPT/USER_APPROVED`. Achados: (a) um DUPLICATE de projeto herdava o link do original (o Candi saiu com o
+  repositório do Grimperium no PDF da XP), corrigido em job-search `5d7ea4f`; a XP precisa ser gerada de novo;
+  (b) o ChatGPT troca "São Paulo, SP" porque `knowledge/professional-profile.md` tem endereço NÃO CONFIGURADO
+  (MRV&CO e Equifax saíram sem a cidade); (c) dúvidas do tipo "na falta de confirmação, não incluir" também param o
+  pipeline. Falta: retomar Hatch e Tokio, refazer a XP, decidir (b) e (c), então o padrão vira `local`.
 
 ## Itens
 
