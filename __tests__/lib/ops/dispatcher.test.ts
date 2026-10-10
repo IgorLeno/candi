@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 import { dispatchConfig, runDispatcher, type DispatchConfig } from "@/lib/ops/dispatcher"
 
@@ -16,6 +16,8 @@ elif mode == "refuse":
     print(json.dumps({"ok": False, "code": "GATEWAY_NOT_RUNNING", "detail": "parado"})); sys.exit(1)
 elif mode == "garbage":
     print("Traceback: segredo"); sys.exit(1)
+elif mode == "traceback":
+    sys.stderr.write("Traceback (most recent call last):\\nImportError: cv_local\\n"); sys.exit(1)
 elif mode == "crash":
     print(json.dumps({"ok": True, "n": 1})); sys.exit(3)
 elif mode == "env":
@@ -74,6 +76,23 @@ describe("runDispatcher", () => {
     await expect(runDispatcher(["ok"], okSchema, { python: "/nonexistent/python", script: "x" })).resolves.toEqual(
       unavailable
     )
+  })
+
+  it("logs the cause of DISPATCHER_UNAVAILABLE on the server only, without output values", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const config = fakeConfig()
+      await runDispatcher(["traceback"], okSchema, config)
+      expect(log).toHaveBeenLastCalledWith(
+        expect.stringContaining("[dispatcher] traceback: output is not JSON; exit 1")
+      )
+      expect(log).toHaveBeenLastCalledWith(expect.stringContaining("ImportError: cv_local"))
+      const schema = z.object({ ok: z.literal(true), n: z.string() })
+      await runDispatcher(["ok"], schema, config)
+      expect(log).toHaveBeenLastCalledWith("[dispatcher] ok: schema mismatch at n; exit 0")
+    } finally {
+      log.mockRestore()
+    }
   })
 
   it("passes a minimal environment (no auth secrets) to the dispatcher", async () => {

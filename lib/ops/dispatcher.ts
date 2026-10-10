@@ -1,5 +1,5 @@
 import "server-only"
-import { execFile } from "node:child_process"
+import { execFile, type ExecFileException } from "node:child_process"
 import path from "node:path"
 import { z } from "zod"
 import { refusalSchema, type DispatchRefusal } from "@/lib/ops/schema"
@@ -34,7 +34,8 @@ export type RunResult<T> = { ok: true; value: T } | DispatchRefusal
 
 /**
  * One dispatcher call. Exit 0 → `schema`; exit 1 with `{ok:false, code}` → refusal; anything else
- * (missing python, timeout, bad JSON) → DISPATCHER_UNAVAILABLE. Errors never carry stderr to the client.
+ * (missing python, timeout, bad JSON) → DISPATCHER_UNAVAILABLE. Errors never carry stderr to the client; the cause
+ * goes only to the server log (`logUnavailable`), since the generic message alone could not be diagnosed (2026-10-09).
  * `stdin` carries the only free text (the "vaga indicada"), so it never lands in argv; stdin is always closed.
  */
 export function runDispatcher<T>(
@@ -52,12 +53,13 @@ export function runDispatcher<T>(
       config.python,
       [config.script, ...args],
       { env, timeout: 30_000, maxBuffer: 1024 * 1024, windowsHide: true },
-      (error, stdout) => {
+      (error, stdout, stderr) => {
         const line = stdout.trim().split("\n").pop() ?? ""
         let parsed: unknown
         try {
           parsed = JSON.parse(line)
         } catch {
+          logUnavailable(args[0], "output is not JSON", error, stderr)
           resolve({ ok: false, code: "DISPATCHER_UNAVAILABLE" })
           return
         }
@@ -67,11 +69,28 @@ export function runDispatcher<T>(
           return
         }
         const value = error ? null : schema.safeParse(parsed)
-        resolve(value?.success ? { ok: true, value: value.data } : { ok: false, code: "DISPATCHER_UNAVAILABLE" })
+        if (value?.success) {
+          resolve({ ok: true, value: value.data })
+          return
+        }
+        // Only the paths of the mismatch, never the values (they may carry job or résumé text).
+        const issues = value?.error.issues.map((issue) => issue.path.join(".") || "(root)").join(", ")
+        logUnavailable(args[0], value ? `schema mismatch at ${issues}` : "JSON with a failed exit", error, stderr)
+        resolve({ ok: false, code: "DISPATCHER_UNAVAILABLE" })
       }
     )
     // A dispatcher that exits early (or a missing python) closes the pipe: the exit callback reports it.
     child.stdin?.on("error", () => {})
     child.stdin?.end(options.stdin ?? "")
   })
+}
+
+function logUnavailable(command: string | undefined, reason: string, error: ExecFileException | null, stderr: string) {
+  const exit = error
+    ? error.killed
+      ? `killed (${error.signal ?? "timeout"})`
+      : `exit ${error.code ?? "?"}${error.signal ? ` signal ${error.signal}` : ""}`
+    : "exit 0"
+  const tail = stderr.trim().slice(-800)
+  console.error(`[dispatcher] ${command ?? "?"}: ${reason}; ${exit}${tail ? `\n${tail}` : ""}`)
 }
