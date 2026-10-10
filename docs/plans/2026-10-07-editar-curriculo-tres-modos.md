@@ -213,6 +213,7 @@ como `retried_by`).
   e mostrar no card o que foi omitido (D4a de hoje).
 - E5. Edição manual só troca texto de campos existentes (sem inserir, remover nem mover) nesta etapa: proposto no
   desenho e não contestado; reabrir se o uso pedir.
+  **Superada em 2026-10-10** por `2026-10-10-edicao-manual-flexivel.md` (documento inteiro, sem travas no manual).
 
 ## Itens
 
