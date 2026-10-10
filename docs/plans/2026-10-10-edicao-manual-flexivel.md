@@ -102,7 +102,7 @@ job-search (commits pequenos, com testes)
       formato antigo recusado; modos 1/2 continuam recusando `PATCH_LOCKED`
 - [x] Docs: `methodology/resume-handoff.md` (manual v2)
 - [x] M3: `cv_doc.link_errors` aceita qualquer host `https://` válido; testes
-- [ ] M4 (commit separado): `locked` em `cv_doc.apply`/`cv_patch`; modos 1/2 sem travas e prompt sem `[TRAVADO]`;
+- [x] M4 (commit separado): `locked` em `cv_doc.apply`/`cv_patch`; modos 1/2 sem travas e prompt sem `[TRAVADO]`;
       GERAR_CURRICULO mantém; REPLACE de `org`; testes
 
 painel
@@ -127,4 +127,8 @@ painel
 - painel: tsc, lint (2 avisos antigos), Vitest 257/257 (inclui o editor com RTL: mover, link, bullet, limite,
   payload). E2E atualizado (`e2e/ops.spec.ts` + fake) mas **não rodado**: a porta 3000 é o `next dev` do usuário e o
   Playwright reusaria esse servidor sem o fake.
-- Pendente: M4 (travas nos modos 1/2); uso real no painel (o usuário clica).
+- M4: job-search `94fc485` (`locked` em `cv_doc.apply`/`cv_patch`, modos 1/2 com `locked=False` e prompt
+  `EDIT_RULES_AND_FORMAT` sem `[TRAVADO]`, REPLACE de `org` por `forte — resto`; geração continua travada). Gates:
+  `scripts` 647/647, `test_dispatch test_cv_edit test_cv_pipeline` 178/178; o teste novo do modo 2 falha sem a
+  mudança. Nenhum ChatGPT real rodado.
+- Pendente: uso real no painel (o usuário clica); E2E quando a porta 3000 estiver livre.
