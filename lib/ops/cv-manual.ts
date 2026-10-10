@@ -367,3 +367,31 @@ export function removeItemBlocker(section: CvSection): string | null {
 export function payload(original: CvDoc, doc: CvDocument): ManualPayload {
   return { schema: MANUAL_SCHEMA, doc_sha256: original.doc_sha256, doc }
 }
+
+export type RebaseResult = { doc: CvDocument; conflicts: string[] }
+
+/**
+ * The editor's draft carried over to a newer job-search document (a PDF was just made, or another tab saved): per
+ * part (header, each section by id), the user's change stays where the new document left that part as it was when
+ * the editor opened; anything else takes the new document. A part both changed differently takes the new document and
+ * is named in `conflicts` (the draft never overwrites what the user has not seen).
+ */
+export function rebaseManualDoc(base: CvDocument, draft: CvDocument, next: CvDocument): RebaseResult {
+  // Compared normalized (as job-search stores them); what is kept is exactly what was typed or what job-search sent.
+  const [b, d, n] = [normalizeDoc(base), normalizeDoc(draft), normalizeDoc(next)]
+  const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y)
+  const conflicts: string[] = []
+  function pick<T>(label: string, part: (doc: CvDocument) => T | undefined, fallback: T): T {
+    const [was, mine, now] = [part(b), part(d), part(n)]
+    const typed = part(draft)
+    if (mine === undefined || typed === undefined || same(mine, was)) return fallback
+    if (same(now, was) || same(now, mine)) return typed
+    conflicts.push(label)
+    return fallback
+  }
+  const header = pick("Cabeçalho", (doc) => doc.header, next.header)
+  const sections = next.sections.map((section) =>
+    pick(section.title, (doc) => doc.sections.find((s) => s.id === section.id && s.kind === section.kind), section)
+  )
+  return { doc: { ...next, header, sections }, conflicts }
+}

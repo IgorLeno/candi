@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useCallback, useEffect, useRef, useState, useTransition } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { getCvDoc, saveCvManual } from "@/app/actions/ops"
@@ -22,6 +22,7 @@ import {
   addLink,
   checkManualDoc,
   moveItem,
+  rebaseManualDoc,
   removeBullet,
   removeItem,
   removeItemBlocker,
@@ -213,6 +214,10 @@ function PlusMenu({
   )
 }
 
+function conflictText(parts: string[]): string {
+  return `O currículo novo também mudou em ${parts.join(", ")}: ficou a versão nova; refaça ali o que você tinha mudado.`
+}
+
 /**
  * "Editar currículo" → Manual (cv-manual/2, docs/plans/2026-10-10-edicao-manual-flexivel.md): every field is editable
  * (the text is the user's own), bullets, links and items can be added, removed and reordered within job-search's
@@ -220,10 +225,13 @@ function PlusMenu({
  */
 export function CvManualEditor({
   jobId,
+  docVersion,
   disabledReason,
   onStarted,
 }: {
   jobId: string
+  /** Changes when a résumé edit or generation of this job finishes: job-search's document may be newer. */
+  docVersion: string
   disabledReason: string | null
   onStarted: () => void
 }) {
@@ -231,6 +239,35 @@ export function CvManualEditor({
   const [doc, setDoc] = useState<CvDocument | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  const latest = useRef({ original, doc })
+  latest.current = { original, doc }
+  /**
+   * Re-reads job-search's document and carries the draft over to it (2026-10-10: a second save after a finished edit
+   * went with the hash from when the editor opened and the panel refused it). Returns the parts the user should check.
+   */
+  const reload = useCallback(async (): Promise<string[]> => {
+    const result = await getCvDoc(jobId)
+    if (!result.ok) {
+      setError(result.code)
+      return []
+    }
+    const { original: was, doc: draft } = latest.current
+    if (was?.doc_sha256 === result.value.doc_sha256) return []
+    const rebased = was && draft ? rebaseManualDoc(was.doc, draft, result.value.doc) : null
+    setOriginal(result.value)
+    setDoc(rebased ? rebased.doc : result.value.doc)
+    return rebased?.conflicts ?? []
+  }, [jobId])
+  const seenVersion = useRef(docVersion)
+  useEffect(() => {
+    if (seenVersion.current === docVersion) return
+    seenVersion.current = docVersion
+    reload()
+      .then((conflicts) => {
+        if (conflicts.length) toast.warning(conflictText(conflicts))
+      })
+      .catch(() => setError("DISPATCHER_UNAVAILABLE"))
+  }, [docVersion, reload])
   useEffect(() => {
     let alive = true
     getCvDoc(jobId)
@@ -543,6 +580,13 @@ export function CvManualEditor({
               if (result.ok) {
                 toast.success("Edição manual enviada para gerar o PDF.")
                 onStarted()
+              } else if (result.code === "CV_DOC_CHANGED") {
+                const conflicts = await reload()
+                toast.error(
+                  "O currículo mudou desde que esta edição foi aberta. O editor recarregou mantendo suas edições: " +
+                    "confira e salve de novo." +
+                    (conflicts.length ? ` ${conflictText(conflicts)}` : "")
+                )
               } else toast.error(refusalText(result.code))
             } catch {
               toast.error(refusalText("UNAUTHENTICATED"))

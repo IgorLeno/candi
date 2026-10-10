@@ -9,9 +9,11 @@ vi.mock("@/app/actions/ops", () => ({
   getCvDoc: (...a: unknown[]) => getCvDoc(...a),
   saveCvManual: (...a: unknown[]) => saveCvManual(...a),
 }))
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }))
+vi.mock("sonner", () => ({ toast }))
 
 import { CvManualEditor } from "@/components/job-search/cv-manual-editor"
+import { rebaseManualDoc } from "@/lib/ops/cv-manual"
 
 const original: CvDoc = {
   job_id: "fake-1001",
@@ -51,11 +53,12 @@ beforeEach(() => {
   Element.prototype.scrollIntoView ??= () => {}
   getCvDoc.mockReset().mockResolvedValue({ ok: true, value: original })
   saveCvManual.mockReset().mockResolvedValue({ ok: true, value: {} })
+  Object.values(toast).forEach((fn) => fn.mockReset())
 })
 
 describe("CvManualEditor", () => {
   it("shows generic labels, no locks, and every field editable", async () => {
-    render(<CvManualEditor jobId="fake-1001" disabledReason={null} onStarted={() => {}} />)
+    render(<CvManualEditor jobId="fake-1001" docVersion="" disabledReason={null} onStarted={() => {}} />)
     const block = await screen.findByTestId("cv-manual-projects-1")
     expect(block).toHaveTextContent("Projeto 1")
     expect(block).not.toHaveTextContent("Grimperium — projeto pessoal em Python ·")
@@ -68,7 +71,7 @@ describe("CvManualEditor", () => {
   it("reorders projects, adds a link and a bullet, and sends the whole document", async () => {
     const user = userEvent.setup()
     const onStarted = vi.fn()
-    render(<CvManualEditor jobId="fake-1001" disabledReason={null} onStarted={onStarted} />)
+    render(<CvManualEditor jobId="fake-1001" docVersion="" disabledReason={null} onStarted={onStarted} />)
     await screen.findByTestId("cv-manual-projects-1")
 
     await user.click(screen.getByTestId("cv-manual-projects-1-menu"))
@@ -107,11 +110,80 @@ describe("CvManualEditor", () => {
 
   it("removes a bullet only while another one stays", async () => {
     const user = userEvent.setup()
-    render(<CvManualEditor jobId="fake-1001" disabledReason={null} onStarted={() => {}} />)
+    render(<CvManualEditor jobId="fake-1001" docVersion="" disabledReason={null} onStarted={() => {}} />)
     await screen.findByTestId("cv-manual-projects-1")
     expect(screen.getByTestId("cv-manual-projects-1-remove-bullet-1")).toBeDisabled()
     await user.click(screen.getByTestId("cv-manual-projects-1-remove-link"))
     expect(screen.queryByTestId("cv-manual-projects-1-link")).toBeNull()
     expect(screen.getByTestId("cv-manual-submit")).toBeEnabled()
+  })
+
+  it("after a finished edit, re-reads the document, keeps what was typed and sends the new hash", async () => {
+    // 2026-10-10: the second save after v4 went with the hash from when the editor opened → CV_DOC_CHANGED.
+    const user = userEvent.setup()
+    const props = { jobId: "fake-1001", onStarted: () => {} }
+    const { rerender } = render(<CvManualEditor {...props} docVersion="1" disabledReason={null} />)
+    await user.type(await screen.findByTestId("cv-manual-summary-text"), " Novo.")
+    await user.click(screen.getByTestId("cv-manual-submit"))
+    expect(saveCvManual.mock.calls[0][1].docSha256).toBe("a".repeat(64))
+
+    const saved = withSummary({ ...original, doc_sha256: "b".repeat(64) }, "Resumo atual. Novo.")
+    getCvDoc.mockResolvedValue({ ok: true, value: saved })
+    rerender(<CvManualEditor {...props} docVersion="1" disabledReason="Edição em andamento." />)
+    rerender(<CvManualEditor {...props} docVersion="2" disabledReason={null} />)
+    await waitFor(() => expect(getCvDoc).toHaveBeenCalledTimes(2))
+    await user.type(screen.getByTestId("cv-manual-summary-text"), " Mais.")
+    await waitFor(() => expect(screen.getByTestId("cv-manual-submit")).toBeEnabled())
+    await user.click(screen.getByTestId("cv-manual-submit"))
+    expect(saveCvManual.mock.calls[1][1].docSha256).toBe("b".repeat(64))
+    expect(saveCvManual.mock.calls[1][1].doc.sections[0].text).toBe("Resumo atual. Novo. Mais.")
+    expect(toast.warning).not.toHaveBeenCalled()
+  })
+
+  it("on CV_DOC_CHANGED, reloads keeping the draft so the user can save again", async () => {
+    const user = userEvent.setup()
+    render(<CvManualEditor jobId="fake-1001" docVersion="" disabledReason={null} onStarted={() => {}} />)
+    await user.type(await screen.findByTestId("cv-manual-summary-text"), " Meu.")
+    const other = { ...original, doc_sha256: "c".repeat(64) }
+    other.doc = { ...other.doc, header: { ...other.doc.header, headline: "Outra aba" } }
+    getCvDoc.mockResolvedValue({ ok: true, value: other })
+    saveCvManual.mockResolvedValueOnce({ ok: false, code: "CV_DOC_CHANGED" })
+    await user.click(screen.getByTestId("cv-manual-submit"))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("recarregou mantendo")))
+    expect(screen.getByTestId("cv-manual-summary-text")).toHaveValue("Resumo atual. Meu.")
+    expect(screen.getByTestId("cv-manual-header-headline")).toHaveValue("Outra aba")
+    await waitFor(() => expect(screen.getByTestId("cv-manual-submit")).toBeEnabled())
+    await user.click(screen.getByTestId("cv-manual-submit"))
+    await waitFor(() => expect(saveCvManual).toHaveBeenCalledTimes(2))
+    expect(saveCvManual.mock.calls[1][1].docSha256).toBe("c".repeat(64))
+  })
+})
+
+function withSummary(doc: CvDoc, text: string): CvDoc {
+  const sections = doc.doc.sections.map((s) => (s.id === "summary" && s.kind === "paragraph" ? { ...s, text } : s))
+  return { ...doc, doc: { ...doc.doc, sections } }
+}
+
+describe("rebaseManualDoc", () => {
+  const base = original.doc
+  const edit = (text: string) => withSummary(original, text).doc
+
+  it("keeps the user's part when the new document left it alone, and takes the new parts", () => {
+    const next = { ...base, header: { ...base.header, headline: "Nova" } }
+    const out = rebaseManualDoc(base, edit("Meu resumo."), next)
+    expect(out.conflicts).toEqual([])
+    expect(out.doc.header.headline).toBe("Nova")
+    expect(out.doc.sections[0]).toMatchObject({ text: "Meu resumo." })
+  })
+
+  it("takes the new document and names the part when both changed it differently", () => {
+    const out = rebaseManualDoc(base, edit("Meu resumo."), edit("Resumo do ChatGPT."))
+    expect(out.conflicts).toEqual(["RESUMO"])
+    expect(out.doc.sections[0]).toMatchObject({ text: "Resumo do ChatGPT." })
+  })
+
+  it("treats the same change on both sides (the user's own save) as no conflict", () => {
+    const out = rebaseManualDoc(base, edit("Igual  ."), edit("Igual ."))
+    expect(out.conflicts).toEqual([])
   })
 })

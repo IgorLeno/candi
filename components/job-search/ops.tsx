@@ -2314,6 +2314,7 @@ export function JobCvOps() {
       {renderer === "local" ? (
         <CvLocalEditForm
           jobId={jobId}
+          docVersion={`${cv?.finished_at ?? ""}:${edit?.finished_at ?? ""}`}
           disabledReason={
             edit?.active
               ? "Edição em andamento."
@@ -2375,10 +2376,12 @@ type CvLocalTab = "reassess" | "request" | "manual"
 /** Three local edit modes. The panel sends intent; job-search owns the patch, validation and PDF. */
 function CvLocalEditForm({
   jobId,
+  docVersion,
   disabledReason,
   onStarted,
 }: {
   jobId: string
+  docVersion: string
   disabledReason: string | null
   onStarted: () => void
 }) {
@@ -2494,7 +2497,9 @@ function CvLocalEditForm({
           </div>
         </div>
       )}
-      {tab === "manual" && <CvManualEditor jobId={jobId} disabledReason={disabledReason} onStarted={onStarted} />}
+      {tab === "manual" && (
+        <CvManualEditor jobId={jobId} docVersion={docVersion} disabledReason={disabledReason} onStarted={onStarted} />
+      )}
       {disabledReason && (
         <p className="text-xs text-muted-foreground" data-testid="cv-local-disabled">
           {disabledReason}
