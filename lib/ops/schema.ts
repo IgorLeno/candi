@@ -211,32 +211,72 @@ const cvFitSchema = z.object({
   omitted: z.array(z.number().int()).max(30),
 })
 
+/**
+ * "Editar currículo" manual (`dispatch.py cv-doc`, cv-manual/2 since 2026-10-10): the job's whole `cv-doc/1` (plain
+ * text only) with job-search's structure and length limits. The panel edits a copy and sends it back; job-search
+ * normalizes and validates it again. Bounds here are only sanity caps.
+ */
+const cvTextSchema = z.string().max(1000)
+const cvIdSchema = z.string().max(80)
+const cvLineSchema = z.object({ id: cvIdSchema, text: cvTextSchema }).strict()
+const cvEntrySchema = z
+  .object({
+    id: cvIdSchema,
+    title: cvTextSchema,
+    date: cvTextSchema.optional(),
+    org: z.object({ strong: cvTextSchema, rest: cvTextSchema }).strict().optional(),
+    link: z
+      .object({ href: z.string().max(600), text: cvTextSchema })
+      .strict()
+      .optional(),
+    bullets: z.array(cvLineSchema).max(20),
+  })
+  .strict()
+const cvSectionSchema = z.discriminatedUnion("kind", [
+  z.object({ id: cvIdSchema, kind: z.literal("paragraph"), title: cvTextSchema, text: cvTextSchema }).strict(),
+  z
+    .object({ id: cvIdSchema, kind: z.literal("entries"), title: cvTextSchema, items: z.array(cvEntrySchema).max(20) })
+    .strict(),
+  z
+    .object({
+      id: cvIdSchema,
+      kind: z.literal("pairs"),
+      title: cvTextSchema,
+      rows: z.array(z.object({ id: cvIdSchema, label: cvTextSchema, text: cvTextSchema }).strict()).max(20),
+    })
+    .strict(),
+  z
+    .object({ id: cvIdSchema, kind: z.literal("lines"), title: cvTextSchema, lines: z.array(cvLineSchema).max(20) })
+    .strict(),
+])
+export const cvDocumentSchema = z
+  .object({
+    schema: z.literal("cv-doc/1"),
+    lang: z.enum(["pt", "en"]),
+    template: z.string().max(40),
+    header: z
+      .object({ name: cvTextSchema, headline: cvTextSchema, location: cvTextSchema, contact: cvTextSchema })
+      .strict(),
+    sections: z.array(cvSectionSchema).max(10),
+  })
+  .strict()
+export type CvDocument = z.infer<typeof cvDocumentSchema>
+export type CvSection = CvDocument["sections"][number]
+export type CvEntry = z.infer<typeof cvEntrySchema>
+const limitSchema = z.number().int().min(1).max(1000)
 export const cvDocSchema = z.object({
   job_id: z.string().regex(JOB_ID_RE),
   lang: z.enum(["pt", "en"]),
   filename: z.string().max(200),
   doc_sha256: z.string().regex(/^[0-9a-f]{64}$/),
-  sections: z
-    .array(
-      z.object({
-        id: z.string().max(100),
-        title: z.string().max(200),
-        fields: z
-          .array(
-            z.object({
-              path: z.string().max(200),
-              item: z.string().max(900).nullable(),
-              label: z.string().max(200),
-              text: z.string().max(900),
-              kind: z.enum(["paragraph", "bullet", "field"]),
-              max: z.number().int().positive().max(900),
-              locked: z.boolean(),
-            })
-          )
-          .max(100),
-      })
-    )
-    .max(20),
+  doc: cvDocumentSchema,
+  limits: z.object({
+    skills_rows: limitSchema,
+    projects_items: limitSchema,
+    education_bullets: limitSchema,
+    item_bullets: limitSchema,
+  }),
+  max_len: z.object({ paragraph: limitSchema, bullet: limitSchema, field: limitSchema }),
 })
 export type CvDoc = z.infer<typeof cvDocSchema>
 export const cvDocResultSchema = z.object({ ok: z.literal(true), cv_doc: cvDocSchema })

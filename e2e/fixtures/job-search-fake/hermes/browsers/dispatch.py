@@ -405,6 +405,50 @@ def flag(argv, name):
     return argv[argv.index(name) + 1] if name in argv else None
 
 
+def fake_cv_doc():
+    """`cv-doc/1` of every fake job (the real one comes from job-search's `cv_doc`)."""
+    return {"schema": "cv-doc/1", "lang": "pt", "template": "classic-1",
+            "header": {"name": "IGOR FAKE", "headline": "Engenharia Química", "location": "São Paulo, SP",
+                       "contact": "contato protegido"},
+            "sections": [
+                {"id": "summary", "kind": "paragraph", "title": "RESUMO PROFISSIONAL", "text": "Resumo atual da vaga."},
+                {"id": "experience", "kind": "entries", "title": "EXPERIÊNCIA", "items": [
+                    {"id": "acme", "title": "Estágio", "date": "2023", "org": {"strong": "ACME", "rest": "Campinas"},
+                     "bullets": [{"id": "b1", "text": "Análise de dados."}]}]},
+                {"id": "projects", "kind": "entries", "title": "PROJETOS", "items": [
+                    {"id": "grimperium", "title": "Grimperium", "bullets": [{"id": "b1", "text": "Química."}],
+                     "link": {"href": "https://github.com/IgorLeno/grimperium", "text": "github.com/IgorLeno/grimperium"}},
+                    {"id": "candi", "title": "Candi", "bullets": [{"id": "b1", "text": "Painel."}]}]},
+                {"id": "languages", "kind": "lines", "title": "IDIOMAS", "lines": [{"id": "l1", "text": "Inglês"}]}]}
+
+
+def _fake_paths(doc):
+    out = [(f"header/{k}", v) for k, v in doc["header"].items()]
+    for sec in doc["sections"]:
+        out.append((f"{sec['id']}/title", sec["title"]))
+        if sec["kind"] == "paragraph":
+            out.append((f"{sec['id']}/text", sec["text"]))
+        for item in sec.get("items", []):
+            base = f"{sec['id']}/{item['id']}"
+            out += [(f"{base}/{k}", v if isinstance(v, str) else json.dumps(v, sort_keys=True))
+                    for k, v in item.items() if k not in ("id", "bullets")]
+            out += [(f"{base}/bullets/{b['id']}", b["text"]) for b in item["bullets"]]
+        out += [(f"{sec['id']}/{line['id']}", line["text"]) for line in sec.get("lines", [])]
+    return out
+
+
+def manual_diff(old, new):
+    """Paths the fake's manual edit changed (with reorders), or None for a malformed document."""
+    try:
+        before, after = _fake_paths(old), _fake_paths(new)
+    except (KeyError, TypeError, AttributeError):
+        return None
+    old_map, new_map = dict(before), dict(after)
+    changed = [p for p, t in after if old_map.get(p) != t] + [p for p, _ in before if p not in new_map]
+    order = [p for p, _ in after if p in old_map] != [p for p, _ in before if p in new_map]
+    return changed + (["ordem"] if order else [])
+
+
 def main(argv):
     cmd = argv[0]
     recs = load()
@@ -509,12 +553,16 @@ def main(argv):
                         payload = json.loads(sys.stdin.read())
                     except ValueError:
                         return refuse("MANUAL_INVALID")
+                    if not isinstance(payload, dict) or payload.get("schema") != "cv-manual/2":
+                        return refuse("MANUAL_INVALID")
                     if payload.get("doc_sha256") != rec["doc_sha256"]:
                         return refuse("CV_DOC_CHANGED")
-                    edits = payload.get("edits")
-                    if not isinstance(edits, list) or not edits:
+                    edited = manual_diff(fake_cv_doc(), payload.get("doc"))
+                    if edited is None:
                         return refuse("MANUAL_INVALID")
-                    rec["edited"] = [item.get("path") for item in edits]
+                    if not edited:
+                        return refuse("MANUAL_NO_CHANGES")
+                    rec["edited"] = edited
                 elif not reassess:
                     rec["edit_request"] = text.strip()
             else:
@@ -635,15 +683,9 @@ def main(argv):
         if not cv_done(recs, job_id):
             return refuse("CV_NOT_READY")
         doc = {"job_id": job_id, "lang": "pt", "filename": "curriculo_igor-fernandes_pt_fake.pdf",
-               "doc_sha256": cv_hash(recs, job_id), "sections": [
-                   {"id": "summary", "title": "Resumo profissional", "fields": [
-                       {"path": "summary/text", "item": None, "label": "Resumo", "text": "Resumo atual da vaga.",
-                        "kind": "paragraph", "max": 900, "locked": False},
-                       {"path": "contact/email", "item": None, "label": "E-mail", "text": "contato protegido",
-                        "kind": "field", "max": 200, "locked": True}]},
-                   {"id": "experience", "title": "Experiência", "fields": [
-                       {"path": "experience/acme/bullets/b1", "item": "acme", "label": "Atividade",
-                        "text": "Análise de dados.", "kind": "bullet", "max": 400, "locked": False}]}]}
+               "doc_sha256": cv_hash(recs, job_id), "doc": fake_cv_doc(),
+               "limits": {"skills_rows": 4, "projects_items": 2, "education_bullets": 2, "item_bullets": 3},
+               "max_len": {"paragraph": 900, "bullet": 450, "field": 250}}
         print(json.dumps({"ok": True, "cv_doc": doc}))
         return 0
     if cmd == "apply-cv-changes":

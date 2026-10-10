@@ -6,7 +6,7 @@ import { getAllowedSession } from "@/lib/auth/session"
 import { JOB_SEARCH_CACHE_TAG, getJobSearchData } from "@/lib/job-search/source"
 import { attentionEntries, type AttentionEntry } from "@/lib/ops/attention"
 import { cvFileInfo } from "@/lib/ops/cv-file"
-import { normalizeManualEdits } from "@/lib/ops/cv-manual"
+import { checkManualDoc, payload as manualPayload } from "@/lib/ops/cv-manual"
 import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
 import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
 import {
@@ -22,6 +22,7 @@ import {
   attentionResultSchema,
   confirmOpenResultSchema,
   cvDocResultSchema,
+  cvDocumentSchema,
   declineResultSchema,
   deleteJobResultSchema,
   deleteResultSchema,
@@ -348,16 +349,9 @@ export async function getCvDoc(jobId: unknown): Promise<ActionResult<CvDoc>> {
   return result.ok ? { ok: true, value: result.value.cv_doc } : { ok: false, code: result.code }
 }
 
-const manualInputSchema = z
-  .object({
-    docSha256: z.string().regex(/^[0-9a-f]{64}$/),
-    edits: z
-      .array(z.object({ path: z.string(), text: z.string() }).strict())
-      .min(1)
-      .max(80),
-  })
-  .strict()
+const manualInputSchema = z.object({ docSha256: z.string().regex(/^[0-9a-f]{64}$/), doc: cvDocumentSchema }).strict()
 
+/** Manual edit (cv-manual/2): the whole edited document, over stdin only. job-search validates everything again. */
 export async function saveCvManual(jobId: unknown, input: unknown): Promise<ActionResult<Dispatch>> {
   await requireSession()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
@@ -365,17 +359,17 @@ export async function saveCvManual(jobId: unknown, input: unknown): Promise<Acti
   if (!parsed.success) return { ok: false, code: "MANUAL_INVALID" }
   const current = await runDispatcher(["cv-doc", jobId], cvDocResultSchema)
   if (!current.ok) return { ok: false, code: current.code }
-  const doc = current.value.cv_doc
-  if (doc.doc_sha256 !== parsed.data.docSha256) return { ok: false, code: "CV_DOC_CHANGED" }
-  const checked = normalizeManualEdits(doc, parsed.data.edits)
+  const original = current.value.cv_doc
+  if (original.doc_sha256 !== parsed.data.docSha256) return { ok: false, code: "CV_DOC_CHANGED" }
+  const checked = checkManualDoc(original, parsed.data.doc)
   if (!checked.ok) return checked
-  const payload = JSON.stringify({ doc_sha256: doc.doc_sha256, edits: checked.edits })
-  if (new TextEncoder().encode(payload).length > 24 * 1024) return { ok: false, code: "MANUAL_INVALID" }
+  const stdin = JSON.stringify(manualPayload(original, checked.doc))
+  if (new TextEncoder().encode(stdin).length > 24 * 1024) return { ok: false, code: "MANUAL_INVALID" }
   const result = await runDispatcher(
     ["start", CV_EDIT_ACTION, "--platform", "hermes", "--job-id", jobId, "--manual-stdin"],
     oneResultSchema,
     undefined,
-    { stdin: payload }
+    { stdin }
   )
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }

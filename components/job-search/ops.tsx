@@ -38,7 +38,6 @@ import {
   editCv,
   discardDispatch,
   getCvFile,
-  getCvDoc,
   listDispatches,
   openApplicationBrowser,
   openCvBrowser,
@@ -46,7 +45,6 @@ import {
   registerWriteset,
   reassessCv,
   resumeCv,
-  saveCvManual,
   startDispatch,
   startIntake,
 } from "@/app/actions/ops"
@@ -66,7 +64,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ToneBadge } from "@/components/job-search/tone-badge"
 import { formatTimestamp, safeHttpUrl } from "@/lib/job-search/present"
 import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
-import { normalizeManualEdits } from "@/lib/ops/cv-manual"
+import { CvManualEditor } from "@/components/job-search/cv-manual-editor"
 import { usePlatform, writePlatform } from "@/lib/ops/platform-pref"
 import { useClosed, useCollapsed, writeClosed, writeCollapsed } from "@/lib/ops/collapse-pref"
 import { ATTENTION_REFRESH_EVENT } from "@/lib/ops/attention"
@@ -111,7 +109,6 @@ import {
   PLATFORMS,
   type BotAction,
   type CvFileInfo,
-  type CvDoc,
   type CvChange,
   type CvResumeOption,
   type Dispatch,
@@ -2504,108 +2501,6 @@ function CvLocalEditForm({
         </p>
       )}
     </section>
-  )
-}
-
-function CvManualEditor({
-  jobId,
-  disabledReason,
-  onStarted,
-}: {
-  jobId: string
-  disabledReason: string | null
-  onStarted: () => void
-}) {
-  const [doc, setDoc] = useState<CvDoc | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [edits, setEdits] = useState<Record<string, string>>({})
-  const [pending, startTransition] = useTransition()
-  useEffect(() => {
-    let alive = true
-    getCvDoc(jobId)
-      .then((result) => {
-        if (!alive) return
-        if (result.ok) setDoc(result.value)
-        else setError(result.code)
-      })
-      .catch(() => {
-        if (alive) setError("DISPATCHER_UNAVAILABLE")
-      })
-    return () => {
-      alive = false
-    }
-  }, [jobId])
-  const raw = Object.entries(edits).map(([path, text]) => ({ path, text }))
-  const checked = doc && raw.length ? normalizeManualEdits(doc, raw) : null
-  return (
-    <div className="space-y-3" role="tabpanel" data-testid="cv-manual-editor">
-      <p className="text-xs text-muted-foreground">
-        Troque apenas o texto de campos existentes. Nome, contato, datas, instituições, cargos, certificados e idiomas
-        ficam travados. Esta edição não usa IA.
-      </p>
-      {error && (
-        <p role="alert" className="text-xs text-st-review-fg">
-          {refusalText(error)}
-        </p>
-      )}
-      {!doc && !error && <p className="text-xs text-muted-foreground">Carregando currículo editável…</p>}
-      {doc?.sections.map((section) => (
-        <div key={section.id} className="space-y-2 border-t border-border pt-3">
-          <h4 className="text-sm font-semibold">{section.title}</h4>
-          {section.fields.map((field) => (
-            <div key={field.path} className="space-y-1">
-              <Label htmlFor={`manual-${field.path}`} className="text-xs">
-                {field.item ? `${field.item} · ` : ""}
-                {field.label} {field.locked && "🔒"}
-              </Label>
-              {field.locked ? (
-                <p className="rounded-lg bg-muted/40 p-2 text-xs text-muted-foreground">{field.text}</p>
-              ) : (
-                <Textarea
-                  id={`manual-${field.path}`}
-                  value={edits[field.path] ?? field.text}
-                  rows={field.kind === "paragraph" ? 4 : 2}
-                  disabled={!!disabledReason || pending}
-                  data-testid={`cv-manual-${field.path}`}
-                  onChange={(event) => setEdits((current) => ({ ...current, [field.path]: event.target.value }))}
-                />
-              )}
-              {!field.locked && (
-                <p className="text-right text-xs text-muted-foreground">
-                  {[...(edits[field.path] ?? field.text)].length}/{field.max}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-      ))}
-      {checked && !checked.ok && checked.code !== "MANUAL_NO_CHANGES" && (
-        <p role="alert" className="text-xs text-st-review-fg">
-          {refusalText(checked.code)}
-        </p>
-      )}
-      <Button
-        size="sm"
-        disabled={!!disabledReason || pending || !checked?.ok}
-        data-testid="cv-manual-submit"
-        onClick={() =>
-          startTransition(async () => {
-            if (!doc || !checked?.ok) return
-            try {
-              const result = await saveCvManual(jobId, { docSha256: doc.doc_sha256, edits: checked.edits })
-              if (result.ok) {
-                toast.success("Edição manual enviada para gerar o PDF.")
-                onStarted()
-              } else toastRefusal(result.code)
-            } catch {
-              toast.error(refusalText("UNAUTHENTICATED"))
-            }
-          })
-        }
-      >
-        {pending ? "Gerando…" : "Salvar e gerar PDF"}
-      </Button>
-    </div>
   )
 }
 

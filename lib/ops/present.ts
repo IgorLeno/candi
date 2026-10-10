@@ -235,9 +235,15 @@ export function leftOutBlocker(job: LeftOutJob, analysis: Dispatch | null): stri
 export function refusalText(code: string): string {
   if (code.startsWith("CHANGES_DEPEND:"))
     return `Uma mudança aprovada depende de outra rejeitada (${code.split(":")[1]}).`
-  if (code.startsWith("MANUAL_PATH_LOCKED:")) return "Este campo do currículo é travado e não pode ser alterado."
-  if (code.startsWith("MANUAL_PATH_MISSING:")) return "Um campo não existe mais no currículo. Reabra o editor."
+  if (code.startsWith("MANUAL_TEXT_EMPTY:")) return "Há um campo vazio. Preencha ou remova o item."
+  if (code.startsWith("MANUAL_TEXT_TOO_LONG:")) return "Um campo passou do tamanho máximo."
   if (code.startsWith("MANUAL_TEXT_")) return "Há texto inválido na edição manual. Revise o campo indicado."
+  if (code.startsWith("MANUAL_LINK_")) return "O link precisa ser um endereço https:// de um domínio público."
+  if (code.startsWith("MANUAL_LIMIT_")) return "A edição passa do limite de itens do currículo."
+  if (code.startsWith("MANUAL_SECTION_EMPTY:") || code.startsWith("MANUAL_BULLETS_EMPTY:"))
+    return "Cada seção e cada item precisam de ao menos um conteúdo."
+  if (code.startsWith("MANUAL_") && !(code in REFUSAL_TEXT))
+    return "A edição manual não está no formato esperado. Reabra o formulário."
   if (code.startsWith("PAGE_OVERFLOW:")) return "O currículo passou de uma página. Encurte o texto e tente de novo."
   if (code.startsWith("PATCH_") || code.startsWith("CHANGES_"))
     return "A proposta não passou na validação do job-search. Peça uma nova avaliação."
