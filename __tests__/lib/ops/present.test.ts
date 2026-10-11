@@ -15,6 +15,7 @@ import {
   canRecordSent,
   canRegisterWriteset,
   canResumeCv,
+  liveViewUrl,
   confirmOpenRefusalText,
   deleteJobConfirmed,
   deleteJobRefusalText,
@@ -464,6 +465,23 @@ describe("canResumeCv", () => {
     expect(canResumeCv({ ...stuck, status: "FALHOU" })).toBe(false)
     expect(canResumeCv({ ...stuck, mode: "bot" })).toBe(false)
     expect(canResumeCv({ ...stuck, progress: { ...stuck.progress, recovery: null } })).toBe(false)
+  })
+
+  it("links only the view-only noVNC of the container while the run is going", () => {
+    const view = "http://127.0.0.1:6080/vnc.html?autoconnect=1&view_only=1&resize=scale"
+    const running = { ...stuck, status: "RODANDO" as const, progress: { ...stuck.progress, live_view_url: view } }
+    expect(liveViewUrl(running)).toBe(view)
+    expect(liveViewUrl(stuck)).toBeNull()
+    expect(liveViewUrl({ ...running, status: "CONCLUIDO" })).toBeNull()
+    for (const url of [
+      "http://127.0.0.1:6080/vnc.html?autoconnect=1",
+      "http://127.0.0.1:6080/vnc.html?view_only=0",
+      "http://127.0.0.1:6080/?view_only=1",
+      "https://evil.example/vnc.html?view_only=1",
+      "javascript:alert(1)//http://127.0.0.1:6080/vnc.html?view_only=1",
+    ]) {
+      expect(liveViewUrl({ ...running, progress: { ...running.progress, live_view_url: url } })).toBeNull()
+    }
   })
 
   it("reads prompt_stale only as a boolean", () => {

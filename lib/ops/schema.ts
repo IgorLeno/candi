@@ -360,6 +360,8 @@ const progressSchema = z.object({
   edited: z.array(z.string().max(200)).max(80).nullable().optional(),
   /** "Gerar currículo" stuck in PRECISA_HUMANO (host): reason and resume options. */
   recovery: cvRecoverySchema.nullable().optional(),
+  /** Local résumé while it talks to ChatGPT (2026-10-11): view-only noVNC of the container's Chromium. */
+  live_view_url: z.string().max(300).nullable().optional(),
 })
 export type DispatchProgress = z.infer<typeof progressSchema>
 

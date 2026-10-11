@@ -94,6 +94,7 @@ import {
   isActiveStatus,
   latest,
   leftOutBlocker,
+  liveViewUrl,
   leftOutKindLabel,
   needsUser,
   persistSummary,
@@ -1397,6 +1398,7 @@ export function DispatchCard({
       ? withRegistration(dispatch.progress, knownJobIds)
       : dispatch.progress
   const status = statusBadge(dispatch.status, progress)
+  const liveView = liveViewUrl(dispatch)
   const Icon = ACTION_ICON[dispatch.action]
   // The "vaga indicada" cards stay on screen until the next intake, so they can be collapsed (view only).
   const collapsed = useCollapsed(intake ? dispatch.id : null)
@@ -1467,6 +1469,19 @@ export function DispatchCard({
         />
         <span className="w-10 text-right font-display text-sm font-bold tabular-nums">{progress.percent}%</span>
       </div>
+      {liveView && (
+        <a
+          href={liveView}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          title="Abre a tela do navegador onde o ChatGPT está gerando o currículo (só visualização)"
+          data-testid="dispatch-live-view"
+        >
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          Ver navegador
+        </a>
+      )}
       {/* forceMount keeps refine text and open dialogs across collapse, so hiding it while closed is up to us. */}
       <CollapsibleContent forceMount className="space-y-3 data-[state=closed]:hidden" data-testid="dispatch-details">
         <ol className="space-y-1.5">

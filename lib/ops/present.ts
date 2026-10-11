@@ -627,6 +627,20 @@ export function applicationCvWarning(job: JobArtifacts | undefined): string | nu
 }
 
 /** "Tentar de novo" (UX gating): a host résumé run stuck on the user, not resumed yet, with job-search's options. */
+/**
+ * The only screen the panel links to: the view-only noVNC of the Threadgist container (127.0.0.1:6080), where the
+ * local résumé's ChatGPT runs. job-search decides when to send it; anything else (another host, port or page, or
+ * without `view_only=1`: the interactive mode pauses the agent and breaks the run) is ignored.
+ */
+const LIVE_VIEW_PREFIX = "http://127.0.0.1:6080/vnc.html?"
+
+export function liveViewUrl(dispatch: Dispatch): string | null {
+  const url = dispatch.progress.live_view_url
+  if (!url || dispatch.status !== "RODANDO" || !url.startsWith(LIVE_VIEW_PREFIX)) return null
+  const params = new URLSearchParams(url.slice(LIVE_VIEW_PREFIX.length))
+  return params.get("view_only") === "1" ? url : null
+}
+
 export function canResumeCv(dispatch: Dispatch): boolean {
   return (
     dispatch.action === "GERAR_CURRICULO" &&
