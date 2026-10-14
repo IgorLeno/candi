@@ -479,6 +479,9 @@ test.describe("Central de operações (bots)", () => {
     await expect(section.getByTestId("cv-edit")).toHaveCount(0)
     await expect(section.getByTestId("platform-toggle")).toHaveCount(0)
     await section.getByTestId("dispatch-button-GERAR_CURRICULO").click()
+    // The local renderer's own description, not the claude_design one.
+    await expect(page.getByTestId("dispatch-dialog")).toContainText("template local")
+    await expect(page.getByTestId("dispatch-dialog")).not.toContainText("/ajustar-curriculo")
     await page.getByTestId("dispatch-confirm").click()
     await expect(section.getByTestId("dispatch-GERAR_CURRICULO")).toHaveAttribute("data-status", "CONCLUIDO", {
       timeout: 30_000,

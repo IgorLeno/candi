@@ -33,7 +33,7 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     label: "Preencher vaga",
     verb: "Preencher vaga",
     description:
-      "O job-search confere a vaga, gera o currículo se faltar, abre a página no Application Browser e prepara o prompt para você colar no Claude in Chrome. O Claude para antes do botão final; o envio é sempre seu.",
+      "O job-search confere a vaga, gera o currículo se faltar e abre a página no Chrome da candidatura. Pelo Hermes, ele digita o prompt no painel do Claude da aba da vaga (abrir o painel é com você), preenche CPF/RG e anexa o currículo; o que faltar volta aqui como pendência. Pelo Grok, o comando vai para o Bot, que faz o preenchimento pelo Claude in Chrome do navegador dele. O Claude para antes do botão final; o envio é sempre seu.",
   },
   LOCALIZAR_VAGA: {
     label: "Vaga específica",
@@ -300,6 +300,13 @@ export function canDeleteJob(item: Pick<JobListItem, "statusCandidatura" | "unce
 export function deleteJobConfirmed(typed: string, jobId: string): boolean {
   return typed.trim() === jobId
 }
+
+/**
+ * "Gerar currículo" with the local renderer (plan 2026-10-07): ACTION_META keeps the claude_design text, which is still
+ * right when that renderer is on.
+ */
+export const CV_GENERATE_LOCAL_DESCRIPTION =
+  "O job-search pede o patch editorial ao ChatGPT, confere o formato, aplica as mudanças na base do currículo, encaixa tudo em uma página e gera o PDF no template local, sem Claude in Chrome. Se o ChatGPT deixar dúvida ou o texto não couber em uma página, para e mostra aqui."
 
 /** "Pedir edição" with the ChatGPT review on (decision 2026-10-05): what the card says and the button adds. */
 export const CV_EDIT_REVIEW_DESCRIPTION =

@@ -75,6 +75,7 @@ import {
   fillItemDoneText,
   ACTION_META,
   CV_EDIT_REVIEW_DESCRIPTION,
+  CV_GENERATE_LOCAL_DESCRIPTION,
   cvEditStopText,
   PLATFORM_LABEL,
   statusBadge,
@@ -1744,6 +1745,7 @@ function DispatchButton({
   primary,
   verb,
   fixedPlatform,
+  description,
   onStarted,
 }: {
   action: BotAction
@@ -1754,6 +1756,8 @@ function DispatchButton({
   /** Button text when it differs from the action's verb ("Nova cotação"). */
   verb?: string
   fixedPlatform?: "hermes"
+  /** Dialog text when it differs from the action's (the local résumé renderer). */
+  description?: string
   onStarted: () => void
 }) {
   const router = useRouter()
@@ -1790,7 +1794,7 @@ function DispatchButton({
         <DialogContent data-testid="dispatch-dialog">
           <DialogHeader>
             <DialogTitle>{meta.label}</DialogTitle>
-            <DialogDescription>{meta.description}</DialogDescription>
+            <DialogDescription>{description ?? meta.description}</DialogDescription>
           </DialogHeader>
           {command ? (
             <CommandBox command={command} />
@@ -2304,6 +2308,7 @@ export function JobCvOps() {
           action="GERAR_CURRICULO"
           jobId={jobId}
           fixedPlatform={renderer === "local" ? "hermes" : undefined}
+          description={renderer === "local" ? CV_GENERATE_LOCAL_DESCRIPTION : undefined}
           disabledReason={
             renderer === "INVALID"
               ? "Renderer do currículo inválido."

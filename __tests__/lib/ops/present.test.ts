@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
+  ACTION_META,
+  CV_GENERATE_LOCAL_DESCRIPTION,
   analyzeJobBlocker,
   applicationCvWarning,
   canApplyChanges,
@@ -49,6 +51,22 @@ const open = {
   archived: false,
   uncertainSubmit: false,
 }
+
+describe("bot descriptions", () => {
+  it("describes the local résumé renderer without Claude in Chrome", () => {
+    expect(CV_GENERATE_LOCAL_DESCRIPTION).toContain("template local")
+    expect(CV_GENERATE_LOCAL_DESCRIPTION).not.toContain("/ajustar-curriculo")
+    // claude_design keeps its own text.
+    expect(ACTION_META.GERAR_CURRICULO.description).toContain("/ajustar-curriculo")
+  })
+
+  it("says the host types the application prompt instead of asking the user to paste it", () => {
+    const text = ACTION_META.PREENCHER_CANDIDATURA.description
+    expect(text).not.toContain("colar")
+    expect(text).toContain("digita o prompt no painel do Claude")
+    expect(text).toContain("o envio é sempre seu")
+  })
+})
 
 describe("canDeclineJob", () => {
   it("allows any job whose application was not sent, uncertain or withdrawn", () => {
