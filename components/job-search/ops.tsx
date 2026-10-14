@@ -1415,7 +1415,9 @@ export function DispatchCard({
         <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         <span className="text-sm font-semibold text-foreground">{ACTION_META[dispatch.action].label}</span>
         <span className="text-xs text-muted-foreground">
-          {dispatch.bot} · {PLATFORM_LABEL[dispatch.platform]} · {formatTimestamp(dispatch.created_at)}
+          {/* The local résumé renderer runs on the host: "hermes" is only the platform value the dispatcher needs. */}
+          {dispatch.bot} · {dispatch.renderer === "local" ? "" : `${PLATFORM_LABEL[dispatch.platform]} · `}
+          {formatTimestamp(dispatch.created_at)}
         </span>
         <ToneBadge
           tone={status.tone}

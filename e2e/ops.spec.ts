@@ -489,6 +489,7 @@ test.describe("Central de operações (bots)", () => {
     await expect(section.getByTestId("dispatch-GERAR_CURRICULO")).toHaveAttribute("data-status", "CONCLUIDO", {
       timeout: 30_000,
     })
+    await expect(section.getByTestId("dispatch-GERAR_CURRICULO")).not.toContainText("Hermes")
     await section.getByTestId("cv-reassess-submit").click()
     const edit = section.getByTestId("dispatch-EDITAR_CURRICULO")
     await expect(edit).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
