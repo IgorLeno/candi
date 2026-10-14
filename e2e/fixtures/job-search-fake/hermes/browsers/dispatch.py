@@ -13,15 +13,15 @@ answers ENVIADA without writing
 anything (fake-1006 → ALREADY_SENT). `mark-closed <job_id>` answers ENCERRADA the same way. `confirm-open <job_id>` answers ABERTA without
 writing anything (fake-1005 → DOSSIER_NOT_VALID, also for GERAR_CURRICULO/PREENCHER_CANDIDATURA: never analysed;
 the job's verdict, availability or application never refuse, like job-search on the host). ANALISAR_VAGA (Hermes only) walks planilha → posting → ChatGPT → writeset
-for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE) and a running host pipeline
-with ChatGPT refuses another with CHATGPT_BUSY. GERAR_CURRICULO of fake-1003 on Hermes stops in PRECISA_HUMANO with
+for the requested job_id; fake-1008 has no posting (PRECISA_HUMANO/POSTING_UNAVAILABLE); ChatGPT runs never refuse each
+other (job-search queues them, 2026-10-14). GERAR_CURRICULO of fake-1003 on Hermes stops in PRECISA_HUMANO with
 `progress.recovery` (Claude stopped without PDF); GERAR_CURRICULO of fake-1002 on Hermes stops with ChatGPT doubts that
 carry ready answers (HUMAN_REVIEW_DOUBTS, no options); `resume-cv <id> --option claude|chatgpt [--answers 1=2,2=1]
 [--note-stdin]` starts a new run that finishes (every doubt needs an answer unless there is a note). A finished BUSCAR_VAGAS lists the jobs it left out (`LEFT_OUT`);
 `ANALISAR_DESCOBERTA --from <search> --job-id` walks posting → ChatGPT → writeset for one of them (fake-1001:
 ALREADY_IN_RUNTIME, fake-9104: LEFT_OUT_WITHOUT_CARD). EDITAR_CURRICULO (stdin) needs a finished GERAR_CURRICULO of the
 job (CV_NOT_READY) and no résumé run (CV_DOC_BUSY); once done, `cv-file` answers the `-v2` PDF. With
-`--chatgpt-review` (Hermes only: CHATGPT_REVIEW_HERMES_ONLY; one ChatGPT host pipeline at a time: CHATGPT_BUSY) it walks
+`--chatgpt-review` (Hermes only: CHATGPT_REVIEW_HERMES_ONLY) it walks
 pedido → ChatGPT → Claude → cv; a request mentioning "sem lastro" stops at the ChatGPT in PRECISA_HUMANO/
 HUMAN_REVIEW_DOUBTS with `edit_doubts`. `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
 CV_JSON_MISSING before). `open-browser clouddesign|application` opens nothing and answers already_open false. `attention` lists, read-only,
@@ -50,7 +50,6 @@ LINCE = ("BUSCAR_VAGAS", "LOCALIZAR_VAGA")
 # Actions whose last stage is "registro na planilha" (a writeset the panel may persist).
 WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA")
 HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA")
-CHATGPT_HOST = ("BUSCAR_VAGAS", "GERAR_CURRICULO", "ANALISAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_DESCOBERTA")
 HOST_ANALYSES = ("ANALISAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_DESCOBERTA")
 
 
@@ -476,9 +475,6 @@ def main(argv):
             return refuse("REVIEW_NOT_EXPECTED")
         if review and platform != "hermes":
             return refuse("CHATGPT_REVIEW_HERMES_ONLY")
-        if (action in HOST_ANALYSES or review) and any(
-                (r["action"] in CHATGPT_HOST or r.get("chatgpt_review")) and r["status"] == "RODANDO" for r in recs):
-            return refuse("CHATGPT_BUSY")
         if action in LINCE and any(r["action"] in LINCE and r["status"] == "RODANDO" for r in recs):
             return refuse("PROFILE_BUSY")
         holder = next((r for r in recs if action == "PREENCHER_CANDIDATURA" and r["action"] == action
