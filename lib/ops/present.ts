@@ -648,6 +648,11 @@ export function liveViewUrl(dispatch: Dispatch): string | null {
   return params.get("view_only") === "1" ? url : null
 }
 
+/** job-search accepted the run and it waits its turn in the ChatGPT queue (no global "ChatGPT busy" refusal). */
+export function chatgptQueued(dispatch: Dispatch): boolean {
+  return (dispatch.status === "RODANDO" || dispatch.status === "PENDENTE") && !!dispatch.progress.chatgpt_queued
+}
+
 export function canResumeCv(dispatch: Dispatch): boolean {
   return (
     dispatch.action === "GERAR_CURRICULO" &&

@@ -96,6 +96,7 @@ import {
   latest,
   leftOutBlocker,
   liveViewUrl,
+  chatgptQueued,
   leftOutKindLabel,
   needsUser,
   persistSummary,
@@ -1427,6 +1428,11 @@ export function DispatchCard({
         >
           {status.label}
         </ToneBadge>
+        {chatgptQueued(dispatch) && (
+          <ToneBadge tone="muted" data-testid="dispatch-chatgpt-queued">
+            Na fila do ChatGPT
+          </ToneBadge>
+        )}
         {dispatch.discarded && (
           <ToneBadge tone="muted" data-testid="dispatch-discarded">
             Descartada
@@ -2153,17 +2159,12 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   const searchShown = last !== null && (searchForced || showSearch)
   const hasIntakes = intake !== null || discarded.length > 0
   const intakeShown = hasIntakes && (intakeForced || showIntake)
-  // Search and intake share the Lince's Bot Chat: one at a time (the dispatcher refuses with PROFILE_BUSY). The
-  // intake analysis runs on the host and does not hold the Lince, but it holds the ChatGPT the search also uses.
+  // Search and intake share the Lince's Bot Chat: one at a time (the dispatcher refuses with PROFILE_BUSY). ChatGPT
+  // has no global lock (2026-10-14): job-search queues the runs, so analyses never disable the search.
   const linceBusy = [last, intake].some((dispatch) => dispatch?.active)
     ? "O Lince já está com um disparo em andamento."
     : null
-  const chatgptBusy = (analyses.data?.dispatches ?? []).some((dispatch) => dispatch.active)
-    ? "A análise da vaga específica está usando o ChatGPT."
-    : (leftOut.data?.dispatches ?? []).some((dispatch) => dispatch.active)
-      ? "A análise de uma vaga que ficou de fora está usando o ChatGPT."
-      : null
-  const reason = (last?.active ? "Já existe uma cotação em andamento." : null) ?? linceBusy ?? chatgptBusy
+  const reason = (last?.active ? "Já existe uma cotação em andamento." : null) ?? linceBusy
   const intakeReason = linceBusy ?? gatewayReason(data, "hermes")
   const shownError = error ?? intakes.error ?? analyses.error
   return (

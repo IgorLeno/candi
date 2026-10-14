@@ -18,6 +18,7 @@ import {
   canRegisterWriteset,
   canResumeCv,
   liveViewUrl,
+  chatgptQueued,
   confirmOpenRefusalText,
   deleteJobConfirmed,
   deleteJobRefusalText,
@@ -484,6 +485,14 @@ describe("canResumeCv", () => {
     expect(canResumeCv({ ...stuck, status: "FALHOU" })).toBe(false)
     expect(canResumeCv({ ...stuck, mode: "bot" })).toBe(false)
     expect(canResumeCv({ ...stuck, progress: { ...stuck.progress, recovery: null } })).toBe(false)
+  })
+
+  it("says the run waits in the ChatGPT queue only while it is active", () => {
+    const queued = { ...stuck, status: "RODANDO" as const, progress: { ...stuck.progress, chatgpt_queued: true } }
+    expect(chatgptQueued(queued)).toBe(true)
+    expect(chatgptQueued({ ...queued, status: "PENDENTE" })).toBe(true)
+    expect(chatgptQueued({ ...queued, status: "FALHOU" })).toBe(false)
+    expect(chatgptQueued(stuck)).toBe(false)
   })
 
   it("links only the view-only noVNC of the container while the run is going", () => {

@@ -362,6 +362,8 @@ const progressSchema = z.object({
   recovery: cvRecoverySchema.nullable().optional(),
   /** Local résumé while it talks to ChatGPT (2026-10-11): view-only noVNC of the container's Chromium. */
   live_view_url: z.string().max(300).nullable().optional(),
+  /** Waiting for a free ChatGPT conversation slot in job-search's queue (2026-10-14): accepted, never refused. */
+  chatgpt_queued: z.boolean().optional(),
 })
 export type DispatchProgress = z.infer<typeof progressSchema>
 
