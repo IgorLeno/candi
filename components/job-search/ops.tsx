@@ -1746,6 +1746,7 @@ function DispatchButton({
   verb,
   fixedPlatform,
   description,
+  confirmLabel,
   onStarted,
 }: {
   action: BotAction
@@ -1758,6 +1759,8 @@ function DispatchButton({
   fixedPlatform?: "hermes"
   /** Dialog text when it differs from the action's (the local résumé renderer). */
   description?: string
+  /** Confirm button text when no bot is triggered (the local résumé renderer runs on the host). */
+  confirmLabel?: string
   onStarted: () => void
 }) {
   const router = useRouter()
@@ -1822,9 +1825,11 @@ function DispatchButton({
                   {warning}
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Nenhuma candidatura é enviada: SUBMIT desligado no job-search e o bot para antes do botão final.
-              </p>
+              {action === "PREENCHER_CANDIDATURA" && (
+                <p className="text-xs text-muted-foreground">
+                  Nenhuma candidatura é enviada: SUBMIT desligado no job-search e o bot para antes do botão final.
+                </p>
+              )}
             </div>
           )}
           <DialogFooter>
@@ -1872,7 +1877,7 @@ function DispatchButton({
                 }
               >
                 {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-                Acionar {PLATFORM_LABEL[platform]}
+                {confirmLabel ?? `Acionar ${PLATFORM_LABEL[platform]}`}
               </Button>
             )}
           </DialogFooter>
@@ -2309,6 +2314,7 @@ export function JobCvOps() {
           jobId={jobId}
           fixedPlatform={renderer === "local" ? "hermes" : undefined}
           description={renderer === "local" ? CV_GENERATE_LOCAL_DESCRIPTION : undefined}
+          confirmLabel={renderer === "local" ? "Gerar currículo" : undefined}
           disabledReason={
             renderer === "INVALID"
               ? "Renderer do currículo inválido."

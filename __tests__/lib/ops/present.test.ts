@@ -56,6 +56,7 @@ describe("bot descriptions", () => {
   it("describes the local résumé renderer without Claude in Chrome", () => {
     expect(CV_GENERATE_LOCAL_DESCRIPTION).toContain("template local")
     expect(CV_GENERATE_LOCAL_DESCRIPTION).not.toContain("/ajustar-curriculo")
+    expect(CV_GENERATE_LOCAL_DESCRIPTION).not.toContain("Claude")
     // claude_design keeps its own text.
     expect(ACTION_META.GERAR_CURRICULO.description).toContain("/ajustar-curriculo")
   })

@@ -482,6 +482,9 @@ test.describe("Central de operações (bots)", () => {
     // The local renderer's own description, not the claude_design one.
     await expect(page.getByTestId("dispatch-dialog")).toContainText("template local")
     await expect(page.getByTestId("dispatch-dialog")).not.toContainText("/ajustar-curriculo")
+    await expect(page.getByTestId("dispatch-dialog")).not.toContainText("Hermes")
+    await expect(page.getByTestId("dispatch-dialog")).not.toContainText("Nenhuma candidatura é enviada")
+    await expect(page.getByTestId("dispatch-confirm")).toHaveText("Gerar currículo")
     await page.getByTestId("dispatch-confirm").click()
     await expect(section.getByTestId("dispatch-GERAR_CURRICULO")).toHaveAttribute("data-status", "CONCLUIDO", {
       timeout: 30_000,

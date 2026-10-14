@@ -306,7 +306,7 @@ export function deleteJobConfirmed(typed: string, jobId: string): boolean {
  * right when that renderer is on.
  */
 export const CV_GENERATE_LOCAL_DESCRIPTION =
-  "O job-search pede o patch editorial ao ChatGPT, confere o formato, aplica as mudanças na base do currículo, encaixa tudo em uma página e gera o PDF no template local, sem Claude in Chrome. Se o ChatGPT deixar dúvida ou o texto não couber em uma página, para e mostra aqui."
+  "O job-search pede o patch editorial ao ChatGPT, confere o formato, aplica as mudanças na base do currículo, encaixa tudo em uma página e gera o PDF no template local. Se o ChatGPT deixar dúvida ou o texto não couber em uma página, para e mostra aqui."
 
 /** "Pedir edição" with the ChatGPT review on (decision 2026-10-05): what the card says and the button adds. */
 export const CV_EDIT_REVIEW_DESCRIPTION =
