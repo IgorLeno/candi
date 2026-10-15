@@ -297,7 +297,7 @@ enviar candidatura.
 
 ## Andamento (2026-10-15)
 
-Feito (job-search, commits na main, sem push): 9fb7546 letter-doc, 7e26321 refactor `cv_render.print_page`/`measure_page`,
+Feito (job-search, commits na main, pushados 2026-10-15 até a6f42fc; painel pushado até 1d088ba): 9fb7546 letter-doc, 7e26321 refactor `cv_render.print_page`/`measure_page`,
 7d8833d template + renderer (paridade com o PDF da Ausenco), 40d6b14 regras/parser/conferência (`letter_local`), 2b51372
 fontes no Projeto, 79407b1 pipeline + `letter_export`, d3794eb `letter_edit`, 6dfa436 dispatcher (GERAR_CARTA,
 EDITAR_CARTA, `letter-file`, `letter-doc`, `apply-letter`, `resume-cv` também para carta, `job.letter`/`letter_hint`),
@@ -310,11 +310,12 @@ Desvios do desenho, decididos na implementação:
   travada do currículo) + subtítulo fixo em `letter_doc.SUBTITLE`. Um arquivo a menos para manter em dia.
 - Parada (dúvida, formato, estouro) grava `letter-blocked.md`, não troca o `letter-handoff.md`: a carta VALID anterior
   continua valendo (no currículo, o handoff BLOCKED invalida o currículo anterior).
-- `knowledge/trajetoria.md` ainda não existe (rascunho esperando a confirmação do usuário). Até lá a fonte
-  `trajetoria.md` do Projeto diz que não há trajetória confirmada e a carta não afirma motivação pessoal.
+- `knowledge/trajetoria.md` criado em f34d405 com a trajetória confirmada pelo usuário em 2026-10-15 (fatos pessoais
+  da carta da Ausenco; os da empresa ficam fora). Sem o arquivo, a fonte `trajetoria.md` do Projeto continua dizendo
+  que não há trajetória confirmada. Subtítulo EN aprovado (a6f42fc).
 - Paridade: uma linha da Ausenco termina colada na borda (721,74 px de 722) no Chrome 152 da referência e quebra uma
   palavra antes no Chrome 154; o teste aceita só esse caso (linha da referência encostada na borda).
 - Proposta da edição por pedido vai em `progress.letter_proposal` (só antes/depois), não em `progress.proposal`, que é
   o contrato da proposta do currículo.
 
-Pendente: confirmar `trajetoria.md` e o subtítulo EN; Tarefa 10 (sync do Projeto + carta real, com OK); push.
+Pendente: Tarefa 10 (sync do Projeto + carta real, só com OK do usuário).
