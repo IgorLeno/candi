@@ -34,6 +34,14 @@ export const LEFT_OUT_ACTION = "ANALISAR_DESCOBERTA"
  */
 export const CV_EDIT_ACTION = "EDITAR_CURRICULO"
 export const CV_RENDERERS = ["claude_design", "local", "INVALID"] as const
+
+/**
+ * Cover letter (plan 2026-10-15-carta-de-apresentacao, Hermes/host only): GERAR_CARTA runs the same process as the local
+ * résumé (ChatGPT Project in two steps + local template); EDITAR_CARTA is the manual edit or the request the ChatGPT
+ * rewrites and the user approves as a whole (`applyLetter`). Started by their own actions, not `startDispatch`.
+ */
+export const LETTER_ACTION = "GERAR_CARTA"
+export const LETTER_EDIT_ACTION = "EDITAR_CARTA"
 export type CvRenderer = (typeof CV_RENDERERS)[number]
 
 /**
@@ -46,6 +54,8 @@ export const DISPATCH_ACTIONS = [
   ANALYZE_ACTION,
   LEFT_OUT_ACTION,
   CV_EDIT_ACTION,
+  LETTER_ACTION,
+  LETTER_EDIT_ACTION,
   "REGISTRAR_WRITESET",
 ] as const
 export type DispatchAction = (typeof DISPATCH_ACTIONS)[number]
@@ -306,6 +316,21 @@ const fillSchema = z.object({
 })
 export type FillProgress = z.infer<typeof fillSchema>
 
+/** The letter text the user reads and edits (plain text; header, date and signature belong to job-search). */
+export const letterTextSchema = z
+  .object({
+    subject: z.string().max(120),
+    greeting: z.string().max(120),
+    paragraphs: z.array(z.string().max(1200)).max(6),
+    closing: z.string().max(60),
+  })
+  .strict()
+export type LetterText = z.infer<typeof letterTextSchema>
+
+/** EDITAR_CARTA by request: the whole letter before and after the ChatGPT rewrite, approved or discarded as a whole. */
+const letterProposalSchema = z.object({ before: letterTextSchema, after: letterTextSchema })
+export type LetterProposal = z.infer<typeof letterProposalSchema>
+
 const progressSchema = z.object({
   percent: z.number().min(0).max(100),
   stages: z.array(stageSchema),
@@ -364,6 +389,10 @@ const progressSchema = z.object({
   live_view_url: z.string().max(300).nullable().optional(),
   /** Waiting for a free ChatGPT conversation slot in job-search's queue (2026-10-14): accepted, never refused. */
   chatgpt_queued: z.boolean().optional(),
+  /** GERAR_CARTA: job-search's verdict on the letter this run recorded. */
+  letter: z.enum(["VALID", "MISSING", "INVALID"]).optional(),
+  /** EDITAR_CARTA by request: the proposal waiting for (or past) the user's decision. */
+  letter_proposal: letterProposalSchema.nullable().optional(),
 })
 export type DispatchProgress = z.infer<typeof progressSchema>
 
@@ -442,6 +471,9 @@ export const jobArtifactsSchema = z.object({
   cv_allowed: z.boolean(),
   cv: z.enum(["VALID", "MISSING", "INVALID"]),
   application_state: z.string().nullable(),
+  /** Cover letter recorded for the job, and whether the posting mentions one (information only, never a block). */
+  letter: z.enum(["VALID", "MISSING", "INVALID"]).optional(),
+  letter_hint: z.boolean().optional(),
 })
 export type JobArtifacts = z.infer<typeof jobArtifactsSchema>
 
@@ -553,6 +585,37 @@ export const cvFileResultSchema = z.object({
 })
 export type CvFile = z.infer<typeof cvFileResultSchema>["cv_file"]
 export type CvFileInfo = Omit<CvFile, "path">
+
+/** `dispatch.py letter-file <job_id>`: the cover letter PDF job-search verified (same fields as `cv-file`). */
+export const letterFileResultSchema = z.object({ ok: z.literal(true), letter_file: cvFileResultSchema.shape.cv_file })
+
+/** `dispatch.py letter-doc <job_id>`: the job's `letter-doc/1` and its sha256, for the manual editor. */
+export const letterDocumentSchema = z.object({
+  schema: z.literal("letter-doc/1"),
+  template: z.literal("classic-1"),
+  lang: z.enum(["pt", "en"]),
+  header: z.object({
+    name: z.string().max(250),
+    subtitle: z.string().max(250),
+    contacts: z.array(z.string().max(250)).min(1).max(10),
+  }),
+  subject: z.string().max(120),
+  date: z.string().max(40),
+  greeting: z.string().max(120),
+  paragraphs: z.array(z.string().max(1200)).min(3).max(6),
+  closing: z.string().max(60),
+  signature: z.string().max(120),
+})
+export type LetterDocument = z.infer<typeof letterDocumentSchema>
+export const letterDocResultSchema = z.object({
+  ok: z.literal(true),
+  letter_doc: z.object({
+    job_id: z.string().regex(JOB_ID_RE),
+    doc: letterDocumentSchema,
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  }),
+})
+export type LetterDoc = z.infer<typeof letterDocResultSchema>["letter_doc"]
 
 export const refusalSchema = z.object({
   ok: z.literal(false),

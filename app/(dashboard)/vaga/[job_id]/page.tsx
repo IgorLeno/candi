@@ -10,6 +10,7 @@ import { ToneBadge } from "@/components/job-search/tone-badge"
 import { SectionCard } from "@/components/job-search/overview"
 import { DoneStamp, Flames, JourneyTrail, StateBadge, stateBarClass } from "@/components/job-search/visual"
 import { JobAnalysisOps, JobApplicationOps, JobCvOps, JobOpsProvider } from "@/components/job-search/ops"
+import { JobLetterOps } from "@/components/job-search/letter-ops"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
 import { canConfirmOpen, canDeclineJob, canDeleteJob, canMarkClosed, canRecordSent } from "@/lib/ops/present"
 import { ConfirmOpenButton } from "@/components/job-search/confirm-open"
@@ -296,6 +297,17 @@ function JobDetail({ view }: { view: JobView }) {
           )}
         </JobSection>
 
+        <JobSection id="carta">
+          {isDispatchEnabled() ? (
+            <JobLetterOps />
+          ) : (
+            <Empty>
+              O disparo dos bots está desligado neste painel; a carta de apresentação aparece aqui quando estiver
+              ligado.
+            </Empty>
+          )}
+        </JobSection>
+
         <JobSection id="candidatura">
           {isDispatchEnabled() && <JobApplicationOps />}
           {isDispatchEnabled() && canRecordSent(item) && (
@@ -344,6 +356,7 @@ function JobDetail({ view }: { view: JobView }) {
 const SECTIONS = [
   { id: "analise", title: "Análise da vaga" },
   { id: "curriculo", title: "Currículo" },
+  { id: "carta", title: "Carta de apresentação" },
   { id: "candidatura", title: "Candidatura" },
 ] as const
 

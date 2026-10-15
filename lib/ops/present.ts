@@ -65,6 +65,18 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     description:
       "Seu pedido vai direto ao Claude in Chrome (/ajustar-curriculo), sem ChatGPT: ele edita só o que você pediu no currículo desta vaga, sem inventar fato, e exporta um PDF novo (-v2, -v3...) sem apagar o anterior.",
   },
+  GERAR_CARTA: {
+    label: "Gerar carta",
+    verb: "Gerar carta",
+    description:
+      "O mesmo processo do currículo: o ChatGPT analisa a vaga e escreve a carta no Projeto do currículo (com a sua trajetória e o currículo desta vaga, se já existir), o job-search confere o texto, encaixa em uma página no template da carta e gera o PDF. Se o ChatGPT deixar dúvida ou a carta não couber, para e mostra aqui.",
+  },
+  EDITAR_CARTA: {
+    label: "Edição da carta",
+    verb: "Editar carta",
+    description:
+      "Manual: você edita o texto e o job-search gera o PDF novo (-v2, -v3...). Pedido: o ChatGPT reescreve a carta conforme o seu pedido e você aprova ou descarta a carta inteira antes do PDF.",
+  },
   REGISTRAR_WRITESET: {
     label: "Registrar na planilha",
     verb: "Registrar na planilha",
@@ -107,6 +119,10 @@ const REFUSAL_TEXT: Record<string, string> = {
   UNAUTHENTICATED: "Sessão expirada. Entre de novo.",
   DISPATCH_DISABLED: "Disparo de bots desligado neste servidor.",
   DISPATCHER_UNAVAILABLE: "Não foi possível falar com o dispatcher do job-search.",
+  LETTER_JOB_BUSY: "A carta desta vaga já está sendo gerada ou editada.",
+  LETTER_NOT_VALID: "Gere a carta desta vaga antes de editar.",
+  LETTER_NOT_PENDING: "Esta proposta de carta já foi decidida ou substituída.",
+  LETTER_DOC_CHANGED: "A carta mudou depois que você abriu o editor. Abra de novo.",
   INPUT_INVALID: "Pedido inválido.",
   JOB_NOT_FOUND: "Vaga não encontrada na planilha.",
   GATEWAY_NOT_RUNNING: "O gateway Hermes está parado ou sem inferência. Inicie-o ou use o Grok.",
@@ -330,6 +346,43 @@ export function cvEditStopText(code: string | null | undefined, renderer?: "clau
   if (code === "HUMAN_AUTH_REQUIRED")
     return "o ChatGPT pediu login no Chrome do ChatGPT: entre na conta e peça a edição de novo."
   return "o Claude parou sem PDF novo: veja a resposta no painel do Claude e peça a edição de novo, se quiser."
+}
+
+/** "Carta de apresentação" preview (dispatch.py letter-file): why there is no PDF to show. */
+export function letterFileText(code: string, detail?: string): string {
+  if (code === "LETTER_NOT_VALID") {
+    if (detail === "LETTER_JSON_MISSING") return "Ainda não há carta de apresentação gerada para esta vaga."
+    if (detail === "PDF_HASH_MISMATCH" || detail === "LETTER_FILENAME_INVALID")
+      return "O PDF da carta não está mais na pasta ou foi alterado depois de gerado. Gere de novo para ver aqui."
+    return "A carta registrada não confere com os arquivos desta vaga. Gere de novo para ver aqui."
+  }
+  if (code === "LETTER_OUTSIDE_PDF_DIR" || code === "CV_PATH_INVALID")
+    return "O PDF da carta está fora da pasta de currículos; o painel não o mostra."
+  return refusalText(code)
+}
+
+/** Why an "Editar carta" stopped in PRECISA_HUMANO. */
+export function letterEditStopText(code: string | null | undefined): string {
+  if (code === "LETTER_PENDING") return "Leia a carta proposta abaixo e aprove ou descarte."
+  if (code?.startsWith("PAGE_OVERFLOW:"))
+    return `a carta não coube em uma página; faltam cerca de ${code.split(":")[1]} linha(s). Encurte e tente de novo.`
+  if (code === "LETTER_DOC_CHANGED") return "a carta mudou depois que você abriu esta edição. Abra de novo e refaça."
+  if (code === "HUMAN_REVIEW_DOUBTS")
+    return "o ChatGPT deixou dúvidas sobre o pedido; reescreva o pedido e peça de novo."
+  if (code === "FORMAT_INVALID") return "a resposta do ChatGPT veio fora do formato; peça de novo."
+  if (code === "MANUAL_INVALID") return "o texto não passou nas regras do job-search; revise e tente de novo."
+  return "a edição parou antes de registrar uma carta nova. Confira o código e tente de novo."
+}
+
+/** "Aprovar"/"Descartar" on an EDITAR_CARTA by request (UX gating; job-search checks again). */
+export function canDecideLetter(dispatch: Dispatch): boolean {
+  return (
+    dispatch.action === "EDITAR_CARTA" &&
+    dispatch.status === "PRECISA_HUMANO" &&
+    dispatch.code === "LETTER_PENDING" &&
+    !dispatch.superseded_by &&
+    !!dispatch.progress.letter_proposal
+  )
 }
 
 export function canApplyChanges(dispatch: Dispatch): boolean {
@@ -655,7 +708,7 @@ export function chatgptQueued(dispatch: Dispatch): boolean {
 
 export function canResumeCv(dispatch: Dispatch): boolean {
   return (
-    dispatch.action === "GERAR_CURRICULO" &&
+    (dispatch.action === "GERAR_CURRICULO" || dispatch.action === "GERAR_CARTA") &&
     dispatch.mode === "host" &&
     dispatch.status === "PRECISA_HUMANO" &&
     !dispatch.retried_by &&

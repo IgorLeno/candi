@@ -15,6 +15,7 @@ import {
   EyeOff,
   FileSpreadsheet,
   FileText,
+  Mail,
   Loader2,
   MessagesSquare,
   PencilLine,
@@ -38,6 +39,7 @@ import {
   editCv,
   discardDispatch,
   getCvFile,
+  getLetterFile,
   listDispatches,
   openApplicationBrowser,
   openCvBrowser,
@@ -65,6 +67,7 @@ import { ToneBadge } from "@/components/job-search/tone-badge"
 import { formatTimestamp, safeHttpUrl } from "@/lib/job-search/present"
 import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
 import { CvManualEditor } from "@/components/job-search/cv-manual-editor"
+import { LetterProposalApproval } from "@/components/job-search/letter-proposal"
 import { usePlatform, writePlatform } from "@/lib/ops/platform-pref"
 import { useClosed, useCollapsed, writeClosed, writeCollapsed } from "@/lib/ops/collapse-pref"
 import { ATTENTION_REFRESH_EVENT } from "@/lib/ops/attention"
@@ -77,6 +80,7 @@ import {
   CV_EDIT_REVIEW_DESCRIPTION,
   CV_GENERATE_LOCAL_DESCRIPTION,
   cvEditStopText,
+  letterEditStopText,
   PLATFORM_LABEL,
   statusBadge,
   activeIntake,
@@ -90,7 +94,9 @@ import {
   canRegisterWriteset,
   canResumeCv,
   canApplyChanges,
+  canDecideLetter,
   cvFileText,
+  letterFileText,
   discardedIntakes,
   isActiveStatus,
   latest,
@@ -133,6 +139,8 @@ const ACTION_ICON: Record<DispatchAction, LucideIcon> = {
   ANALISAR_VAGA: ScanSearch,
   ANALISAR_DESCOBERTA: ScanSearch,
   EDITAR_CURRICULO: PencilLine,
+  GERAR_CARTA: Mail,
+  EDITAR_CARTA: PencilLine,
   REGISTRAR_WRITESET: FileSpreadsheet,
 }
 
@@ -697,7 +705,9 @@ function CvResume({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () =
           toast.error(resumeCvRefusalText(result.code))
           return
         }
-        toast.success("Currículo retomado: acompanhe o card novo.")
+        toast.success(
+          `${dispatch.action === "GERAR_CARTA" ? "Carta retomada" : "Currículo retomado"}: acompanhe o card novo.`
+        )
         onChanged()
       } catch {
         toast.error(refusalText("UNAUTHENTICATED"))
@@ -1519,13 +1529,15 @@ export function DispatchCard({
         {canRefineIntake(dispatch) && <IntakeRefine key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />}
         {dispatch.resumes && (
           <p className="text-xs text-muted-foreground" data-testid="cv-resumes">
-            {dispatch.resume_option === "claude"
-              ? "Retoma um currículo travado: só a edição no Claude, com o mesmo patch."
-              : "Retoma um currículo travado: patch novo no ChatGPT."}
+            {dispatch.action === "GERAR_CARTA"
+              ? "Retoma uma carta travada: carta nova no ChatGPT."
+              : dispatch.resume_option === "claude"
+                ? "Retoma um currículo travado: só a edição no Claude, com o mesmo patch."
+                : "Retoma um currículo travado: patch novo no ChatGPT."}
           </p>
         )}
         {canResumeCv(dispatch) && <CvResume key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />}
-        {dispatch.action === "EDITAR_CURRICULO" && progress.edit_request && (
+        {(dispatch.action === "EDITAR_CURRICULO" || dispatch.action === "EDITAR_CARTA") && progress.edit_request && (
           <div className="rounded-lg bg-muted/40 p-2 text-sm" data-testid="cv-edit-request">
             <span className="text-xs text-muted-foreground">Seu pedido</span>
             <p className="whitespace-pre-wrap break-words">{progress.edit_request}</p>
@@ -1545,6 +1557,9 @@ export function DispatchCard({
         )}
         {canApplyChanges(dispatch) && (
           <CvProposalApproval key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />
+        )}
+        {canDecideLetter(dispatch) && (
+          <LetterProposalApproval key={dispatch.id} dispatch={dispatch} onChanged={onChanged} />
         )}
         {dispatch.action === "EDITAR_CURRICULO" && dispatch.renderer === "local" && dispatch.code === "NO_CHANGES" && (
           <p className="text-sm" data-testid="cv-no-changes">
@@ -1591,9 +1606,11 @@ export function DispatchCard({
                         ? " — veja o motivo acima e escolha como seguir."
                         : dispatch.action === "EDITAR_CURRICULO"
                           ? ` — ${cvEditStopText(dispatch.code, dispatch.renderer)}`
-                          : dispatch.action === "PREENCHER_CANDIDATURA"
-                            ? ` — ${applicationStopText(dispatch.code)}`
-                            : " — ação sua necessária (veja o código)."
+                          : dispatch.action === "EDITAR_CARTA"
+                            ? ` — ${letterEditStopText(dispatch.code)}`
+                            : dispatch.action === "PREENCHER_CANDIDATURA"
+                              ? ` — ${applicationStopText(dispatch.code)}`
+                              : " — ação sua necessária (veja o código)."
                 : canRefineIntake(dispatch)
                   ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
                   : " — veja o Bot Chat no Hermes Desktop.")}
@@ -1677,7 +1694,7 @@ async function openBrowserToast(browser: BrowserName): Promise<void> {
 }
 
 /** A refusal toast; a closed Chrome (Cloud Design or application) also offers to open it right there. */
-function toastRefusal(code: string): void {
+export function toastRefusal(code: string): void {
   const browser = Object.hasOwn(CDP_DOWN_BROWSER, code) ? CDP_DOWN_BROWSER[code] : undefined
   if (browser) {
     toast.error(refusalText(code), {
@@ -2255,13 +2272,13 @@ export function JobOpsProvider({ jobId, children }: { jobId: string; children: R
   return <JobOpsContext.Provider value={value}>{children}</JobOpsContext.Provider>
 }
 
-function useJobOps(): JobOpsState {
+export function useJobOps(): JobOpsState {
   const value = useContext(JobOpsContext)
   if (!value) throw new Error("JobOpsProvider ausente")
   return value
 }
 
-function OpsBar({ testId, label, children }: { testId: string; label: string; children: React.ReactNode }) {
+export function OpsBar({ testId, label, children }: { testId: string; label: string; children: React.ReactNode }) {
   const { error } = useJobOps()
   return (
     <section
@@ -2339,7 +2356,7 @@ export function JobCvOps() {
         )}
       </OpsBar>
       {/* Re-read the file whenever job-search's verdict on the résumé changes (a new PDF was just recorded). */}
-      <CvPreview key={`${job?.cv ?? "?"}:${cv?.finished_at ?? ""}:${edit?.finished_at ?? ""}`} jobId={jobId} />
+      <PdfPreview key={`${job?.cv ?? "?"}:${cv?.finished_at ?? ""}:${edit?.finished_at ?? ""}`} jobId={jobId} />
       {renderer === "local" ? (
         <CvLocalEditForm
           jobId={jobId}
@@ -2678,33 +2695,55 @@ function CvEditForm({
 
 type CvPreviewState = { state: "loading" } | { state: "ready"; file: CvFileInfo } | { state: "none"; text: string }
 
+/** What each registered PDF of a job reads from job-search, where its bytes are served and how it is labelled. */
+const PDF_PREVIEW = {
+  cv: {
+    load: getCvFile,
+    route: "curriculo",
+    text: cvFileText,
+    testId: "cv-preview",
+    loading: "Procurando o currículo desta vaga…",
+    title: "Currículo",
+  },
+  letter: {
+    load: getLetterFile,
+    route: "carta",
+    text: letterFileText,
+    testId: "letter-preview",
+    loading: "Procurando a carta desta vaga…",
+    title: "Carta",
+  },
+} as const
+
 /**
- * The résumé PDF job-search recorded for this job (`cv.json`), inline. The bytes come from
- * `/api/vaga/[job_id]/curriculo`; `?v=` is the file hash, so a new PDF is never served from the browser cache.
+ * The PDF job-search recorded for this job (`cv.json` or `letter.json`), inline. The bytes come from
+ * `/api/vaga/[job_id]/curriculo` (or `/carta`); `?v=` is the file hash, so a new PDF is never served from the cache.
  */
-function CvPreview({ jobId }: { jobId: string }) {
+export function PdfPreview({ jobId, kind = "cv" }: { jobId: string; kind?: keyof typeof PDF_PREVIEW }) {
+  const config = PDF_PREVIEW[kind]
   const [preview, setPreview] = useState<CvPreviewState>({ state: "loading" })
   useEffect(() => {
     let alive = true
-    getCvFile(jobId)
+    config
+      .load(jobId)
       .then((result) => {
         if (!alive) return
         setPreview(
           result.ok
             ? { state: "ready", file: result.value }
-            : { state: "none", text: cvFileText(result.code, result.detail) }
+            : { state: "none", text: config.text(result.code, result.detail) }
         )
       })
       .catch(() => alive && setPreview({ state: "none", text: refusalText("UNAUTHENTICATED") }))
     return () => {
       alive = false
     }
-  }, [jobId])
+  }, [jobId, config])
   if (preview.state === "loading") {
     return (
-      <p className="text-sm text-muted-foreground" data-testid="cv-preview-loading">
+      <p className="text-sm text-muted-foreground" data-testid={`${config.testId}-loading`}>
         <Loader2 className="mr-1.5 inline h-4 w-4 animate-spin" aria-hidden="true" />
-        Procurando o currículo desta vaga…
+        {config.loading}
       </p>
     )
   }
@@ -2712,19 +2751,19 @@ function CvPreview({ jobId }: { jobId: string }) {
     return (
       <p
         className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground"
-        data-testid="cv-preview-empty"
+        data-testid={`${config.testId}-empty`}
       >
         {preview.text}
       </p>
     )
   }
   const { file } = preview
-  const src = `/api/vaga/${encodeURIComponent(jobId)}/curriculo?v=${file.sha256.slice(0, 12)}`
+  const src = `/api/vaga/${encodeURIComponent(jobId)}/${config.route}?v=${file.sha256.slice(0, 12)}`
   return (
-    <div className="space-y-2" data-testid="cv-preview">
+    <div className="space-y-2" data-testid={config.testId}>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-        <span className="font-mono text-xs break-all" data-testid="cv-preview-filename">
+        <span className="font-mono text-xs break-all" data-testid={`${config.testId}-filename`}>
           {file.filename}
         </span>
         <span className="text-xs text-muted-foreground">
@@ -2735,7 +2774,7 @@ function CvPreview({ jobId }: { jobId: string }) {
           target="_blank"
           rel="noopener noreferrer"
           className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          data-testid="cv-preview-open"
+          data-testid={`${config.testId}-open`}
         >
           <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
           Abrir PDF
@@ -2743,9 +2782,9 @@ function CvPreview({ jobId }: { jobId: string }) {
       </div>
       <iframe
         src={src}
-        title={`Currículo: ${file.filename}`}
+        title={`${config.title}: ${file.filename}`}
         className="h-[42rem] w-full rounded-xl border border-border bg-white"
-        data-testid="cv-preview-frame"
+        data-testid={`${config.testId}-frame`}
       />
     </div>
   )

@@ -5,7 +5,7 @@ import { z } from "zod"
 import { getAllowedSession } from "@/lib/auth/session"
 import { JOB_SEARCH_CACHE_TAG, getJobSearchData } from "@/lib/job-search/source"
 import { attentionEntries, type AttentionEntry } from "@/lib/ops/attention"
-import { cvFileInfo } from "@/lib/ops/cv-file"
+import { cvFileInfo, letterFileInfo } from "@/lib/ops/cv-file"
 import { checkManualDoc, payload as manualPayload } from "@/lib/ops/cv-manual"
 import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
 import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
@@ -17,6 +17,8 @@ import {
   JOB_ID_RE,
   LEFT_OUT_ACTION,
   CV_EDIT_ACTION,
+  LETTER_ACTION,
+  LETTER_EDIT_ACTION,
   PLATFORMS,
   SENT_EVIDENCE,
   attentionResultSchema,
@@ -24,6 +26,8 @@ import {
   cvDocResultSchema,
   cvDocumentSchema,
   declineResultSchema,
+  letterDocResultSchema,
+  letterTextSchema,
   deleteJobResultSchema,
   deleteResultSchema,
   listResultSchema,
@@ -40,6 +44,7 @@ import {
   type DeleteResult,
   type Dispatch,
   type DispatchList,
+  type LetterDoc,
   type MarkClosedResult,
   type OpenBrowserResult,
   type RecordSentResult,
@@ -539,4 +544,103 @@ export async function getCvFile(jobId: unknown): Promise<ActionResult<CvFileInfo
   if (!info.ok) return { ok: false, code: info.code, detail: info.detail }
   const { job_id, filename, size, sha256, exported_at } = info.file
   return { ok: true, value: { job_id, filename, size, sha256, exported_at } }
+}
+
+// ------------------------------------------------------------------ carta de apresentação (plano 2026-10-15)
+
+async function jobInSheet(jobId: unknown): Promise<string | null> {
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return null
+  const data = await getJobSearchData()
+  return data.views.some((item) => item.job.job_id === jobId) ? jobId : "JOB_NOT_FOUND"
+}
+
+/** "Gerar carta": only the job_id goes to job-search (Hermes/host only); the job must be in the Sheet snapshot. */
+export async function startLetter(jobId: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  const job = await jobInSheet(jobId)
+  if (job === null) return { ok: false, code: "INPUT_INVALID" }
+  if (job === "JOB_NOT_FOUND") return { ok: false, code: job }
+  const result = await runDispatcher(["start", LETTER_ACTION, "--platform", "hermes", "--job-id", job], oneResultSchema)
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/** "Carta de apresentação" preview: which PDF job-search registered (the path stays on the server). */
+export async function getLetterFile(jobId: unknown): Promise<ActionResult<CvFileInfo> & { detail?: string }> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const info = await letterFileInfo(jobId)
+  if (!info.ok) return { ok: false, code: info.code, detail: info.detail }
+  const { job_id, filename, size, sha256, exported_at } = info.file
+  return { ok: true, value: { job_id, filename, size, sha256, exported_at } }
+}
+
+export async function getLetterDoc(jobId: unknown): Promise<ActionResult<LetterDoc>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["letter-doc", jobId], letterDocResultSchema)
+  return result.ok ? { ok: true, value: result.value.letter_doc } : { ok: false, code: result.code }
+}
+
+const letterManualInputSchema = z
+  .object({ docSha256: z.string().regex(/^[0-9a-f]{64}$/), text: letterTextSchema })
+  .strict()
+
+/**
+ * "Editar carta" Manual: the whole letter text (subject, greeting, paragraphs, closing) over stdin only, with the sha256
+ * of the letter the editor opened. Header, date and signature stay with job-search, which checks everything again.
+ */
+export async function saveLetterManual(jobId: unknown, input: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  const job = await jobInSheet(jobId)
+  if (job === null) return { ok: false, code: "INPUT_INVALID" }
+  if (job === "JOB_NOT_FOUND") return { ok: false, code: job }
+  const parsed = letterManualInputSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, code: "MANUAL_INVALID" }
+  const paragraphs = parsed.data.text.paragraphs.map((p) => p.trim()).filter(Boolean)
+  if (paragraphs.length < 3) return { ok: false, code: "MANUAL_INVALID" }
+  const stdin = JSON.stringify({
+    schema: "letter-manual/1",
+    base_sha256: parsed.data.docSha256,
+    subject: parsed.data.text.subject,
+    greeting: parsed.data.text.greeting,
+    paragraphs,
+    closing: parsed.data.text.closing,
+  })
+  const result = await runDispatcher(
+    ["start", LETTER_EDIT_ACTION, "--platform", "hermes", "--job-id", job, "--manual-stdin"],
+    oneResultSchema,
+    undefined,
+    { stdin }
+  )
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/** "Editar carta" by request: the user's text (guards of the "vaga indicada") over stdin; ChatGPT rewrites the letter. */
+export async function requestLetterEdit(jobId: unknown, text: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  const job = await jobInSheet(jobId)
+  if (job === null || typeof text !== "string" || text.length > 12_000) return { ok: false, code: "INPUT_INVALID" }
+  if (job === "JOB_NOT_FOUND") return { ok: false, code: job }
+  const request = normalizeIntake(text)
+  if (!request.ok) return { ok: false, code: request.code.replace("INTAKE_", "REQUEST_") }
+  const result = await runDispatcher(
+    ["start", LETTER_EDIT_ACTION, "--platform", "hermes", "--job-id", job, "--request-stdin"],
+    oneResultSchema,
+    undefined,
+    { stdin: request.text }
+  )
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/** "Aprovar carta"/"Descartar": a fixed word in argv; the letter text stays in job-search's proposal. */
+export async function applyLetter(dispatchId: unknown, decision: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (
+    typeof dispatchId !== "string" ||
+    !DISPATCH_ID_RE.test(dispatchId) ||
+    (decision !== "approve" && decision !== "reject")
+  )
+    return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["apply-letter", dispatchId, "--decision", decision], oneResultSchema)
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }
