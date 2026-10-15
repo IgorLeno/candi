@@ -24,7 +24,11 @@ job (CV_NOT_READY) and no résumé run (CV_DOC_BUSY); once done, `cv-file` answe
 `--chatgpt-review` (Hermes only: CHATGPT_REVIEW_HERMES_ONLY) it walks
 pedido → ChatGPT → Claude → cv; a request mentioning "sem lastro" stops at the ChatGPT in PRECISA_HUMANO/
 HUMAN_REVIEW_DOUBTS with `edit_doubts`. `cv-file <job_id>` answers a tiny PDF once its GERAR_CURRICULO finished (CV_NOT_VALID/
-CV_JSON_MISSING before). `open-browser clouddesign|application` opens nothing and answers already_open false. `attention` lists, read-only,
+CV_JSON_MISSING before). Carta de apresentação (plan 2026-10-15): GERAR_CARTA (Hermes only) walks project → ChatGPT →
+render → letter (fake-1002 stops with one ChatGPT doubt and ready answers; `resume-cv` resumes it); `letter-file`/
+`letter-doc` answer once it finished; EDITAR_CARTA `--manual-stdin` (letter-manual/1, LETTER_DOC_CHANGED on another sha)
+finishes, `--request-stdin` stops in LETTER_PENDING with a before/after proposal until `apply-letter --decision
+approve|reject`; `list` shows `job.letter` and `job.letter_hint` (fake-1001). `open-browser clouddesign|application` opens nothing and answers already_open false. `attention` lists, read-only,
 the newest record per job+action that runs, waits on the user or holds an unregistered writeset. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import hashlib
@@ -45,11 +49,19 @@ BOTS = {"BUSCAR_VAGAS": ("Lince", "Job Scout"), "GERAR_CURRICULO": ("CVerino", "
         "PREENCHER_CANDIDATURA": ("Candidatinho", "Application Operator"), "LOCALIZAR_VAGA": ("Lince", "Job Scout"),
         "ANALISAR_INDICADA": ("ChatGPT (host)", "Job Scout"), "ANALISAR_VAGA": ("ChatGPT (host)", "Job Scout"),
         "ANALISAR_DESCOBERTA": ("ChatGPT (host)", "Job Scout"),
-        "EDITAR_CURRICULO": ("Claude in Chrome (host)", "CV Operator")}
+        "EDITAR_CURRICULO": ("Claude in Chrome (host)", "CV Operator"),
+        "GERAR_CARTA": ("ChatGPT + template local (host)", "-"), "EDITAR_CARTA": ("ChatGPT + template local (host)", "-")}
 LINCE = ("BUSCAR_VAGAS", "LOCALIZAR_VAGA")
 # Actions whose last stage is "registro na planilha" (a writeset the panel may persist).
 WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA")
-HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA")
+HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA", "GERAR_CARTA",
+               "EDITAR_CARTA")
+LETTER_ACTIONS = ("GERAR_CARTA", "EDITAR_CARTA")
+# Carta de apresentação (plano 2026-10-15): o anúncio de fake-1001 menciona carta (letter_hint).
+LETTER_HINT_JOBS = ("fake-1001",)
+LETTER_TEXT = {"subject": "CANDIDATURA — VAGA DE TESTE", "greeting": "Prezada equipe de Recrutamento,",
+               "paragraphs": ["Primeiro parágrafo da carta de teste.", "Segundo parágrafo da carta de teste.",
+                              "Terceiro parágrafo da carta de teste."], "closing": "Atenciosamente,"}
 HOST_ANALYSES = ("ANALISAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_DESCOBERTA")
 
 
@@ -128,6 +140,13 @@ STAGES = {
                       ("render", "PDF no template local (host)"), ("cv", "Currículo novo registrado")],
     "EDITAR_MANUAL": [("manual", "Edição manual validada"),
                        ("render", "PDF no template local (host)"), ("cv", "Currículo novo registrado")],
+    "GERAR_CARTA": [("project", "Projeto do ChatGPT em dia"), ("chatgpt", "ChatGPT (análise e redação, pelo host)"),
+                    ("render", "PDF no template local (uma página)"),
+                    ("letter", "Carta registrada (PDF + letter.json)")],
+    "EDITAR_CARTA": [("chatgpt", "Pedido reescrito pelo ChatGPT"), ("aprovacao", "Sua aprovação da carta inteira"),
+                     ("render", "PDF no template local (host)"), ("letter", "Carta nova registrada")],
+    "EDITAR_CARTA_MANUAL": [("pedido", "Edição manual validada"), ("render", "PDF no template local (host)"),
+                            ("letter", "Carta nova registrada")],
     "ANALISAR_DESCOBERTA": [("posting", "Texto da vaga"), ("analise", "Análise no ChatGPT (host)"),
                             ("writeset", "Writeset pronto"), ("registro", "Registro na planilha")],
     "ANALISAR_VAGA": [("planilha", "Dados da vaga (planilha, só leitura)"), ("posting", "Texto da vaga"),
@@ -203,6 +222,26 @@ def cv_hash(recs, job_id):
     return f"{version + 10:064x}"
 
 
+def letter_done(recs, job_id):
+    return any(r["job_id"] == job_id and r["action"] == "GERAR_CARTA" and r["status"] == "CONCLUIDO" for r in recs)
+
+
+def letter_versions(recs, job_id):
+    return sum(1 for r in recs if r["job_id"] == job_id and r["action"] == "EDITAR_CARTA" and r["status"] == "CONCLUIDO"
+               and r.get("code") != "REJECTED")
+
+
+def letter_hash(recs, job_id):
+    return f"{letter_versions(recs, job_id) + 20:064x}"
+
+
+def letter_text(recs, job_id):
+    text = dict(LETTER_TEXT, paragraphs=list(LETTER_TEXT["paragraphs"]))
+    if letter_versions(recs, job_id):
+        text["paragraphs"][0] = "Primeiro parágrafo editado."
+    return text
+
+
 def proposal(rec, recs):
     return {"schema": "cv-proposal/1", "job_id": rec["job_id"], "mode": rec["edit_mode"],
             "doc_sha256": rec["doc_sha256"], "free_px": 54.0,
@@ -239,6 +278,8 @@ def view_register(rec):
 
 
 def stage_key(rec):
+    if rec["action"] == "EDITAR_CARTA":
+        return "EDITAR_CARTA_MANUAL" if rec.get("edit_mode") == "manual" else "EDITAR_CARTA"
     if rec.get("host_apply"):
         return "PREENCHER_HOST"
     if rec.get("renderer") == "local" and rec["action"] == "GERAR_CURRICULO":
@@ -384,6 +425,29 @@ def view(rec, recs=()):
         if rec["status"] == "PRECISA_HUMANO":
             out_stages[0 if doubts else 1].update(state="failed",
                                                   note="HUMAN_REVIEW_DOUBTS" if doubts else "CLAUDE_STOPPED_WITHOUT_PDF")
+    if rec["action"] == "GERAR_CARTA":
+        out.update(resumes=rec.get("resumes"), resume_option=rec.get("resume_option"),
+                   retried_by=rec.get("retried_by"))
+        progress["letter"] = "VALID" if rec["status"] == "CONCLUIDO" else "MISSING"
+        stuck = rec["status"] == "PRECISA_HUMANO" and not rec.get("retried_by")
+        progress["recovery"] = {"reason": "O ChatGPT deixou dúvidas para você responder antes de escrever a carta.",
+                                "claude_reason": None, "claude_reply": None,
+                                "doubts": [{"text": "Citar o escritório de Belo Horizonte?",
+                                            "answers": ["Sim, citar.", "Não citar."]}],
+                                "options": [], "note_allowed": True} if stuck else None
+        if rec["status"] == "PRECISA_HUMANO":
+            out_stages[1].update(state="failed", note=rec.get("code"))
+    if rec["action"] == "EDITAR_CARTA":
+        out.update(edit_mode=rec["edit_mode"], superseded_by=rec.get("superseded_by"))
+        progress.update(edit_mode=rec["edit_mode"], edit_request=rec.get("edit_request"),
+                        letter_proposal={"before": rec["before"], "after": dict(
+                            rec["before"], paragraphs=["Parágrafo proposto pelo ChatGPT."] + rec["before"]["paragraphs"][1:])}
+                        if rec.get("code") == "LETTER_PENDING" or rec.get("approved") else None)
+        if rec.get("code") == "LETTER_PENDING":
+            out_stages[0]["state"] = "done"
+            out_stages[1]["state"] = "active"
+        if rec["status"] == "CONCLUIDO":
+            progress["percent"] = 100
     if rec["status"] == "MANUAL":
         out["command"] = f"[painel:dispatch {rec['id']} · {rec['action']}]\n\nComando fixo de teste." + (
             f" python3 hermes/browsers/cv_claude_chrome.py edit {rec['job_id']} --op-dir runtime/operations/{rec['id']}"
@@ -460,7 +524,7 @@ def main(argv):
         manual = "--manual-stdin" in argv
         if action in ("GERAR_CURRICULO", "EDITAR_CURRICULO") and cv_renderer == "INVALID":
             return refuse("CV_RENDERER_INVALID")
-        if (reassess or manual) and not local_edit:
+        if (reassess or manual) and action == "EDITAR_CURRICULO" and not local_edit:
             return refuse("CV_LOCAL_ONLY")
         if local_edit and platform != "hermes":
             return refuse("CV_LOCAL_HERMES_ONLY")
@@ -565,6 +629,32 @@ def main(argv):
                 rec.update(edit_request=text.strip(), mode="host" if platform == "hermes" else "bot")
                 if review:
                     rec["chatgpt_review"] = True
+        if action in LETTER_ACTIONS:
+            rec["mode"] = "host"
+            if any(r["action"] in LETTER_ACTIONS and r["job_id"] == job_id and r["status"] == "RODANDO" for r in recs):
+                return refuse("LETTER_JOB_BUSY")
+        if action == "EDITAR_CARTA":
+            if not letter_done(recs, job_id):
+                return refuse("LETTER_NOT_VALID")
+            if "--manual-stdin" in argv:
+                try:
+                    payload = json.loads(sys.stdin.read())
+                except ValueError:
+                    return refuse("MANUAL_INVALID")
+                if not isinstance(payload, dict) or payload.get("schema") != "letter-manual/1":
+                    return refuse("MANUAL_INVALID")
+                if payload.get("base_sha256") != letter_hash(recs, job_id):
+                    return refuse("LETTER_DOC_CHANGED")
+                rec["edit_mode"] = "manual"
+            else:
+                text = sys.stdin.read()
+                if not 10 <= len(text.strip()) <= 1500:
+                    return refuse("REQUEST_INVALID")
+                rec.update(edit_mode="request", edit_request=text.strip(), before=letter_text(recs, job_id))
+            for r in recs:
+                if (r["action"] == "EDITAR_CARTA" and r.get("job_id") == job_id and r["status"] == "PRECISA_HUMANO"
+                        and r.get("code") == "LETTER_PENDING" and not r.get("superseded_by")):
+                    r.update(superseded_by=rec["id"], acknowledged=True)
         if action == "ANALISAR_DESCOBERTA":
             search = next((r for r in recs if r["id"] == source_id), None)
             card = next((e for e in LEFT_OUT["excluded"] + LEFT_OUT["deferred"] if e["job_id"] == job_id), None)
@@ -631,7 +721,12 @@ def main(argv):
                     rec["status"] = "CONCLUIDO"
             elif rec["status"] == "RODANDO":
                 rec["step"] += 1
-                if rec.get("renderer") == "local" and rec["action"] == "EDITAR_CURRICULO" and not rec.get("approved"):
+                if rec["action"] == "EDITAR_CARTA" and not rec.get("approved"):
+                    if rec["edit_mode"] == "manual":
+                        rec.update(step=last_step(rec["action"], rec), status="CONCLUIDO")
+                    else:
+                        rec.update(step=1, status="PRECISA_HUMANO", code="LETTER_PENDING")
+                elif rec.get("renderer") == "local" and rec["action"] == "EDITAR_CURRICULO" and not rec.get("approved"):
                     if rec["edit_mode"] == "manual":
                         rec.update(step=last_step(rec["action"], rec), status="CONCLUIDO")
                     elif rec["edit_mode"] == "reassess" and rec["job_id"] == "fake-1004":
@@ -644,6 +739,9 @@ def main(argv):
                       and not rec.get("resumes") and rec["step"] >= 1):
                     rec.update(step=1, status="PRECISA_HUMANO",
                                code="BLOCKED_CLAUDE_CHROME:CLAUDE_STOPPED_WITHOUT_PDF")
+                elif (rec["action"] == "GERAR_CARTA" and rec["job_id"] == DOUBTS_CV and not rec.get("resumes")
+                      and rec["step"] >= 2):
+                    rec.update(step=1, status="PRECISA_HUMANO", code="HUMAN_REVIEW_DOUBTS")
                 elif (rec["action"] == "GERAR_CURRICULO" and rec["job_id"] == DOUBTS_CV and rec.get("mode") == "host"
                       and not rec.get("resumes") and rec["step"] >= 1):
                     rec.update(step=0, status="PRECISA_HUMANO", code="HUMAN_REVIEW_DOUBTS")
@@ -667,7 +765,9 @@ def main(argv):
         if job_id is not None:
             ready = cv_done(recs, job_id)
             out["job"] = {"job_id": job_id, "dossier": "VALID", "actionable": True, "cv_allowed": True,
-                          "cv": "VALID" if ready else "MISSING", "application_state": None}
+                          "cv": "VALID" if ready else "MISSING", "application_state": None,
+                          "letter": "VALID" if letter_done(recs, job_id) else "MISSING",
+                          "letter_hint": job_id in LETTER_HINT_JOBS}
         print(json.dumps(out))
         return 0
     if cmd == "cv-doc":
@@ -716,25 +816,27 @@ def main(argv):
         well_formed = answers is None or re.fullmatch(r"[1-9]=[1-9](,[1-9]=[1-9]){0,4}", answers) is not None
         chosen = dict(item.split("=") for item in answers.split(",")) if answers and well_formed else {}
         doubts = origin is not None and origin.get("code") == "HUMAN_REVIEW_DOUBTS"
+        letter = origin is not None and origin["action"] == "GERAR_CARTA"
+        recovery_doubts = 1 if letter else len(RECOVERY_DOUBTS["doubts"])
         offered = [] if doubts else ["claude", "chatgpt"]
         code = ("OPTION_INVALID" if option not in ("claude", "chatgpt")
                 else "NOTE_NOT_EXPECTED" if note is not None and option != "chatgpt"
                 else "ANSWERS_NOT_EXPECTED" if answers is not None and (option != "chatgpt" or not doubts)
                 else "ANSWERS_INVALID" if answers is not None and (
                     not well_formed or len(chosen) != answers.count(",") + 1
-                    or any(int(i) > len(RECOVERY_DOUBTS["doubts"])
-                           or int(j) > len(RECOVERY_DOUBTS["doubts"][int(i) - 1]["answers"]) for i, j in chosen.items()))
-                else "ANSWERS_INCOMPLETE" if answers is not None and note is None and len(chosen) < 2
+                    or any(int(i) > recovery_doubts or int(j) > 2 for i, j in chosen.items()))
+                else "ANSWERS_INCOMPLETE" if answers is not None and note is None and len(chosen) < recovery_doubts
                 else "OPTION_INVALID" if option not in offered and not (option == "chatgpt" and (note or answers))
                 else "INTAKE_LOOKS_LIKE_APPROVAL" if note and APPROVAL_RE.search(note)
                 else "INTAKE_INVALID" if note is not None and (not 10 <= len(note) <= 1500 or MARKERS_RE.search(note))
                 else "DISPATCH_NOT_FOUND" if origin is None
                 else "ALREADY_RESUMED" if origin.get("retried_by")
-                else "NOT_RESUMABLE" if origin["action"] != "GERAR_CURRICULO" or origin["status"] != "PRECISA_HUMANO"
+                else "NOT_RESUMABLE" if origin["action"] not in ("GERAR_CURRICULO", "GERAR_CARTA")
+                or origin["status"] != "PRECISA_HUMANO"
                 else None)
         if code:
             return refuse(code)
-        rec = {"id": f"d-20260929T14{len(recs) + 1:04d}Z-abcdef", "action": "GERAR_CURRICULO", "platform": "hermes",
+        rec = {"id": f"d-20260929T14{len(recs) + 1:04d}Z-abcdef", "action": origin["action"], "platform": "hermes",
                "job_id": origin["job_id"], "status": "RODANDO", "step": 0, "acknowledged": False,
                "created_at": now(), "mode": "host", "resumes": origin["id"], "resume_option": option,
                "note": note, "resume_answers": chosen or None}
@@ -838,6 +940,49 @@ def main(argv):
         print(json.dumps({"ok": True, "cv_file": {
             "job_id": job_id, "path": str(pdf), "filename": pdf.name, "size": len(body),
             "sha256": hashlib.sha256(body).hexdigest(), "exported_at": "2026-10-03T12:00:00Z"}}))
+        return 0
+    if cmd == "letter-file":
+        job_id = argv[1] if len(argv) > 1 else ""
+        if not JOB_ID_RE.match(job_id):
+            return refuse("JOB_ID_INVALID")
+        if not letter_done(recs, job_id):
+            return refuse("LETTER_NOT_VALID", "LETTER_JSON_MISSING")
+        version = letter_versions(recs, job_id)
+        body = FAKE_PDF + (b"%carta\n" * (version + 1))
+        pdf = STATE.parent / "curriculos" / f"carta_igor-fernandes_pt_fake{f'-v{version + 1}' if version else ''}.pdf"
+        pdf.parent.mkdir(parents=True, exist_ok=True)
+        pdf.write_bytes(body)
+        print(json.dumps({"ok": True, "letter_file": {
+            "job_id": job_id, "path": str(pdf), "filename": pdf.name, "size": len(body),
+            "sha256": hashlib.sha256(body).hexdigest(), "exported_at": "2026-10-15T12:00:00Z"}}))
+        return 0
+    if cmd == "letter-doc":
+        job_id = argv[1] if len(argv) > 1 else ""
+        if not JOB_ID_RE.match(job_id):
+            return refuse("JOB_ID_INVALID")
+        if not letter_done(recs, job_id):
+            return refuse("LETTER_NOT_VALID", "LETTER_JSON_MISSING")
+        doc = {"schema": "letter-doc/1", "template": "classic-1", "lang": "pt",
+               "header": {"name": "IGOR LENO DE SOUZA FERNANDES", "subtitle": "Concluinte de Engenharia Química — UNESP",
+                          "contacts": ["contato@exemplo.test"]},
+               "date": "15 de outubro de 2026", "signature": "Igor Leno de Souza Fernandes",
+               **letter_text(recs, job_id)}
+        print(json.dumps({"ok": True, "letter_doc": {"job_id": job_id, "doc": doc,
+                                                     "sha256": letter_hash(recs, job_id)}}))
+        return 0
+    if cmd == "apply-letter":
+        rec = next((r for r in recs if r["id"] == argv[1]), None)
+        decision = flag(argv, "--decision")
+        if rec is None:
+            return refuse("DISPATCH_NOT_FOUND")
+        if rec.get("code") != "LETTER_PENDING" or rec.get("superseded_by"):
+            return refuse("LETTER_NOT_PENDING")
+        if decision == "reject":
+            rec.update(status="CONCLUIDO", code="REJECTED", step=2)
+        else:
+            rec.update(status="CONCLUIDO", code=None, approved=True, step=last_step(rec["action"], rec))
+        save(recs)
+        print(json.dumps({"ok": True, "dispatch": view(rec, recs)}))
         return 0
     if cmd == "record-sent":
         # Writes nothing: answers like `application.py record-panel-submit` (fake-1006, sent in the fixture, is refused).

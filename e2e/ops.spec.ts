@@ -428,10 +428,10 @@ test.describe("Central de operações (bots)", () => {
     test.setTimeout(90_000)
     await page.goto("/vaga/fake-1001")
     const ops = page.getByTestId("job-detail")
-    // Three sections, in order, each with its own bot action (decision 2026-10-03).
-    await expect(page.locator('[data-testid^="job-section-"]')).toHaveCount(3)
+    // Four sections, in order, each with its own bot action (2026-10-03; cover letter since 2026-10-15).
+    await expect(page.locator('[data-testid^="job-section-"]')).toHaveCount(4)
     const sections = await page.locator('[data-testid^="job-section-"] h2').allTextContents()
-    expect(sections).toEqual(["Análise da vaga", "Currículo", "Candidatura"])
+    expect(sections).toEqual(["Análise da vaga", "Currículo", "Carta de apresentação", "Candidatura"])
     await expect(page.getByTestId("job-section-analise").getByTestId("analyze-button")).toBeVisible()
     await expect(page.getByTestId("job-section-curriculo").getByTestId("dispatch-button-GERAR_CURRICULO")).toBeVisible()
     await expect(
@@ -558,6 +558,64 @@ test.describe("Central de operações (bots)", () => {
       timeout: 30_000,
     })
     await expect(section.getByTestId("cv-preview-filename")).toHaveText("curriculo_igor-fernandes_pt_fake-v2.pdf")
+  })
+
+  test("carta de apresentação: gerar, ver o PDF, ajuste pelo ChatGPT aprovado inteiro e edição manual", async ({
+    page,
+  }) => {
+    test.setTimeout(150_000)
+    await page.goto("/vaga/fake-1001")
+    await expect(page.getByRole("link", { name: "Carta de apresentação" })).toBeVisible()
+    const section = page.getByTestId("job-section-carta")
+    await expect(section.getByTestId("letter-hint")).toContainText("menciona carta de apresentação")
+    await expect(section.getByTestId("letter-status")).toHaveText("Carta não gerada")
+    await expect(section.getByTestId("letter-preview-empty")).toHaveText(
+      "Ainda não há carta de apresentação gerada para esta vaga."
+    )
+    await section.getByTestId("letter-generate").click()
+    await page.getByTestId("letter-generate-confirm").click()
+    const card = section.getByTestId("dispatch-GERAR_CARTA")
+    await expect(card).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    await expect(section.getByTestId("letter-status")).toHaveText("Carta pronta")
+    await expect(section.getByTestId("letter-preview-filename")).toHaveText("carta_igor-fernandes_pt_fake.pdf")
+    const src = await section.getByTestId("letter-preview-frame").getAttribute("src")
+    const pdf = await page.request.get(src!)
+    expect(pdf.headers()["content-type"]).toBe("application/pdf")
+
+    const form = section.getByTestId("letter-edit")
+    await form.getByTestId("letter-mode-request").click()
+    await form.getByLabel("O que mudar na carta").fill("Deixe o primeiro parágrafo mais direto, por favor.")
+    await form.getByTestId("letter-request-submit").click()
+    const edit = section.getByTestId("dispatch-EDITAR_CARTA")
+    await expect(edit).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    await expect(edit.getByTestId("letter-proposal-after")).toContainText("Parágrafo proposto pelo ChatGPT.")
+    await edit.getByTestId("letter-approve").click()
+    await expect(edit).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    await expect(section.getByTestId("letter-preview-filename")).toHaveText("carta_igor-fernandes_pt_fake-v2.pdf")
+
+    await form.getByTestId("letter-mode-manual").click()
+    const manual = form.getByTestId("letter-manual")
+    await expect(manual.getByLabel("Parágrafo 1", { exact: true })).toHaveValue("Primeiro parágrafo editado.")
+    await manual.getByLabel("Parágrafo 2", { exact: true }).fill("Segundo parágrafo escrito à mão.")
+    await manual.getByTestId("letter-manual-save").click()
+    await expect(section.getByTestId("letter-preview-filename")).toHaveText("carta_igor-fernandes_pt_fake-v3.pdf", {
+      timeout: 30_000,
+    })
+  })
+
+  test("carta travada com dúvida: respostas prontas retomam a carta no ChatGPT", async ({ page }) => {
+    await page.goto("/vaga/fake-1002")
+    const section = page.getByTestId("job-section-carta")
+    await section.getByTestId("letter-generate").click()
+    await page.getByTestId("letter-generate-confirm").click()
+    const card = section.getByTestId("dispatch-GERAR_CARTA")
+    await expect(card).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    await expect(card.getByTestId("cv-recovery")).toContainText("Citar o escritório de Belo Horizonte?")
+    await card.getByTestId("cv-doubt-1-answer-1").click()
+    await card.getByTestId("cv-resume-submit").click()
+    await expect(section.getByTestId("dispatch-GERAR_CARTA")).toHaveAttribute("data-status", "CONCLUIDO", {
+      timeout: 30_000,
+    })
   })
 
   test("currículo local: sem mudanças preserva o PDF e renderer inválido bloqueia novas ações", async ({ page }) => {
