@@ -1,6 +1,6 @@
 # Carta de apresentação pelo mesmo processo do currículo — plano
 
-Status: **aprovado** (2026-10-15: "aprovado, pode seguir com as recomendações" — C1–C12 = as recomendadas; C11 com
+Status: **implementado (Tarefas 1–9), sem rodada real** — **aprovado** (2026-10-15: "aprovado, pode seguir com as recomendações" — C1–C12 = as recomendadas; C11 com
 `_pt`/`_en`). Em implementação.
 
 > **Para quem for executar:** depois das decisões, usar superpowers:executing-plans (ou subagent-driven-development)
@@ -215,64 +215,64 @@ Ação `GERAR_CARTA` (host, filho `_letter` em `HOST_CHILDREN`, `per_job`, só H
 - [ ] Subtítulo do cabeçalho por idioma ("Concluinte de Engenharia Química — UNESP" e o equivalente em inglês).
 
 ### Tarefa 1 — documento `letter-doc/1` (job-search `scripts/letter_doc.py`)
-- [ ] Teste: `validate` aceita a carta da Ausenco como fixture e recusa: parágrafo vazio, 7 parágrafos, `<` no texto,
+- [x] Teste: `validate` aceita a carta da Ausenco como fixture e recusa: parágrafo vazio, 7 parágrafos, `<` no texto,
   parágrafo > 1200, campo de cabeçalho alterado em relação à base.
-- [ ] Implementar `validate`, `load_base(runtime, lang)`, `paragraphs_text(doc)`.
-- [ ] Gates + commit `feat(letter): add the letter-doc/1 document`.
+- [x] Implementar `validate`, `load_base(runtime, lang)`, `paragraphs_text(doc)`.
+- [x] Gates + commit `feat(letter): add the letter-doc/1 document`.
 
 ### Tarefa 2 — template e renderer (`templates/letter/classic-1.*`, `scripts/letter_render.py`)
-- [ ] Teste: `build_html` determinístico e escapado; `measure` da fixture Ausenco = cabe com folga ≥ 0; fixture com
+- [x] Teste: `build_html` determinístico e escapado; `measure` da fixture Ausenco = cabe com folga ≥ 0; fixture com
   +6 parágrafos = overflow; PDF de 1 página (`cv_render.pdf_pages`); `output_path` nunca sobrescreve (`-v2`).
-- [ ] Implementar reaproveitando `cv_render` (`_Pipe`, flags offline, `chrome_version`), sem copiar código: extrair o
+- [x] Implementar reaproveitando `cv_render` (`_Pipe`, flags offline, `chrome_version`), sem copiar código: extrair o
   que for comum para funções que os dois chamam, se precisar.
-- [ ] Paridade visual: renderizar a Ausenco e pôr lado a lado com o seu PDF; **sua aprovação visual** (PT; EN quando
+- [x] Paridade visual: renderizar a Ausenco e pôr lado a lado com o seu PDF; **sua aprovação visual** (PT; EN quando
   houver texto EN).
-- [ ] Commit `feat(letter): render the cover letter locally`.
+- [x] Commit `feat(letter): render the cover letter locally`.
 
 ### Tarefa 3 — Projeto do ChatGPT (`cv_local`/`cv_project`)
-- [ ] Teste: `cv_project.desired()` inclui `regras-carta.md` e `trajetoria.md`; instruções novas mudam o sha e
+- [x] Teste: `cv_project.desired()` inclui `regras-carta.md` e `trajetoria.md`; instruções novas mudam o sha e
   forçam `set_instructions`; o prompt do currículo continua igual (teste de não-regressão do `PROJECT_RULES`).
-- [ ] Implementar `SOURCE_NAMES` + `LETTER_RULES` + instruções genéricas.
-- [ ] Commit `feat(cv): keep the cover letter sources in the ChatGPT Project`.
+- [x] Implementar `SOURCE_NAMES` + `LETTER_RULES` + instruções genéricas.
+- [x] Commit `feat(cv): keep the cover letter sources in the ChatGPT Project`.
 
 ### Tarefa 4 — parser/conferência da carta (`hermes/browsers/letter_local.py`)
-- [ ] Teste: `parse` do formato `CARTA` (com e sem cercas, acentos e variação de caixa nos rótulos); `check` acusa
+- [x] Teste: `parse` do formato `CARTA` (com e sem cercas, acentos e variação de caixa nos rótulos); `check` acusa
   número sem lastro, "Engenheiro Químico", parágrafo fora do limite, saudação ausente; dúvidas com respostas
   (`cv_patch.split_doubts`); `REPAIR` só uma vez.
-- [ ] Implementar `ANALYSIS_HEAD`, `PLAN_FORMAT`, `WRITE_HEAD`, `LETTER_FORMAT`, `parse`, `check`, `negotiate`.
-- [ ] Commit `feat(letter): parse and check the ChatGPT cover letter`.
+- [x] Implementar `ANALYSIS_HEAD`, `PLAN_FORMAT`, `WRITE_HEAD`, `LETTER_FORMAT`, `parse`, `check`, `negotiate`.
+- [x] Commit `feat(letter): parse and check the ChatGPT cover letter`.
 
 ### Tarefa 5 — pipeline (`hermes/browsers/letter_pipeline.py`)
-- [ ] Teste com `exchange` falso: caminho feliz (duas mensagens, PDF, `letter.json` VALID); dúvida → BLOCKED com
+- [x] Teste com `exchange` falso: caminho feliz (duas mensagens, PDF, `letter.json` VALID); dúvida → BLOCKED com
   respostas; formato inválido depois do repair → `FORMAT_INVALID`; estouro → uma rodada "encurte N linhas" e depois
   `PAGE_OVERFLOW:<n>`; falha no registro → rollback dos três arquivos; currículo VALID entra no prompt, ausente não.
-- [ ] Implementar `Pipeline.run` e `letter_export.record/verify` (`letter/1`).
-- [ ] Commit `feat(letter): generate the cover letter through the ChatGPT Project`.
+- [x] Implementar `Pipeline.run` e `letter_export.record/verify` (`letter/1`).
+- [x] Commit `feat(letter): generate the cover letter through the ChatGPT Project`.
 
 ### Tarefa 6 — dispatcher
-- [ ] Teste pelo `main(argv)` com o argv exato do painel (lição 2026-10-05): `start GERAR_CARTA --platform hermes
+- [x] Teste pelo `main(argv)` com o argv exato do painel (lição 2026-10-05): `start GERAR_CARTA --platform hermes
   --job-id X`, `letter-file X`, `start EDITAR_CARTA ... --manual-stdin|--request-stdin`, `resume-letter`; `_alive`
   reconhece `_letter`/`_letteredit` com processo real (lição 2026-10-02); `list` traz `letter`/`letter_hint`.
-- [ ] Implementar e atualizar `RUNTIME.md`.
-- [ ] Commit `feat(dispatch): add GERAR_CARTA and EDITAR_CARTA`.
+- [x] Implementar e atualizar `RUNTIME.md`.
+- [x] Commit `feat(dispatch): add GERAR_CARTA and EDITAR_CARTA`.
 
 ### Tarefa 7 — edição (`hermes/browsers/letter_edit.py`)
-- [ ] Teste: Manual com documento inteiro (schema, guardas, uma página, `-vN`, marca USER/MANUAL, `LETTER_DOC_CHANGED`
+- [x] Teste: Manual com documento inteiro (schema, guardas, uma página, `-vN`, marca USER/MANUAL, `LETTER_DOC_CHANGED`
   se a carta mudou depois de abrir o editor); pedido ao ChatGPT → proposta antes/depois sem tocar na vaga; aprovação
   aplica.
-- [ ] Commit `feat(letter): edit the cover letter manually or through ChatGPT`.
+- [x] Commit `feat(letter): edit the cover letter manually or through ChatGPT`.
 
 ### Tarefa 8 — fill
-- [ ] Teste: `CANDI_STATUS` com `carta` ARQUIVO anexa (gera antes se faltar); TEXTO digita por rótulo; texto acima do
+- [x] Teste: `CANDI_STATUS` com `carta` ARQUIVO anexa (gera antes se faltar); TEXTO digita por rótulo; texto acima do
   limite vira pendência; `carta` ausente não muda nada do fluxo de hoje; status antigo sem a chave continua válido.
-- [ ] Commit `feat(fill): attach or type the cover letter`.
+- [x] Commit `feat(fill): attach or type the cover letter`.
 
 ### Tarefa 9 — painel
-- [ ] Vitest: schemas novos; rota `/api/vaga/[id]/carta` recusa hash diferente; seção mostra botão/badge/aviso; editor
+- [x] Vitest: schemas novos; rota `/api/vaga/[id]/carta` recusa hash diferente; seção mostra botão/badge/aviso; editor
   Manual (RTL) recarrega quando a carta muda (lição do `CvManualEditor`, 3477d60).
-- [ ] Fake do E2E com as ações novas + teste E2E da seção, **numa cópia em outra porta** se a 3000 for o seu
+- [x] Fake do E2E com as ações novas + teste E2E da seção, **numa cópia em outra porta** se a 3000 for o seu
   `next dev` (lições 2026-09-30 e 2026-10-03).
-- [ ] Commits: `feat(ops): add the cover letter section`, `test(e2e): cover the cover letter section`.
+- [x] Commits: `feat(ops): add the cover letter section`, `test(e2e): cover the cover letter section`.
 
 ### Tarefa 10 — verificação real (só com o seu OK)
 - [ ] `cv_project.py sync` (sobe as duas fontes novas e as instruções).
@@ -294,3 +294,27 @@ Ação `GERAR_CARTA` (host, filho `_letter` em `HOST_CHILDREN`, `per_job`, só H
 
 Carta pelo Grok/Claude Design; carta em vaga sem `dossier.json` (mesma exigência do currículo); gravar algo na Sheet;
 enviar candidatura.
+
+## Andamento (2026-10-15)
+
+Feito (job-search, commits na main, sem push): 9fb7546 letter-doc, 7e26321 refactor `cv_render.print_page`/`measure_page`,
+7d8833d template + renderer (paridade com o PDF da Ausenco), 40d6b14 regras/parser/conferência (`letter_local`), 2b51372
+fontes no Projeto, 79407b1 pipeline + `letter_export`, d3794eb `letter_edit`, 6dfa436 dispatcher (GERAR_CARTA,
+EDITAR_CARTA, `letter-file`, `letter-doc`, `apply-letter`, `resume-cv` também para carta, `job.letter`/`letter_hint`),
+ae883ca fill (`carta` no CANDI_STATUS), f684ef8 RUNTIME.md, 9793a15 `letter_proposal` em campo próprio.
+Painel: seção "Carta de apresentação", rota `/api/vaga/[id]/carta`, actions, `PdfPreview` comum, fake do E2E e testes.
+
+Desvios do desenho, decididos na implementação:
+
+- Sem `runtime/letter-base-{lang}.json`: o cabeçalho sai do `cv-base-{lang}.json` (nome e contatos, a mesma fonte
+  travada do currículo) + subtítulo fixo em `letter_doc.SUBTITLE`. Um arquivo a menos para manter em dia.
+- Parada (dúvida, formato, estouro) grava `letter-blocked.md`, não troca o `letter-handoff.md`: a carta VALID anterior
+  continua valendo (no currículo, o handoff BLOCKED invalida o currículo anterior).
+- `knowledge/trajetoria.md` ainda não existe (rascunho esperando a confirmação do usuário). Até lá a fonte
+  `trajetoria.md` do Projeto diz que não há trajetória confirmada e a carta não afirma motivação pessoal.
+- Paridade: uma linha da Ausenco termina colada na borda (721,74 px de 722) no Chrome 152 da referência e quebra uma
+  palavra antes no Chrome 154; o teste aceita só esse caso (linha da referência encostada na borda).
+- Proposta da edição por pedido vai em `progress.letter_proposal` (só antes/depois), não em `progress.proposal`, que é
+  o contrato da proposta do currículo.
+
+Pendente: confirmar `trajetoria.md` e o subtítulo EN; Tarefa 10 (sync do Projeto + carta real, com OK); push.
