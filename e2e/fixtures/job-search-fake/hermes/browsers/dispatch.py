@@ -158,8 +158,9 @@ REGISTER = "REGISTRAR_WRITESET"
 REVIEW_DOUBTS = ["O pedido cita Python na Acme, mas as evidências não mostram Python nesse trabalho."]
 # "Preencher vaga" of this job on Hermes follows the host path (the others keep the Candidatinho stages): Claude
 # fills, the host types the CPF it has and attaches the résumé, and the run stops in PRECISA_HUMANO/FILL_PENDING with
-# these items; once all are answered the next round ends in PRECISA_HUMANO/READY_TO_SUBMIT.
-HOST_APPLY = "fake-1007"
+# these items; once all are answered the next round ends in PRECISA_HUMANO/READY_TO_SUBMIT. fake-1004 can record the
+# submit (fake-1007 is ENVIO INCERTO in the fixture).
+HOST_APPLY = ("fake-1007", "fake-1004")
 FILL_ITEMS = [
     {"n": 1, "campo": "RG", "tipo": "DOCUMENTO", "opcoes": [], "documento": "RG",
      "detalhe": "Digite o RG. Ele fica guardado só neste computador e o sistema preenche na página; não vai para o Claude."},
@@ -557,7 +558,7 @@ def main(argv):
             rec["mode"] = "host"
             if cv_renderer == "local":
                 rec["renderer"] = "local"
-        if action == "PREENCHER_CANDIDATURA" and platform == "hermes" and job_id == HOST_APPLY:
+        if action == "PREENCHER_CANDIDATURA" and platform == "hermes" and job_id in HOST_APPLY:
             rec.update(mode="host", host_apply=True)
         if action == "LOCALIZAR_VAGA":
             text = sys.stdin.read() if "--intake-stdin" in argv else ""
@@ -994,6 +995,14 @@ def main(argv):
             return refuse("EVIDENCE_INVALID")
         if job_id == "fake-1006":
             return refuse("ALREADY_SENT")
+        # Like job-search (2026-10-16): the job's newest "Preencher vaga" ends done in any status, open items done.
+        recs = load()
+        fill = next((r for r in recs if r["action"] == "PREENCHER_CANDIDATURA" and r["job_id"] == job_id),
+                    None)
+        if fill and fill["status"] != "CONCLUIDO":
+            fill.update(status="CONCLUIDO", code="SUBMITTED_BY_USER", step=last_step(fill["action"], fill),
+                        fill=[dict(i, status="FEITA") if i["status"] == "PENDENTE" else i for i in fill.get("fill") or []])
+            save(recs)
         print(json.dumps({"ok": True, "record_sent": {"job_id": job_id, "status_candidatura": "ENVIADA"}}))
         return 0
     if cmd == "mark-closed":

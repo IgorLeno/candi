@@ -952,6 +952,32 @@ test.describe("Central de operações (bots)", () => {
     await expect(fill.getByTestId("fill-item-4")).toHaveAttribute("data-status", "FEITA")
   })
 
+  test("registrar envio conclui o Preencher vaga na hora, com as pendências que sobraram", async ({ page }) => {
+    // Eurofins (2026-10-16): the user filled the rest by hand and sent; the card stayed in "Precisa de você".
+    test.setTimeout(120_000)
+    await page.goto("/vaga/fake-1004")
+    await page.getByTestId("job-detail").getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
+    await page.getByTestId("dispatch-dialog").getByTestId("platform-hermes").click()
+    await page.getByTestId("dispatch-confirm").click()
+    const card = page.getByTestId("job-detail").getByTestId("dispatch-PREENCHER_CANDIDATURA")
+    await expect(card).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 30_000 })
+    await expect(card.getByTestId("fill-pending")).toContainText("Faltam 4 informações")
+
+    await page.getByTestId("record-sent").click()
+    await page.getByTestId("record-sent-dialog").locator('input[value="SUCCESS_PAGE"]').check()
+    await page.getByTestId("record-sent-check").check()
+    await page.getByTestId("record-sent-confirm").click()
+    await expect(page.getByText("Envio registrado: candidatura ENVIADA na planilha.")).toBeVisible()
+
+    // No reload: the card re-reads job-search right after the record.
+    await expect(card).toHaveAttribute("data-status", "CONCLUIDO")
+    const stages = card.locator("[data-stage]")
+    await expect(stages).toHaveCount(5)
+    for (const stage of await stages.all()) await expect(stage).toHaveAttribute("data-state", "done")
+    await expect(card.getByTestId("fill-pending")).not.toContainText("Falta")
+    await expect(card.getByTestId("fill-pending").locator('[data-status="PENDENTE"]')).toHaveCount(0)
+  })
+
   test("nenhum estado da vaga desativa currículo e candidatura; sem análise o job-search explica", async ({ page }) => {
     // ENVIO INCERTO, ENVIADA, NÃO CONFIRMADA and ENCERRADA + NÃO PRIORIZADA: the user chooses (decision 2026-10-02).
     for (const id of ["fake-1007", "fake-1006", "fake-1008", "fake-1010"]) {

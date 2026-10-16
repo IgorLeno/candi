@@ -2278,6 +2278,16 @@ export function useJobOps(): JobOpsState {
   return value
 }
 
+/**
+ * Re-reads the job's dispatches from outside the bot sections ("Registrar envio" closes the "Preencher vaga" in
+ * job-search). The list only polls while something runs and `router.refresh()` keeps this client state, so a stopped
+ * card stayed stale until a reload. No-op without dispatch.
+ */
+export function useJobOpsRefresh(): () => Promise<void> {
+  return useContext(JobOpsContext)?.refresh ?? noRefresh
+}
+const noRefresh = async () => {}
+
 export function OpsBar({ testId, label, children }: { testId: string; label: string; children: React.ReactNode }) {
   const { error } = useJobOps()
   return (

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Loader2, Send } from "lucide-react"
 import { toast } from "sonner"
 import { recordSent } from "@/app/actions/ops"
+import { useJobOpsRefresh } from "@/components/job-search/ops"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -20,10 +21,12 @@ import { SENT_EVIDENCE_LABEL, recordSentRefusalText } from "@/lib/ops/present"
 /**
  * "Registrar envio": Claude in Chrome stops before the portal's final button and the user clicks it; job-search never
  * sees that click. The user picks the strong evidence they saw (no free text) and job-search writes ENVIADA and a
- * SUBMITTED event. Behind a confirmation: there is no undo.
+ * SUBMITTED event. Behind a confirmation: there is no undo. job-search also closes the job's "Preencher vaga", so its
+ * card is re-read right away.
  */
 export function RecordSentButton({ jobId, label }: { jobId: string; /** Company and role. */ label: string }) {
   const router = useRouter()
+  const refreshOps = useJobOpsRefresh()
   const [open, setOpen] = useState(false)
   const [evidence, setEvidence] = useState<SentEvidence | null>(null)
   const [sent, setSent] = useState(false)
@@ -48,11 +51,13 @@ export function RecordSentButton({ jobId, label }: { jobId: string; /** Company 
         if (!result.ok) {
           toast.error(recordSentRefusalText(result.code))
           router.refresh()
+          void refreshOps()
           return
         }
         toast.success("Envio registrado: candidatura ENVIADA na planilha.")
         reset()
         router.refresh()
+        void refreshOps()
       } catch {
         toast.error(recordSentRefusalText("UNAUTHENTICATED"))
       }
