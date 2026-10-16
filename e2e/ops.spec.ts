@@ -160,8 +160,8 @@ test.describe("Central de operações (bots)", () => {
     await expect(analysis).toBeVisible()
     await expect(analysis).toContainText("ChatGPT (host) · Hermes")
     await expect(job("fake-9101").getByTestId("left-out-send")).toBeDisabled()
-    // One ChatGPT pipeline at a time: a new search waits.
-    await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toBeDisabled()
+    // ChatGPT has no global lock (2026-10-14): a running analysis never disables a new search.
+    await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toBeEnabled()
     await expect(analysis).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
     for (const stage of ["posting", "analise", "writeset"]) {
       await expect(analysis.locator(`[data-stage="${stage}"]`)).toHaveAttribute("data-state", "done")
