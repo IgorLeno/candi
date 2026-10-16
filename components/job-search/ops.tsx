@@ -15,6 +15,7 @@ import {
   EyeOff,
   FileSpreadsheet,
   FileText,
+  ListRestart,
   Mail,
   Loader2,
   MessagesSquare,
@@ -43,6 +44,8 @@ import {
   listDispatches,
   openApplicationBrowser,
   openCvBrowser,
+  openPortalBrowser,
+  refreshTodayList,
   refineIntake,
   registerWriteset,
   reassessCv,
@@ -109,6 +112,7 @@ import {
   refineRoom,
   refusalText,
   resumeCvRefusalText,
+  searchStopText,
   searchVerb,
   withRegistration,
 } from "@/lib/ops/present"
@@ -116,6 +120,7 @@ import {
   CV_EDIT_ACTION,
   LEFT_OUT_ACTION,
   PLATFORMS,
+  TODAY_ACTION,
   type BotAction,
   type CvFileInfo,
   type CvChange,
@@ -141,6 +146,7 @@ const ACTION_ICON: Record<DispatchAction, LucideIcon> = {
   EDITAR_CURRICULO: PencilLine,
   GERAR_CARTA: Mail,
   EDITAR_CARTA: PencilLine,
+  ATUALIZAR_LISTA: ListRestart,
   REGISTRAR_WRITESET: FileSpreadsheet,
 }
 
@@ -1582,6 +1588,7 @@ export function DispatchCard({
           <DiagnosisList progress={progress} testId="analysis-diagnosis" />
         )}
         {(dispatch.action === "BUSCAR_VAGAS" ||
+          dispatch.action === TODAY_ACTION ||
           dispatch.action === "ANALISAR_VAGA" ||
           dispatch.action === "ANALISAR_DESCOBERTA" ||
           (dispatch.action === "ANALISAR_INDICADA" && !dispatch.discarded)) && (
@@ -1610,7 +1617,9 @@ export function DispatchCard({
                             ? ` — ${letterEditStopText(dispatch.code)}`
                             : dispatch.action === "PREENCHER_CANDIDATURA"
                               ? ` — ${applicationStopText(dispatch.code)}`
-                              : " — ação sua necessária (veja o código)."
+                              : dispatch.action === "BUSCAR_VAGAS" || dispatch.action === TODAY_ACTION
+                                ? ` — ${searchStopText(dispatch.code)}`
+                                : " — ação sua necessária (veja o código)."
                 : canRefineIntake(dispatch)
                   ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
                   : " — veja o Bot Chat no Hermes Desktop.")}
@@ -1621,6 +1630,18 @@ export function DispatchCard({
                 : " — o acompanhamento caiu; confira o Bot Chat no Hermes Desktop antes de liberar um novo disparo.")}
           </p>
         )}
+        {(dispatch.action === "BUSCAR_VAGAS" || dispatch.action === TODAY_ACTION) &&
+          dispatch.mode === "host" &&
+          (dispatch.code === "BLOCKED_DISCOVERY_CDP" || progress.discovery_code === "BLOCKED_DISCOVERY_CDP") && (
+            <div className="space-y-1" data-testid="discovery-down">
+              {dispatch.status === "CONCLUIDO" && (
+                <p className="text-xs text-muted-foreground">
+                  A cotação não rodou: o navegador do portal estava fechado. O resto da rodada seguiu sem vagas novas.
+                </p>
+              )}
+              <OpenBrowserButton browser="portal" />
+            </div>
+          )}
         {dispatch.action === "PREENCHER_CANDIDATURA" && <FillPending dispatch={dispatch} onChanged={onChanged} />}
         {dispatch.command && <CommandBox command={dispatch.command} />}
         {progress.claude_prompt && (
@@ -1658,6 +1679,11 @@ export function DispatchCard({
 
 /** After the Chrome opens: what is still on the user (never automated: no credentials go through the panel). */
 function openBrowserText(value: OpenBrowserResult): string {
+  if (value.browser === "portal") {
+    return value.already_open
+      ? "O navegador do portal já estava aberto. Confira o login no LinkedIn e tente de novo."
+      : "Navegador do portal aberto. Confira o login no LinkedIn e tente de novo."
+  }
   if (value.browser === "application") {
     return value.already_open
       ? "O Chrome da candidatura já estava aberto. Confira o login no Claude e no portal da vaga."
@@ -1675,11 +1701,18 @@ const OPEN_BROWSER: Record<
 > = {
   clouddesign: { open: openCvBrowser, label: "Abrir navegador do currículo" },
   application: { open: openApplicationBrowser, label: "Abrir navegador da candidatura" },
+  portal: { open: openPortalBrowser, label: "Abrir navegador do portal" },
+}
+const OPEN_BROWSER_TESTID: Record<BrowserName, string> = {
+  clouddesign: "open-cv-browser",
+  application: "open-application-browser",
+  portal: "open-portal-browser",
 }
 // A closed browser refusal → the browser the toast offers to open.
 const CDP_DOWN_BROWSER: Record<string, BrowserName> = {
   CLOUDDESIGN_CDP_DOWN: "clouddesign",
   APPLICATION_CDP_DOWN: "application",
+  BLOCKED_DISCOVERY_CDP: "portal",
 }
 
 /** "Abrir navegador" from a toast: job-search opens the Chrome; the outcome is another toast. */
@@ -1715,12 +1748,12 @@ function OpenBrowserButton({ browser }: { browser: BrowserName }) {
   const [pending, startTransition] = useTransition()
   const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null)
   return (
-    <div className="space-y-2" data-testid={browser === "clouddesign" ? "open-cv-browser" : "open-application-browser"}>
+    <div className="space-y-2" data-testid={OPEN_BROWSER_TESTID[browser]}>
       <Button
         variant="outline"
         size="sm"
         disabled={pending}
-        data-testid={`${browser === "clouddesign" ? "open-cv-browser" : "open-application-browser"}-button`}
+        data-testid={`${OPEN_BROWSER_TESTID[browser]}-button`}
         onClick={() =>
           startTransition(async () => {
             setOutcome(null)
@@ -1748,7 +1781,7 @@ function OpenBrowserButton({ browser }: { browser: BrowserName }) {
         <p
           className={cn("flex items-start gap-1.5 text-xs", outcome.ok ? "text-st-open-fg" : "text-st-review-fg")}
           role={outcome.ok ? "status" : "alert"}
-          data-testid={`${browser === "clouddesign" ? "open-cv-browser" : "open-application-browser"}-outcome`}
+          data-testid={`${OPEN_BROWSER_TESTID[browser]}-outcome`}
         >
           {outcome.ok ? (
             <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -2796,6 +2829,119 @@ export function PdfPreview({ jobId, kind = "cv" }: { jobId: string; kind?: keyof
         className="h-[42rem] w-full rounded-xl border border-border bg-white"
         data-testid={`${config.testId}-frame`}
       />
+    </div>
+  )
+}
+
+/**
+ * "Atualizar lista" next to "Sincronizar" on Hoje (Hermes/host only, plan 2026-10-16): job-search rereads
+ * availability, searches, sends up to 10 jobs to the ChatGPT, writes the Sheet and keeps the new list. The card shows
+ * while it runs or needs the user (a refused Sheet write offers "Registrar na planilha"); when the run the panel
+ * watched finishes, the Sheet snapshot and the page are read again, so the new list shows without a reload.
+ */
+export function TodayListControls({ leading, trailing }: { leading?: React.ReactNode; trailing?: React.ReactNode }) {
+  const router = useRouter()
+  const { data, error, refresh } = useDispatches({ action: TODAY_ACTION })
+  const [open, setOpen] = useState(false)
+  const [pending, startTransition] = useTransition()
+  const last = data ? latest(data.dispatches, TODAY_ACTION) : null
+  const watched = useRef<{ id: string; active: boolean } | null>(null)
+  // A run that finished while the page watched keeps its card (stages and counts) until "Fechar".
+  const [finished, setFinished] = useState<string | null>(null)
+
+  useEffect(() => {
+    const before = watched.current
+    watched.current = last ? { id: last.id, active: last.active } : null
+    if (!last || !before || before.id !== last.id || !before.active || last.active) return
+    setFinished(last.id)
+    void (async () => {
+      try {
+        await syncJobSearch()
+      } catch {
+        // The page still re-reads the list; the Sheet snapshot catches up on the next "Sincronizar".
+      }
+      router.refresh()
+      if (last.status === "CONCLUIDO") toast.success("Lista da Hoje atualizada.")
+    })()
+  }, [last, router])
+
+  const meta = ACTION_META[TODAY_ACTION]
+  const running = last?.active ?? false
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {leading}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={running}
+            title={running ? "A lista já está sendo atualizada." : undefined}
+            data-testid="today-refresh-button"
+            onClick={() => setOpen(true)}
+          >
+            {running ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <ListRestart className="h-4 w-4" aria-hidden="true" />
+            )}
+            {running ? "Atualizando a lista…" : meta.verb}
+          </Button>
+          {trailing}
+        </div>
+      </div>
+      {error && <p className="text-xs text-muted-foreground">{refusalText(error)}</p>}
+      {last && (needsUser(last) || finished === last.id) && (
+        <DispatchCard
+          dispatch={last}
+          onChanged={() => {
+            void refresh()
+            router.refresh()
+          }}
+          onClose={finished === last.id && !needsUser(last) ? () => setFinished(null) : undefined}
+        />
+      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent data-testid="today-refresh-dialog">
+          <DialogHeader>
+            <DialogTitle>{meta.label}</DialogTitle>
+            <DialogDescription>{meta.description}</DialogDescription>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Roda pelo Hermes, no job-search. O clique é o seu pedido para gravar na planilha; pode levar alguns minutos
+            (até 2 lotes no ChatGPT).
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)} data-testid="today-refresh-cancel">
+              Cancelar
+            </Button>
+            <Button
+              disabled={pending}
+              data-testid="today-refresh-confirm"
+              onClick={() =>
+                startTransition(async () => {
+                  try {
+                    const result = await refreshTodayList()
+                    if (!result.ok) {
+                      setOpen(false)
+                      toastRefusal(result.code)
+                      return
+                    }
+                    setOpen(false)
+                    toast.success("Atualizando a lista no job-search.")
+                    void refresh()
+                  } catch {
+                    toast.error(refusalText("UNAUTHENTICATED"))
+                  }
+                })
+              }
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              {meta.verb}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

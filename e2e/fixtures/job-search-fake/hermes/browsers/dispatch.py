@@ -28,7 +28,9 @@ CV_JSON_MISSING before). Carta de apresentação (plan 2026-10-15): GERAR_CARTA 
 render → letter (fake-1002 stops with one ChatGPT doubt and ready answers; `resume-cv` resumes it); `letter-file`/
 `letter-doc` answer once it finished; EDITAR_CARTA `--manual-stdin` (letter-manual/1, LETTER_DOC_CHANGED on another sha)
 finishes, `--request-stdin` stops in LETTER_PENDING with a before/after proposal until `apply-letter --decision
-approve|reject`; `list` shows `job.letter` and `job.letter_hint` (fake-1001). `open-browser clouddesign|application` opens nothing and answers already_open false. `attention` lists, read-only,
+approve|reject`; `list` shows `job.letter` and `job.letter_hint` (fake-1001). `open-browser clouddesign|application|portal` opens nothing and answers already_open false. ATUALIZAR_LISTA (Hermes,
+host) moves three stages per poll and, at the end, writes today-list.json, which `today` reads. BUSCAR_VAGAS on Hermes
+runs on the host (it never holds the Lince). `attention` lists, read-only,
 the newest record per job+action that runs, waits on the user or holds an unregistered writeset. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
 import hashlib
@@ -57,7 +59,19 @@ LINCE = ("LOCALIZAR_VAGA",)
 # Actions whose last stage is "registro na planilha" (a writeset the panel may persist).
 WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA")
 HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA", "GERAR_CARTA",
-               "EDITAR_CARTA")
+               "EDITAR_CARTA", "ATUALIZAR_LISTA")
+# "Atualizar lista" (plano 2026-10-16): the list job-search keeps in its state; `today` reads it.
+TODAY_FILE = STATE.parent / "today-list.json"
+# With this file the portal Chrome is "closed": a Hermes search stops in PRECISA_HUMANO/BLOCKED_DISCOVERY_CDP.
+PORTAL_CLOSED_FILE = STATE.parent / "portal-closed"
+TODAY_LIST = {"schema": "today-list/1", "dispatch_id": None, "updated_at": None,
+              "items": [{"job_id": "fake-1004", "interesse": "MUITO_ALTO"},
+                        {"job_id": "fake-1001", "interesse": "MUITO_ALTO"},
+                        {"job_id": "fake-1003", "interesse": "BAIXO"}],
+              "left": [{"job_id": "fake-1002", "motivo": "SEM_ANALISE"},
+                       {"job_id": "fake-1008", "motivo": "A_CONFIRMAR"}],
+              "missing": 2}
+TODAY_SUMMARY = {"items": 3, "missing": 2, "analysed": 2, "failed": 0, "changes": 1, "written": True}
 LETTER_ACTIONS = ("GERAR_CARTA", "EDITAR_CARTA")
 # Carta de apresentação (plano 2026-10-15): o anúncio de fake-1001 menciona carta (letter_hint).
 LETTER_HINT_JOBS = ("fake-1001",)
@@ -149,6 +163,9 @@ STAGES = {
                      ("render", "PDF no template local (host)"), ("letter", "Carta nova registrada")],
     "EDITAR_CARTA_MANUAL": [("pedido", "Edição manual validada"), ("render", "PDF no template local (host)"),
                             ("letter", "Carta nova registrada")],
+    "ATUALIZAR_LISTA": [("planilha", "Planilha (só leitura)"), ("disponibilidade", "Disponibilidade (LinkedIn e Gupy)"),
+                        ("busca", "Cotação (host, CDP)"), ("analise", "Análise no ChatGPT (host)"),
+                        ("registro", "Registro na planilha"), ("lista", "Lista da Hoje")],
     "ANALISAR_DESCOBERTA": [("posting", "Texto da vaga"), ("analise", "Análise no ChatGPT (host)"),
                             ("writeset", "Writeset pronto"), ("registro", "Registro na planilha")],
     "ANALISAR_VAGA": [("planilha", "Dados da vaga (planilha, só leitura)"), ("posting", "Texto da vaga"),
@@ -365,6 +382,10 @@ def view(rec, recs=()):
         else:
             progress["diagnosis"] = DIAGNOSIS
             progress["diagnosis_by"] = "chatgpt"
+    if rec["action"] == "ATUALIZAR_LISTA" and rec["status"] == "CONCLUIDO":
+        progress.update(today=TODAY_SUMMARY, percent=100)
+        out_stages[4]["note"] = "gravado pelo job-search: 1 novas, 0 atualizadas, 1 sem mudança"
+        out_stages[5]["note"] = "3 de 5 vagas"
     out = {k: rec[k] for k in ("id", "action", "platform", "job_id", "status", "acknowledged", "created_at")}
     if rec["action"] in ("LOCALIZAR_VAGA", "ANALISAR_INDICADA"):
         out.update(source_id=rec.get("source_id"), discarded=bool(rec.get("discarded")))
@@ -722,6 +743,14 @@ def main(argv):
                 rec["step"] += 1
                 if rec["step"] >= 2:
                     rec["status"] = "CONCLUIDO"
+            elif rec["status"] == "RODANDO" and rec["action"] == "ATUALIZAR_LISTA":
+                # Three stages per poll; at the end the list is written like job-search's run_today.
+                rec["step"] = min(rec["step"] + 3, len(STAGES["ATUALIZAR_LISTA"]))
+                if rec["step"] >= len(STAGES["ATUALIZAR_LISTA"]):
+                    rec["status"] = "CONCLUIDO"
+                    TODAY_FILE.parent.mkdir(parents=True, exist_ok=True)
+                    TODAY_FILE.write_text(json.dumps({**TODAY_LIST, "dispatch_id": rec["id"], "updated_at": now()}),
+                                          encoding="utf-8")
             elif rec["status"] == "RODANDO":
                 rec["step"] += 1
                 if rec["action"] == "EDITAR_CARTA" and not rec.get("approved"):
@@ -736,6 +765,8 @@ def main(argv):
                         rec.update(step=last_step(rec["action"], rec), status="CONCLUIDO", code="NO_CHANGES")
                     else:
                         rec.update(step=1, status="PRECISA_HUMANO", code="CHANGES_PENDING")
+                elif rec["action"] == "BUSCAR_VAGAS" and rec.get("mode") == "host" and PORTAL_CLOSED_FILE.exists():
+                    rec.update(step=0, status="PRECISA_HUMANO", code="BLOCKED_DISCOVERY_CDP")
                 elif rec["action"] == "ANALISAR_VAGA" and rec["job_id"] == NO_POSTING and rec["step"] >= 1:
                     rec.update(step=1, status="PRECISA_HUMANO", code="POSTING_UNAVAILABLE")
                 elif (rec["action"] == "GERAR_CURRICULO" and rec["job_id"] == STUCK_CV and rec.get("mode") == "host"
@@ -1028,7 +1059,7 @@ def main(argv):
     if cmd == "open-browser":
         # Opens nothing: says the Cloud Design Chrome is up, like `native_profiles.sh open` + `check` on the host.
         browser = argv[1] if len(argv) > 1 else ""
-        if browser not in ("clouddesign", "application"):
+        if browser not in ("clouddesign", "application", "portal"):
             return refuse("BROWSER_INVALID")
         print(json.dumps({"ok": True, "open_browser": {"browser": browser, "already_open": False}}))
         return 0
@@ -1051,6 +1082,13 @@ def main(argv):
                 return 0
         print(json.dumps({"ok": False, "code": "DISPATCH_NOT_FOUND", "detail": ""}))
         return 1
+    if cmd == "today":
+        try:
+            today = json.loads(TODAY_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            today = None
+        print(json.dumps({"ok": True, "today": today}))
+        return 0
     if cmd == "attention":
         # Read-only, like job-search: never advances a record (only `list` does).
         items, seen = [], set()

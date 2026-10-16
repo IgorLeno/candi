@@ -4,10 +4,11 @@ import { getJobSearchData } from "@/lib/job-search/source"
 import { sentInWeek } from "@/lib/job-search/metrics"
 import {
   attentionGroups,
+  jobHref,
   jobState,
   listHref,
   toListItem,
-  todayQueue,
+  todayView,
   type AttentionGroup,
   type JobListItem,
 } from "@/lib/job-search/present"
@@ -18,7 +19,9 @@ import { isDispatchEnabled } from "@/lib/ops/dispatcher"
 import { UncertainSubmitAlert } from "@/components/job-search/overview"
 import { DeclineJobButton } from "@/components/job-search/decline-job"
 import { JobCard, NextMoveCard, ShelfTitle, StateLegend } from "@/components/job-search/visual"
-import { canDeclineJob } from "@/lib/ops/present"
+import { canDeclineJob, listUpdatedText, todayOutReason } from "@/lib/ops/present"
+import { readTodayList } from "@/lib/ops/today"
+import { TodayListControls } from "@/components/job-search/ops"
 import { cn } from "@/lib/utils"
 
 // "Hoje": the action queue. Charts and data quality live in /analise.
@@ -83,18 +86,20 @@ function plural(count: number, one: string, many: string): string {
 export default async function HojePage() {
   const data = await getJobSearchData()
   const items = data.views.map(toListItem)
-  const queue = todayQueue(items)
+  const dispatch = isDispatchEnabled()
+  const today = dispatch ? await readTodayList() : { list: null, failed: false }
+  const { queue, out } = todayView(items, today.list)
   const [next, ...rest] = queue
 
   const now = new Date()
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE }).format(now)
+  const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE }).format(now)
   const dateLabel = new Intl.DateTimeFormat("pt-BR", {
     weekday: "long",
     day: "numeric",
     month: "long",
     timeZone: TIME_ZONE,
   }).format(now)
-  const sentThisWeek = sentInWeek(data.views, today)
+  const sentThisWeek = sentInWeek(data.views, todayDate)
 
   const attention = attentionGroups(data.views)
   const uncertain = attention.find((group) => group.id === "envio-incerto")
@@ -113,7 +118,14 @@ export default async function HojePage() {
     .filter((item) => jobState(item) === "enviada")
     .sort((a, b) => (b.dataCandidatura ?? "").localeCompare(a.dataCandidatura ?? ""))
   const declined = items.filter((item) => jobState(item) === "descartada")
-  const dispatch = isDispatchEnabled()
+  const listLine = !dispatch
+    ? null
+    : today.list
+      ? listUpdatedText(today.list.updated_at, now) +
+        (today.list.missing > 0 ? ` · faltaram ${today.list.missing} para completar 5` : "")
+      : today.failed
+        ? "Não foi possível ler a lista do job-search: a Hoje mostra todas as selecionadas e abertas."
+        : "Lista ainda não atualizada: a Hoje mostra todas as selecionadas e abertas."
 
   const subline = [
     hot > 0 && `${hot} com interesse muito alto`,
@@ -158,14 +170,30 @@ export default async function HojePage() {
           </div>
           <GoalRing sent={sentThisWeek} />
         </div>
-        <div className="relative mt-6 flex flex-wrap items-center gap-2">
-          {chips.map((group) => (
-            <AttentionChip key={group.id} group={group} />
-          ))}
-          <div className="ml-auto">
-            <SyncButton />
+        {dispatch ? (
+          <div className="relative mt-6">
+            <TodayListControls
+              leading={chips.map((group) => (
+                <AttentionChip key={group.id} group={group} />
+              ))}
+              trailing={<SyncButton />}
+            />
           </div>
-        </div>
+        ) : (
+          <div className="relative mt-6 flex flex-wrap items-center gap-2">
+            {chips.map((group) => (
+              <AttentionChip key={group.id} group={group} />
+            ))}
+            <div className="ml-auto">
+              <SyncButton />
+            </div>
+          </div>
+        )}
+        {listLine && (
+          <p className="relative mt-3 text-xs text-muted-foreground" data-testid="today-list-updated">
+            {listLine}
+          </p>
+        )}
       </section>
 
       {uncertain && <UncertainSubmitAlert group={uncertain} />}
@@ -195,6 +223,33 @@ export default async function HojePage() {
           </ShelfTitle>
           <CardGrid items={rest} testId="queue-list" withDecline={dispatch} />
         </section>
+      )}
+
+      {out.length > 0 && (
+        <details className="group" data-testid="out-of-list">
+          <summary className="cursor-pointer list-none">
+            <ShelfTitle id="fora-da-lista" tone="muted">
+              Fora da lista · {out.length}
+            </ShelfTitle>
+          </summary>
+          <ul className="mt-3 space-y-2" data-testid="out-of-list-items">
+            {out.map(({ item, motivo }) => (
+              <li
+                key={item.jobId}
+                data-testid="out-of-list-job"
+                data-job-id={item.jobId}
+                className="flex flex-wrap items-baseline justify-between gap-2 rounded-xl border border-border px-3 py-2 text-sm"
+              >
+                <Link prefetch={false} href={jobHref(item.jobId)} className="font-medium hover:underline">
+                  {[item.empresa || "(sem empresa)", item.cargo || "(sem cargo)"].join(" · ")}
+                </Link>
+                <span className="text-xs text-muted-foreground" data-testid="out-of-list-reason">
+                  {todayOutReason(motivo)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       {radar.length > 0 && (

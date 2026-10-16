@@ -176,6 +176,74 @@ test.describe("Central de operações (bots)", () => {
     await expect(job("fake-9101").getByTestId("left-out-send")).toHaveText("Mandar de novo")
   })
 
+  test("cotar vagas: navegador do portal fechado pede você e abre pelo card", async ({ page }) => {
+    mkdirSync(E2E_FAKE_DISPATCH_STATE, { recursive: true })
+    writeFileSync(`${E2E_FAKE_DISPATCH_STATE}/portal-closed`, "1\n")
+    await page.goto("/cotar")
+    const ops = page.getByTestId("search-ops")
+    await ops.getByTestId("dispatch-button-BUSCAR_VAGAS").click()
+    await page.getByTestId("dispatch-confirm").click()
+    const card = ops.getByTestId("dispatch-BUSCAR_VAGAS")
+    await expect(card).toHaveAttribute("data-status", "PRECISA_HUMANO", { timeout: 20_000 })
+    await expect(card).toContainText("BLOCKED_DISCOVERY_CDP")
+    await expect(card).toContainText("Abrir navegador do portal")
+    await card.getByTestId("open-portal-browser-button").click()
+    await expect(card.getByTestId("open-portal-browser-outcome")).toContainText("Navegador do portal aberto")
+    // The search can run again at once.
+    await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toBeEnabled()
+  })
+
+  test("hoje: atualizar lista mostra as etapas, troca a fila sem recarregar e explica quem saiu", async ({ page }) => {
+    test.setTimeout(60_000)
+    await page.goto("/")
+    const updated = page.getByTestId("today-list-updated")
+    await expect(updated).toContainText("Lista ainda não atualizada")
+    await expect(page.getByTestId("next-move")).toHaveAttribute("data-job-id", "fake-1001")
+    await expect(page.getByTestId("out-of-list")).toHaveCount(0)
+
+    // Cancel never dispatches.
+    await page.getByTestId("today-refresh-button").click()
+    const dialog = page.getByTestId("today-refresh-dialog")
+    await expect(dialog).toContainText("até 10 vagas")
+    await expect(dialog).toContainText("grava o resultado na planilha")
+    await page.getByTestId("today-refresh-cancel").click()
+    await expect(page.getByTestId("dispatch-ATUALIZAR_LISTA")).toHaveCount(0)
+
+    await page.getByTestId("today-refresh-button").click()
+    await page.getByTestId("today-refresh-confirm").click()
+    const card = page.getByTestId("dispatch-ATUALIZAR_LISTA")
+    await expect(card).toBeVisible()
+    await expect(page.getByTestId("today-refresh-button")).toBeDisabled()
+    await expect(page.getByTestId("today-refresh-button")).toHaveText("Atualizando a lista…")
+
+    // Same page, no reload: the card ends with every stage done and the new list replaces the queue.
+    await expect(card).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    for (const stage of ["planilha", "disponibilidade", "busca", "analise", "registro", "lista"]) {
+      await expect(card.locator(`[data-stage="${stage}"]`)).toHaveAttribute("data-state", "done")
+    }
+    await expect(card.locator('[data-stage="lista"]')).toContainText("3 de 5 vagas")
+    await expect(card).toContainText("100%")
+    await expect(updated).toContainText("Lista atualizada em", { timeout: 15_000 })
+    await expect(updated).toContainText("faltaram 2 para completar 5")
+    await expect(page.getByTestId("next-move")).toHaveAttribute("data-job-id", "fake-1004")
+    await expect(page.getByTestId("queue-list").getByTestId("job-row")).toHaveCount(2)
+    await expect(page.getByTestId("today-refresh-button")).toBeEnabled()
+
+    const out = page.getByTestId("out-of-list")
+    await expect(out).toContainText("Fora da lista · 2")
+    await out.locator("summary").click()
+    const job = (id: string) => out.locator(`[data-testid="out-of-list-job"][data-job-id="${id}"]`)
+    await expect(job("fake-1002").getByTestId("out-of-list-reason")).toContainText("Ainda sem análise do ChatGPT")
+    await expect(job("fake-1008").getByTestId("out-of-list-reason")).toContainText("Confirmei que está aberta")
+
+    // "Fechar" takes the finished card away; a reload keeps the list.
+    await card.getByTestId("dispatch-close").click()
+    await expect(card).toHaveCount(0)
+    await page.reload()
+    await expect(page.getByTestId("next-move")).toHaveAttribute("data-job-id", "fake-1004")
+    await expect(page.getByTestId("dispatch-ATUALIZAR_LISTA")).toHaveCount(0)
+  })
+
   test("vaga específica: localizar, mandar para o ChatGPT e registrar na planilha", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)

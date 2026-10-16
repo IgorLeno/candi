@@ -544,3 +544,44 @@ export function todayQueue(items: JobListItem[]): JobListItem[] {
       byRecent(a, b)
   )
 }
+
+/** The Hoje list job-search keeps after "Atualizar lista" (`dispatch.py today`); only the fields used here. */
+export interface TodayListInput {
+  items: { job_id: string }[]
+  left: { job_id: string; motivo: string }[]
+}
+
+/** A job out of the Hoje list: job-search's reason, or NOVA (selected and open after the last update). */
+export interface TodayOut {
+  item: JobListItem
+  motivo: string
+}
+
+const GONE_FROM_HOJE: ReadonlySet<JobState> = new Set(["enviada", "retirada", "descartada", "incerto"])
+
+/**
+ * "Hoje" after an "Atualizar lista" (plan 2026-10-16): the list order, keeping only jobs the Sheet still queues (a job
+ * sent or closed since leaves on its own; one not in the snapshot yet waits for the next read). Out of the list: the
+ * jobs job-search left out, with its reason, then the ones that qualified after the update (NOVA). Without a list, the
+ * Sheet rule (`todayQueue`).
+ */
+export function todayView(
+  items: JobListItem[],
+  list: TodayListInput | null
+): { queue: JobListItem[]; out: TodayOut[] } {
+  const queued = todayQueue(items)
+  if (!list) return { queue: queued, out: [] }
+  const byId = new Map(items.map((item) => [item.jobId, item]))
+  const eligible = new Set(queued.map((item) => item.jobId))
+  const listed = new Set(list.items.map((entry) => entry.job_id))
+  const queue = list.items.flatMap((entry) => (eligible.has(entry.job_id) ? [byId.get(entry.job_id)!] : []))
+  const left = list.left.flatMap((entry) => {
+    const item = byId.get(entry.job_id)
+    return item && !listed.has(item.jobId) && !GONE_FROM_HOJE.has(jobState(item))
+      ? [{ item, motivo: entry.motivo }]
+      : []
+  })
+  const known = new Set([...listed, ...left.map((entry) => entry.item.jobId)])
+  const fresh = queued.filter((item) => !known.has(item.jobId)).map((item) => ({ item, motivo: "NOVA" }))
+  return { queue, out: [...left, ...fresh] }
+}

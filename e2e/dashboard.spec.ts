@@ -1,9 +1,12 @@
 import { test, expect, type Page } from "@playwright/test"
 import { E2E_AUTH_ENV, signInAs } from "./auth"
+import { resetFakeDispatches } from "./ops-env"
 
 // Runs against the deterministic job-search fixture (JOB_SEARCH_DATA_SOURCE=fixture), never the real Sheet.
 test.describe("Painel do job-search", () => {
   test.beforeEach(async ({ context }) => {
+    // A Hoje list left by an ops test ("Atualizar lista") would replace the Sheet queue these tests expect.
+    resetFakeDispatches()
     await signInAs(context, E2E_AUTH_ENV.ALLOWED_EMAIL)
   })
 

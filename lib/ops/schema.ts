@@ -41,6 +41,12 @@ export const CV_RENDERERS = ["claude_design", "local", "INVALID"] as const
  * rewrites and the user approves as a whole (`applyLetter`). Started by their own actions, not `startDispatch`.
  */
 export const LETTER_ACTION = "GERAR_CARTA"
+/**
+ * "Atualizar lista" on Hoje (Hermes/host only, plan 2026-10-16-atualizar-lista-hoje): job-search rereads the
+ * availability of the Hoje jobs, runs a search, sends up to 10 jobs to the ChatGPT, writes the Sheet (the click is the
+ * request) and keeps the 5 SELECIONADA + ABERTA jobs of highest interest in its own state (`dispatch.py today`).
+ */
+export const TODAY_ACTION = "ATUALIZAR_LISTA"
 export const LETTER_EDIT_ACTION = "EDITAR_CARTA"
 export type CvRenderer = (typeof CV_RENDERERS)[number]
 
@@ -56,6 +62,7 @@ export const DISPATCH_ACTIONS = [
   CV_EDIT_ACTION,
   LETTER_ACTION,
   LETTER_EDIT_ACTION,
+  TODAY_ACTION,
   "REGISTRAR_WRITESET",
 ] as const
 export type DispatchAction = (typeof DISPATCH_ACTIONS)[number]
@@ -331,6 +338,15 @@ export type LetterText = z.infer<typeof letterTextSchema>
 const letterProposalSchema = z.object({ before: letterTextSchema, after: letterTextSchema })
 export type LetterProposal = z.infer<typeof letterProposalSchema>
 
+const todaySummarySchema = z.object({
+  items: z.number().int().nonnegative(),
+  missing: z.number().int().nonnegative(),
+  analysed: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  changes: z.number().int().nonnegative(),
+  written: z.boolean(),
+})
+
 const progressSchema = z.object({
   percent: z.number().min(0).max(100),
   stages: z.array(stageSchema),
@@ -393,6 +409,8 @@ const progressSchema = z.object({
   letter: z.enum(["VALID", "MISSING", "INVALID"]).optional(),
   /** EDITAR_CARTA by request: the proposal waiting for (or past) the user's decision. */
   letter_proposal: letterProposalSchema.nullable().optional(),
+  /** ATUALIZAR_LISTA once finished: counts only (jobs in the list, missing to 5, analysed, availability changes). */
+  today: todaySummarySchema.nullable().optional(),
 })
 export type DispatchProgress = z.infer<typeof progressSchema>
 
@@ -547,9 +565,34 @@ export type MarkClosedResult = z.infer<typeof markClosedResultSchema>["mark_clos
  */
 export const openBrowserResultSchema = z.object({
   ok: z.literal(true),
-  open_browser: z.object({ browser: z.enum(["clouddesign", "application"]), already_open: z.boolean() }),
+  open_browser: z.object({ browser: z.enum(["clouddesign", "application", "portal"]), already_open: z.boolean() }),
 })
 export type OpenBrowserResult = z.infer<typeof openBrowserResultSchema>["open_browser"]
+
+/** Why a job left the Hoje list (job-search `run_today`); `REANALISADA_<status_analise>` carries the new verdict. */
+export const TODAY_LEFT_REASONS = ["ENCERRADA", "A_CONFIRMAR", "SEM_ANALISE", "SEM_TEXTO", "INTERESSE_MENOR"] as const
+const todayLeftReasonSchema = z.union([
+  z.enum(TODAY_LEFT_REASONS),
+  z.string().regex(/^REANALISADA_[A-ZÃÇÕÁÉÍÓÚ ]{1,40}$/),
+])
+
+/**
+ * `dispatch.py today`: the Hoje list of the last "Atualizar lista" (`today-list/1`), or null before the first one
+ * (the panel keeps the old rule, SELECIONADA + ABERTA from the Sheet). Job ids and codes only: the jobs come from the
+ * Sheet snapshot.
+ */
+export const todayListSchema = z.object({
+  schema: z.literal("today-list/1"),
+  updated_at: z.string().max(40),
+  dispatch_id: z.string().regex(DISPATCH_ID_RE),
+  items: z.array(z.object({ job_id: z.string().regex(JOB_ID_RE), interesse: z.string().max(40) })).max(5),
+  left: z.array(z.object({ job_id: z.string().regex(JOB_ID_RE), motivo: todayLeftReasonSchema })).max(200),
+  missing: z.number().int().min(0).max(5),
+})
+export type TodayList = z.infer<typeof todayListSchema>
+export type TodayLeftReason = TodayList["left"][number]["motivo"]
+
+export const todayResultSchema = z.object({ ok: z.literal(true), today: todayListSchema.nullable() })
 
 const rowCount = z.number().int().nonnegative()
 

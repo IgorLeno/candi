@@ -21,7 +21,7 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     label: "Cotação de vagas",
     verb: "Cotar vagas",
     description:
-      "O job-search busca no LinkedIn e na Gupy pelo navegador do portal, remove só o que é objetivamente inelegível e leva o resto (e as vagas pendentes) ao ChatGPT para a análise; o writeset fica pronto para ser gravado na planilha.",
+      "O job-search abre o navegador do portal se estiver fechado, faz as buscas de methodology/discovery-searches.json no LinkedIn (2 páginas, últimas 2 semanas) e na Gupy, remove só o que é objetivamente inelegível e leva o resto (e as vagas pendentes) ao ChatGPT para a análise; o writeset fica pronto para você gravar na planilha.",
   },
   GERAR_CURRICULO: {
     label: "Gerar currículo",
@@ -76,6 +76,12 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     verb: "Editar carta",
     description:
       "Manual: você edita o texto e o job-search gera o PDF novo (-v2, -v3...). Pedido: o ChatGPT reescreve a carta conforme o seu pedido e você aprova ou descarta a carta inteira antes do PDF.",
+  },
+  ATUALIZAR_LISTA: {
+    label: "Atualização da lista",
+    verb: "Atualizar lista",
+    description:
+      "O job-search confere se as vagas da Hoje continuam abertas (LinkedIn e Gupy), faz uma cotação nova, leva ao ChatGPT até 10 vagas (primeiro as da Hoje sem análise, depois as novas), grava o resultado na planilha e escolhe as 5 selecionadas e abertas de maior interesse. Quem sai da lista não muda na planilha.",
   },
   REGISTRAR_WRITESET: {
     label: "Registrar na planilha",
@@ -747,4 +753,62 @@ export function canDelete(dispatch: Dispatch): boolean {
   if (isActiveStatus(dispatch.status)) return false
   const registration = dispatch.progress.registration
   return !(registration && (registration.status === "CONCLUIDO" || isActiveStatus(registration.status)))
+}
+
+// "Atualizar lista" on Hoje (plan 2026-10-16). job-search decides who is in and why; these only word it.
+const TODAY_OUT_TEXT: Record<string, string> = {
+  ENCERRADA: "O job-search leu a vaga encerrada.",
+  A_CONFIRMAR: "Disponibilidade a confirmar: abra a vaga e use “Confirmei que está aberta”.",
+  SEM_ANALISE: "Ainda sem análise do ChatGPT: entra na fila do próximo “Atualizar lista”.",
+  SEM_TEXTO: "O job-search não achou o texto da vaga para mandar ao ChatGPT.",
+  INTERESSE_MENOR: "Selecionada e aberta, mas com interesse menor que as 5 da lista.",
+  NOVA: "Selecionada e aberta depois da última atualização da lista.",
+}
+
+export function todayOutReason(motivo: string): string {
+  if (motivo.startsWith("REANALISADA_")) return `Reanalisada pelo ChatGPT: ${motivo.slice("REANALISADA_".length)}.`
+  return TODAY_OUT_TEXT[motivo] ?? `Fora da lista (${motivo}).`
+}
+
+const LIST_TIME_ZONE = "America/Sao_Paulo"
+
+/** "Lista atualizada em 16/10 às 12:30 · há 2 h" (São Paulo time), from job-search's UTC `updated_at`. */
+export function listUpdatedText(updatedAt: string, now: Date = new Date()): string {
+  const at = new Date(updatedAt)
+  if (Number.isNaN(at.getTime())) return "Lista atualizada (horário ilegível)"
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("pt-BR", {
+      timeZone: LIST_TIME_ZONE,
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(at)
+      .map((part) => [part.type, part.value])
+  )
+  const minutes = Math.max(0, Math.floor((now.getTime() - at.getTime()) / 60_000))
+  const ago =
+    minutes < 1
+      ? "agora há pouco"
+      : minutes < 60
+        ? `há ${minutes} min`
+        : minutes < 24 * 60
+          ? `há ${Math.floor(minutes / 60)} h`
+          : `há ${Math.floor(minutes / (24 * 60))} ${Math.floor(minutes / (24 * 60)) === 1 ? "dia" : "dias"}`
+  return `Lista atualizada em ${parts.day}/${parts.month} às ${parts.hour}:${parts.minute} · ${ago}`
+}
+
+/** Why a host "Cotar vagas" or "Atualizar lista" stopped for the user, and what fixes it. */
+export function searchStopText(code: string | null | undefined): string {
+  if (code === "BLOCKED_DISCOVERY_CDP")
+    return "o navegador do portal (Job Search Browser, CDP 9223) está fechado e não abriu sozinho: use “Abrir navegador do portal” e tente de novo."
+  if (code === "BLOCKED_SEARCHES_INVALID")
+    return "o arquivo das buscas (methodology/discovery-searches.json) está fora do formato: corrija e tente de novo."
+  if (code?.startsWith("HUMAN_"))
+    return "o ChatGPT pediu você (login ou verificação no ChatGPT Browser): resolva lá e tente de novo."
+  if (code?.startsWith("SHEET_") || code?.startsWith("PERSIST_"))
+    return "a planilha não gravou: use “Registrar na planilha” abaixo para tentar de novo; a lista anterior continua valendo."
+  return "ação sua necessária (veja o código)."
 }

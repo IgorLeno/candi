@@ -20,6 +20,7 @@ import {
   LETTER_ACTION,
   LETTER_EDIT_ACTION,
   PLATFORMS,
+  TODAY_ACTION,
   SENT_EVIDENCE,
   attentionResultSchema,
   confirmOpenResultSchema,
@@ -506,6 +507,28 @@ export async function openCvBrowser(): Promise<ActionResult<OpenBrowserResult>> 
   await requireSession()
   const result = await runDispatcher(["open-browser", "clouddesign"], openBrowserResultSchema)
   return result.ok ? { ok: true, value: result.value.open_browser } : { ok: false, code: result.code }
+}
+
+/**
+ * "Abrir navegador do portal": job-search (`dispatch.py open-browser portal`) runs the same command as the Job Search
+ * Browser shortcut (the Chrome the search reads LinkedIn and Gupy with, CDP 9223) and checks the CDP. No input from the
+ * client. Signing in to LinkedIn stays with the user.
+ */
+export async function openPortalBrowser(): Promise<ActionResult<OpenBrowserResult>> {
+  await requireSession()
+  const result = await runDispatcher(["open-browser", "portal"], openBrowserResultSchema)
+  return result.ok ? { ok: true, value: result.value.open_browser } : { ok: false, code: result.code }
+}
+
+/**
+ * "Atualizar lista" on Hoje (plan 2026-10-16): only the fixed action leaves the panel. job-search rereads availability,
+ * searches, sends up to 10 jobs to the ChatGPT, writes the Sheet (the click is the request) and keeps the new list in
+ * its own state; the page reads it with `dispatch.py today`.
+ */
+export async function refreshTodayList(): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  const result = await runDispatcher(["start", TODAY_ACTION, "--platform", "hermes"], oneResultSchema)
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   jobState,
   journeyStep,
   todayQueue,
+  todayView,
   filtersToParams,
   formatDay,
   formatTimestamp,
@@ -224,5 +225,42 @@ describe("visual state", () => {
 
   it("queues selected open jobs still to apply, by interest, progress, then recency", () => {
     expect(todayQueue(items).map((item) => item.jobId)).toEqual(["fake-1001", "fake-1004", "fake-1002", "fake-1003"])
+  })
+})
+
+describe("todayView (Atualizar lista, 2026-10-16)", () => {
+  const list = {
+    schema: "today-list/1" as const,
+    updated_at: "2026-10-16T12:00:00Z",
+    dispatch_id: "d-20261016T120000Z-abcdef",
+    items: [
+      { job_id: "fake-1004", interesse: "MUITO_ALTO" },
+      { job_id: "fake-9999", interesse: "ALTO" }, // not in the Sheet snapshot yet
+      { job_id: "fake-1006", interesse: "ALTO" }, // sent since the list: leaves on its own
+      { job_id: "fake-1001", interesse: "MUITO_ALTO" },
+    ],
+    left: [
+      { job_id: "fake-1002", motivo: "SEM_ANALISE" as const },
+      { job_id: "fake-1009", motivo: "INTERESSE_MENOR" as const }, // declined by the user: not shown again
+      { job_id: "fake-1008", motivo: "A_CONFIRMAR" as const },
+    ],
+    missing: 1,
+  }
+
+  it("without a list keeps the Sheet rule", () => {
+    const view = todayView(items, null)
+    expect(view.queue.map((item) => item.jobId)).toEqual(todayQueue(items).map((item) => item.jobId))
+    expect(view.out).toEqual([])
+  })
+
+  it("follows the list order, drops what no longer qualifies and explains who is out", () => {
+    const view = todayView(items, list)
+    expect(view.queue.map((item) => item.jobId)).toEqual(["fake-1004", "fake-1001"])
+    expect(view.out.map((entry) => [entry.item.jobId, entry.motivo])).toEqual([
+      ["fake-1002", "SEM_ANALISE"],
+      ["fake-1008", "A_CONFIRMAR"],
+      // Selected and open after the list was made: shown out of it until the next update.
+      ["fake-1003", "NOVA"],
+    ])
   })
 })

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
   ACTION_META,
+  listUpdatedText,
+  searchStopText,
+  todayOutReason,
   CV_GENERATE_LOCAL_DESCRIPTION,
   analyzeJobBlocker,
   applicationCvWarning,
@@ -737,5 +740,39 @@ describe("vagas que ficaram de fora da cotação", () => {
     expect(dispatchSchema.safeParse({ ...base, action: "ANALISAR_DESCOBERTA", job_id: "1", progress }).success).toBe(
       true
     )
+  })
+})
+
+describe("Atualizar lista (2026-10-16)", () => {
+  it("explains every reason job-search gives for leaving the list", () => {
+    expect(todayOutReason("ENCERRADA")).toContain("encerrada")
+    expect(todayOutReason("A_CONFIRMAR")).toContain("Confirmei que está aberta")
+    expect(todayOutReason("SEM_ANALISE")).toContain("próximo")
+    expect(todayOutReason("SEM_TEXTO")).toContain("texto")
+    expect(todayOutReason("INTERESSE_MENOR")).toContain("interesse")
+    expect(todayOutReason("REANALISADA_NÃO PRIORIZADA")).toBe("Reanalisada pelo ChatGPT: NÃO PRIORIZADA.")
+    expect(todayOutReason("NOVA")).toContain("depois da última atualização")
+    expect(todayOutReason("OUTRO")).toBe("Fora da lista (OUTRO).")
+  })
+
+  it("says when the list was updated, in São Paulo time, and how long ago", () => {
+    const now = new Date("2026-10-16T17:40:00Z")
+    expect(listUpdatedText("2026-10-16T15:30:00Z", now)).toBe("Lista atualizada em 16/10 às 12:30 · há 2 h")
+    expect(listUpdatedText("2026-10-16T17:39:30Z", now)).toBe("Lista atualizada em 16/10 às 14:39 · agora há pouco")
+    expect(listUpdatedText("2026-10-16T17:10:00Z", now)).toBe("Lista atualizada em 16/10 às 14:10 · há 30 min")
+    expect(listUpdatedText("2026-10-13T17:40:00Z", now)).toBe("Lista atualizada em 13/10 às 14:40 · há 3 dias")
+    expect(listUpdatedText("lixo", now)).toBe("Lista atualizada (horário ilegível)")
+  })
+
+  it("search and list stops say what fixes them", () => {
+    expect(searchStopText("BLOCKED_DISCOVERY_CDP")).toContain("Abrir navegador do portal")
+    expect(searchStopText("BLOCKED_SEARCHES_INVALID")).toContain("discovery-searches.json")
+    expect(searchStopText("HUMAN_AUTH_REQUIRED")).toContain("ChatGPT")
+    expect(searchStopText("SHEET_QUOTA")).toContain("Registrar na planilha")
+    expect(searchStopText("PERSIST_TIMEOUT")).toContain("Registrar na planilha")
+  })
+
+  it("accepts the list refresh in the dispatcher contract", () => {
+    expect(ACTION_META.ATUALIZAR_LISTA.verb).toBe("Atualizar lista")
   })
 })
