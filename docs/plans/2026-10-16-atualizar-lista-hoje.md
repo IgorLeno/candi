@@ -116,29 +116,29 @@ direto na main, uma preocupação por commit, sem push até o OK do usuário.
 
 ### job-search
 
-- [ ] J0 Spikes sem efeito: (a) o portal 9223 hoje é o Chrome nativo (`job-search-browser.desktop`) ou o pod
+- [x] J0 Spikes sem efeito: (a) o portal 9223 hoje é o Chrome nativo (`job-search-browser.desktop`) ou o pod
       `jsb-portal`? (b) sinal de encerrada da Gupy: baixar com `curl` para o scratchpad a página pública de uma vaga
       aberta e de uma encerrada já conhecidas, parsear com `python3 -I`; (c) passo de paginação do LinkedIn guest.
       Sem abrir Chrome, sem ChatGPT.
-- [ ] J1 `feat(discovery): read the searches from a versioned file`.
-- [ ] J2 `feat(discovery): read two result pages over two weeks`.
-- [ ] J3 `feat(discovery): open the portal browser when it is closed` (+ `open-browser portal`, teste pelo `main(argv)`).
-- [ ] J4 `fix(dispatch): ask the user when the search has nothing to analyse` (PRECISA_HUMANO + recovery).
-- [ ] J5 `docs(dispatch): describe the host search without the Threadgist`.
-- [ ] J6 `feat(discovery): read Gupy availability`.
-- [ ] J7 `feat(analysis): reanalyse registered rows in batches`.
-- [ ] J8 `feat(dispatch): refresh the Hoje list` (ATUALIZAR_LISTA, `_today`, `today-list.json`, `dispatch.py today`;
+- [x] J1 `feat(discovery): read the searches from a versioned file`.
+- [x] J2 `feat(discovery): read two result pages over two weeks`.
+- [x] J3 `feat(discovery): open the portal browser when it is closed` (+ `open-browser portal`, teste pelo `main(argv)`).
+- [x] J4 `fix(dispatch): ask the user when the search has nothing to analyse` (PRECISA_HUMANO + recovery).
+- [x] J5 `docs(dispatch): describe the host search without the Threadgist`.
+- [x] J6 `feat(discovery): read Gupy availability`.
+- [x] J7 `feat(analysis): reanalyse registered rows in batches`.
+- [x] J8 `feat(dispatch): refresh the Hoje list` (ATUALIZAR_LISTA, `_today`, `today-list.json`, `dispatch.py today`;
       testes de cada etapa com stubs, liveness com processo real do argv, `main(argv)` com o argv exato do painel).
-- [ ] J9 `docs(methodology): the Hoje list is the operational shortlist`.
+- [x] J9 `docs(methodology): the Hoje list is the operational shortlist`.
 
 ### Painel
 
-- [ ] P1 `fix(ops): the host search no longer blocks the specific-job search`.
-- [ ] P2 `feat(ops): describe the Hoje list refresh` (schema, ACTION_META, server actions `refreshTodayList`,
+- [x] P1 `fix(ops): the host search no longer blocks the specific-job search`.
+- [x] P2 `feat(ops): describe the Hoje list refresh` (schema, ACTION_META, server actions `refreshTodayList`,
       `getTodayList`, fake do e2e).
-- [ ] P3 `feat(today): queue from the refreshed list` (`todayQueue` com lista, "Fora da lista"; vitest).
-- [ ] P4 `feat(today): Atualizar lista button and last update` (botão, etapa, horário; e2e sem reload).
-- [ ] P5 `feat(ops): open the portal browser from the search card` (retomada; e2e).
+- [x] P3 `feat(today): queue from the refreshed list` (`todayQueue` com lista, "Fora da lista"; vitest).
+- [x] P4 `feat(today): Atualizar lista button and last update` (botão, etapa, horário; e2e sem reload).
+- [x] P5 `feat(ops): open the portal browser from the search card` (retomada; e2e).
 
 ### Verificação
 
@@ -152,6 +152,22 @@ direto na main, uma preocupação por commit, sem push até o OK do usuário.
 - [ ] E2E do "Atualizar lista": clique → etapas → lista nova e horário na mesma página, sem reload, com o `progress`
       completo (lição 2026-10-16).
 - [ ] Rodada real (só com OK do usuário: abre o Chrome do portal, manda até 10 vagas ao ChatGPT e grava a planilha).
+
+## Execução (2026-10-16)
+
+- J0: portal 9223 = Chrome nativo (perfil `job-search`, `native_profiles.sh ensure portal` já existia). Gupy:
+  `__NEXT_DATA__` → `job.status` + `job.registerEndDate` (MRV&CO 12484524 aberta, Mercantil 12614985 com inscrição até
+  06/10 → encerrada, igual ao que o usuário marcou). LinkedIn guest: 10 cards por chamada; `start=10` traz 7 novos.
+- job-search (main, sem push): 59bf496 J1, 964923d J2, 807c102 J3, 459b399 J4, 8d36e21 J5, a5eb5f8 J6, 04fc751 J7,
+  7ce0c60 J8, cf73e44 J9, 8dcb105 (extra, abaixo).
+- Desvios do desenho:
+  - O próprio dispatcher recusava a vaga específica com `PROFILE_BUSY` durante a cotação do host (o registro guarda
+    `profile=jobsearchportal` em qualquer modo). Corrigido no job-search (8dcb105), não só no painel.
+  - J4 sem `progress.recovery`: o código (`BLOCKED_DISCOVERY_CDP`) basta; o painel mostra o texto e o botão "Abrir
+    navegador do portal" pelo código. Descoberta no ar sem nada novo agora termina CONCLUIDO `NOTHING_NEW`.
+  - A falha antiga do e2e "cotar vagas: as que ficaram de fora" era a asserção da trava global do ChatGPT removida em
+    2026-10-14 (esperava "Cotar vagas" desativado durante uma análise). Asserção corrigida.
+  - O card do Atualizar lista fica na Hoje depois de terminar (até "Fechar"), para mostrar etapas e contagens.
 
 ## Fora do escopo
 
