@@ -2176,12 +2176,12 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
   const searchShown = last !== null && (searchForced || showSearch)
   const hasIntakes = intake !== null || discarded.length > 0
   const intakeShown = hasIntakes && (intakeForced || showIntake)
-  // Search and intake share the Lince's Bot Chat: one at a time (the dispatcher refuses with PROFILE_BUSY). ChatGPT
-  // has no global lock (2026-10-14): job-search queues the runs, so analyses never disable the search.
-  const linceBusy = [last, intake].some((dispatch) => dispatch?.active)
-    ? "O Lince já está com um disparo em andamento."
-    : null
-  const reason = (last?.active ? "Já existe uma cotação em andamento." : null) ?? linceBusy
+  // The specific-job search runs on the Lince's Bot Chat (the dispatcher refuses a second one with PROFILE_BUSY). The
+  // Hermes search runs on the host since 2026-09-30 and never holds the Lince (2026-10-16); only an old Bot-mode
+  // search does. ChatGPT has no global lock (2026-10-14): job-search queues the runs, so analyses never disable it.
+  const linceBusy =
+    intake?.active || (last?.active && last.mode !== "host") ? "O Lince já está com um disparo em andamento." : null
+  const reason = last?.active ? "Já existe uma cotação em andamento." : null
   const intakeReason = linceBusy ?? gatewayReason(data, "hermes")
   const shownError = error ?? intakes.error ?? analyses.error
   return (

@@ -45,13 +45,15 @@ STATE = Path(os.environ["JOB_SEARCH_BROWSERS_STATE"]) / "fake-dispatch.json"
 RENDERER_FILE = STATE.parent / "cv-renderer"
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 APPROVAL_RE = re.compile(r"(?i)\b(ok|n[aã]o)\s+[0-9a-f]{8}\b")
-BOTS = {"BUSCAR_VAGAS": ("Lince", "Job Scout"), "GERAR_CURRICULO": ("CVerino", "CV Strategist"),
+BOTS = {"BUSCAR_VAGAS": ("Descoberta + ChatGPT (host)", "Job Scout"), "GERAR_CURRICULO": ("CVerino", "CV Strategist"),
         "PREENCHER_CANDIDATURA": ("Candidatinho", "Application Operator"), "LOCALIZAR_VAGA": ("Lince", "Job Scout"),
         "ANALISAR_INDICADA": ("ChatGPT (host)", "Job Scout"), "ANALISAR_VAGA": ("ChatGPT (host)", "Job Scout"),
         "ANALISAR_DESCOBERTA": ("ChatGPT (host)", "Job Scout"),
         "EDITAR_CURRICULO": ("Claude in Chrome (host)", "CV Operator"),
-        "GERAR_CARTA": ("ChatGPT + template local (host)", "-"), "EDITAR_CARTA": ("ChatGPT + template local (host)", "-")}
-LINCE = ("BUSCAR_VAGAS", "LOCALIZAR_VAGA")
+        "GERAR_CARTA": ("ChatGPT + template local (host)", "-"), "EDITAR_CARTA": ("ChatGPT + template local (host)", "-"),
+        "ATUALIZAR_LISTA": ("Descoberta + ChatGPT (host)", "-")}
+# The Hermes search runs on the host (2026-09-30): only the specific-job search holds the Lince's Bot Chat.
+LINCE = ("LOCALIZAR_VAGA",)
 # Actions whose last stage is "registro na planilha" (a writeset the panel may persist).
 WRITESET_ACTIONS = ("BUSCAR_VAGAS", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA")
 HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR_DESCOBERTA", "GERAR_CARTA",
@@ -110,7 +112,7 @@ RECOVERY_DOUBTS = {
     "note_allowed": True,
 }
 STAGES = {
-    "BUSCAR_VAGAS": [("busca", "Busca ampla e prefilter (Lince)"), ("analise", "Análise (Threadgist)"),
+    "BUSCAR_VAGAS": [("busca", "Busca e prefilter (host, CDP)"), ("analise", "Análise no ChatGPT (host)"),
                      ("writeset", "Writeset pronto"), ("registro", "Registro na planilha")],
     "GERAR_CURRICULO": [("cverino", "CVerino + ChatGPT (patch editorial)"),
                         ("curriculinho", "Curriculinho (cópia do MASTER no Claude Design)"),
@@ -554,7 +556,7 @@ def main(argv):
         rec = {"id": f"d-20260929T12{n:04d}Z-abcdef", "action": action, "platform": platform, "job_id": job_id,
                "status": "MANUAL" if platform == "grok" else "RODANDO", "step": 0, "acknowledged": False,
                "created_at": now()}
-        if action == "GERAR_CURRICULO" and platform == "hermes":
+        if action in ("GERAR_CURRICULO", "BUSCAR_VAGAS", "ATUALIZAR_LISTA") and platform == "hermes":
             rec["mode"] = "host"
             if cv_renderer == "local":
                 rec["renderer"] = "local"

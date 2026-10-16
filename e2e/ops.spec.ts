@@ -206,8 +206,8 @@ test.describe("Central de operações (bots)", () => {
     const intake = ops.getByTestId("dispatch-LOCALIZAR_VAGA")
     await expect(intake).toBeVisible()
     await expect(intake.getByTestId("intake-text")).toHaveText(text)
-    // Search and intake share the Lince: one at a time.
-    await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toBeDisabled()
+    // The intake holds the Lince's Bot Chat; the Hermes search runs on the host and is not held by it (2026-10-16).
+    await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toBeEnabled()
     await expect(ops.getByTestId("intake-button")).toBeDisabled()
 
     await expect(intake).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
