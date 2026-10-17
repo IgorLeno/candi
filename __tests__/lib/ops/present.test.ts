@@ -232,13 +232,29 @@ describe("canRecordSent", () => {
 describe("open-browser refusals", () => {
   it("word every open-browser code and point the closed Chrome to the button", () => {
     expect(refusalText("CLOUDDESIGN_CDP_DOWN")).toMatch(/abra o navegador do currículo/)
-    expect(refusalText("CLOUDDESIGN_OPEN_NO_CDP")).toMatch(/feche essa janela/)
+    expect(refusalText("CLOUDDESIGN_OPEN_NO_CDP")).toMatch(/feche todas as janelas desse Chrome/)
     expect(refusalText("CLOUDDESIGN_OPEN_FAILED")).toMatch(/Cloud Design Browser/)
     expect(refusalText("NO_GRAPHICAL_SESSION")).toMatch(/sessão gráfica/)
     expect(refusalText("BROWSER_INVALID")).toMatch(/Navegador/)
     expect(refusalText("APPLICATION_CDP_DOWN")).toMatch(/abra o navegador da candidatura/)
-    expect(refusalText("APPLICATION_OPEN_NO_CDP")).toMatch(/feche essa janela/)
+    expect(refusalText("APPLICATION_OPEN_NO_CDP")).toMatch(/feche todas as janelas desse Chrome/)
     expect(refusalText("APPLICATION_OPEN_FAILED")).toMatch(/Application Browser/)
+    expect(refusalText("PORTAL_OPEN_NO_CDP")).toMatch(/Abrir navegador do portal/)
+    expect(refusalText("PORTAL_OPEN_FAILED")).toMatch(/Job Search Browser/)
+    // The open-without-control refusals point to the restart button; a busy browser says to wait.
+    for (const prefix of ["CLOUDDESIGN", "APPLICATION", "PORTAL"]) {
+      expect(refusalText(`${prefix}_OPEN_NO_CDP`)).toMatch(/Fechar e abrir de novo/)
+      expect(refusalText(`${prefix}_BROWSER_BUSY`)).toMatch(/espere terminar/)
+    }
+    // The user never sees the protocol name or a port number.
+    for (const code of [
+      "CLOUDDESIGN_CDP_DOWN",
+      "APPLICATION_CDP_DOWN",
+      "CLOUDDESIGN_OPEN_NO_CDP",
+      "APPLICATION_OPEN_NO_CDP",
+      "PORTAL_OPEN_NO_CDP",
+    ])
+      expect(refusalText(code)).not.toMatch(/CDP|92\d\d/)
   })
 })
 
@@ -664,7 +680,7 @@ describe("refusalText", () => {
   it("explains known codes and falls back to the code", () => {
     expect(refusalText("GATEWAY_NOT_RUNNING")).toMatch(/Grok/)
     expect(refusalText("XYZ")).toBe("Disparo recusado (XYZ).")
-    expect(refusalText("APPLICATION_CDP_DOWN")).toMatch(/CDP 9227/)
+    expect(refusalText("APPLICATION_CDP_DOWN")).toMatch(/Chrome da candidatura/)
   })
 })
 
@@ -766,6 +782,7 @@ describe("Atualizar lista (2026-10-16)", () => {
 
   it("search and list stops say what fixes them", () => {
     expect(searchStopText("BLOCKED_DISCOVERY_CDP")).toContain("Abrir navegador do portal")
+    expect(searchStopText("BLOCKED_DISCOVERY_CDP")).not.toMatch(/CDP|9223/)
     expect(searchStopText("BLOCKED_SEARCHES_INVALID")).toContain("discovery-searches.json")
     expect(searchStopText("HUMAN_AUTH_REQUIRED")).toContain("ChatGPT")
     expect(searchStopText("SHEET_QUOTA")).toContain("Registrar na planilha")

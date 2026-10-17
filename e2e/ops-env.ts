@@ -19,4 +19,5 @@ export function resetFakeDispatches() {
   rmSync(path.join(E2E_FAKE_DISPATCH_STATE, "cv-renderer"), { force: true })
   rmSync(path.join(E2E_FAKE_DISPATCH_STATE, "today-list.json"), { force: true })
   rmSync(path.join(E2E_FAKE_DISPATCH_STATE, "portal-closed"), { force: true })
+  rmSync(path.join(E2E_FAKE_DISPATCH_STATE, "application-no-cdp"), { force: true })
 }

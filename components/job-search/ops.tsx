@@ -21,6 +21,7 @@ import {
   Loader2,
   MessagesSquare,
   PencilLine,
+  RotateCcw,
   Radar,
   ScanSearch,
   Trash2,
@@ -47,6 +48,9 @@ import {
   openCvBrowser,
   openPortalBrowser,
   refreshTodayList,
+  restartApplicationBrowser,
+  restartCvBrowser,
+  restartPortalBrowser,
   refineIntake,
   registerWriteset,
   reassessCv,
@@ -1723,13 +1727,39 @@ function openBrowserText(value: OpenBrowserResult): string {
 }
 
 type BrowserName = OpenBrowserResult["browser"]
+type OpenBrowserAction = () => Promise<Awaited<ReturnType<typeof openCvBrowser>>>
 const OPEN_BROWSER: Record<
   BrowserName,
-  { open: () => Promise<Awaited<ReturnType<typeof openCvBrowser>>>; label: string }
+  { open: OpenBrowserAction; restart: OpenBrowserAction; label: string; name: string }
 > = {
-  clouddesign: { open: openCvBrowser, label: "Abrir navegador do currículo" },
-  application: { open: openApplicationBrowser, label: "Abrir navegador da candidatura" },
-  portal: { open: openPortalBrowser, label: "Abrir navegador do portal" },
+  clouddesign: {
+    open: openCvBrowser,
+    restart: restartCvBrowser,
+    label: "Abrir navegador do currículo",
+    name: "Chrome do Cloud Design",
+  },
+  application: {
+    open: openApplicationBrowser,
+    restart: restartApplicationBrowser,
+    label: "Abrir navegador da candidatura",
+    name: "Chrome da candidatura",
+  },
+  portal: {
+    open: openPortalBrowser,
+    restart: restartPortalBrowser,
+    label: "Abrir navegador do portal",
+    name: "navegador do portal",
+  },
+}
+
+/** The open found that profile running without the control port: only then "Fechar e abrir de novo" is offered. */
+function isOpenNoCdp(code: string): boolean {
+  return code.endsWith("_OPEN_NO_CDP")
+}
+
+/** What the restart closes, said before the user confirms it. */
+function restartWarning(browser: BrowserName): string {
+  return `Isso fecha todas as janelas do ${OPEN_BROWSER[browser].name} (o seu Chrome pessoal e os outros navegadores do job-search continuam abertos) e abre de novo pelo atalho. O que estiver digitado e não salvo nessas abas se perde; os logins continuam.`
 }
 const OPEN_BROWSER_TESTID: Record<BrowserName, string> = {
   clouddesign: "open-cv-browser",
@@ -1743,15 +1773,31 @@ const CDP_DOWN_BROWSER: Record<string, BrowserName> = {
   BLOCKED_DISCOVERY_CDP: "portal",
 }
 
-/** "Abrir navegador" from a toast: job-search opens the Chrome; the outcome is another toast. */
-async function openBrowserToast(browser: BrowserName): Promise<void> {
+/**
+ * "Abrir navegador" from a toast: job-search opens the Chrome; the outcome is another toast. A profile open without
+ * the control port gets "Fechar e abrir de novo", which asks in one more toast before closing anything.
+ */
+async function openBrowserToast(browser: BrowserName, restart = false): Promise<void> {
   try {
-    const result = await OPEN_BROWSER[browser].open()
+    const result = await (restart ? OPEN_BROWSER[browser].restart : OPEN_BROWSER[browser].open)()
     if (result.ok) toast.success(openBrowserText(result.value), { duration: 10_000 })
-    else toast.error(refusalText(result.code))
+    else if (!restart && isOpenNoCdp(result.code)) {
+      toast.error(refusalText(result.code), {
+        duration: 20_000,
+        action: { label: "Fechar e abrir de novo", onClick: () => confirmRestartToast(browser) },
+      })
+    } else toast.error(refusalText(result.code))
   } catch {
     toast.error(refusalText("UNAUTHENTICATED"))
   }
+}
+
+function confirmRestartToast(browser: BrowserName): void {
+  toast.warning(restartWarning(browser), {
+    duration: 30_000,
+    action: { label: "Fechar e abrir", onClick: () => void openBrowserToast(browser, true) },
+    cancel: { label: "Cancelar", onClick: () => {} },
+  })
 }
 
 /** A refusal toast; a closed Chrome (Cloud Design or application) also offers to open it right there. */
@@ -1774,29 +1820,32 @@ export function toastRefusal(code: string): void {
  */
 function OpenBrowserButton({ browser }: { browser: BrowserName }) {
   const [pending, startTransition] = useTransition()
-  const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null)
+  const [outcome, setOutcome] = useState<{ ok: boolean; text: string; code?: string } | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const testid = OPEN_BROWSER_TESTID[browser]
+  const run = (restart: boolean) =>
+    startTransition(async () => {
+      setOutcome(null)
+      setConfirming(false)
+      try {
+        const result = await (restart ? OPEN_BROWSER[browser].restart : OPEN_BROWSER[browser].open)()
+        setOutcome(
+          result.ok
+            ? { ok: true, text: openBrowserText(result.value) }
+            : { ok: false, text: refusalText(result.code), code: result.code }
+        )
+      } catch {
+        setOutcome({ ok: false, text: refusalText("UNAUTHENTICATED") })
+      }
+    })
   return (
     <div className="space-y-2" data-testid={OPEN_BROWSER_TESTID[browser]}>
       <Button
         variant="outline"
         size="sm"
         disabled={pending}
-        data-testid={`${OPEN_BROWSER_TESTID[browser]}-button`}
-        onClick={() =>
-          startTransition(async () => {
-            setOutcome(null)
-            try {
-              const result = await OPEN_BROWSER[browser].open()
-              setOutcome(
-                result.ok
-                  ? { ok: true, text: openBrowserText(result.value) }
-                  : { ok: false, text: refusalText(result.code) }
-              )
-            } catch {
-              setOutcome({ ok: false, text: refusalText("UNAUTHENTICATED") })
-            }
-          })
-        }
+        data-testid={`${testid}-button`}
+        onClick={() => run(false)}
       >
         {pending ? (
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -1818,6 +1867,30 @@ function OpenBrowserButton({ browser }: { browser: BrowserName }) {
           )}
           <span>{outcome.text}</span>
         </p>
+      )}
+      {outcome?.code && isOpenNoCdp(outcome.code) && !pending && !confirming && (
+        <Button variant="outline" size="sm" onClick={() => setConfirming(true)} data-testid={`${testid}-restart`}>
+          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+          Fechar e abrir de novo
+        </Button>
+      )}
+      {confirming && (
+        <div
+          className="space-y-2 rounded-lg border border-st-review/45 bg-st-review/15 p-2 text-xs text-st-review-fg"
+          role="alertdialog"
+          aria-label="Fechar e abrir de novo"
+          data-testid={`${testid}-restart-confirm`}
+        >
+          <p>{restartWarning(browser)}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => run(true)} data-testid={`${testid}-restart-yes`}>
+              Fechar e abrir
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   )

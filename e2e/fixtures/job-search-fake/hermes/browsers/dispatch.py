@@ -64,6 +64,9 @@ HERMES_ONLY = ("LOCALIZAR_VAGA", "ANALISAR_INDICADA", "ANALISAR_VAGA", "ANALISAR
 TODAY_FILE = STATE.parent / "today-list.json"
 # With this file the portal Chrome is "closed": a Hermes search stops in PRECISA_HUMANO/BLOCKED_DISCOVERY_CDP.
 PORTAL_CLOSED_FILE = STATE.parent / "portal-closed"
+# With this file the application Chrome is "open without CDP": `open-browser application` refuses
+# APPLICATION_OPEN_NO_CDP and only `--restart` (which removes the file) opens it.
+APPLICATION_NO_CDP_FILE = STATE.parent / "application-no-cdp"
 TODAY_LIST = {"schema": "today-list/1", "dispatch_id": None, "updated_at": None,
               "items": [{"job_id": "fake-1004", "interesse": "MUITO_ALTO"},
                         {"job_id": "fake-1001", "interesse": "MUITO_ALTO"},
@@ -1061,6 +1064,10 @@ def main(argv):
         browser = argv[1] if len(argv) > 1 else ""
         if browser not in ("clouddesign", "application", "portal"):
             return refuse("BROWSER_INVALID")
+        if browser == "application" and APPLICATION_NO_CDP_FILE.exists():
+            if "--restart" not in argv[2:]:
+                return refuse("APPLICATION_OPEN_NO_CDP")
+            APPLICATION_NO_CDP_FILE.unlink()
         print(json.dumps({"ok": True, "open_browser": {"browser": browser, "already_open": False}}))
         return 0
     if cmd == "delete-job":

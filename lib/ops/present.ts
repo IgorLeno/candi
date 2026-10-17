@@ -137,9 +137,9 @@ const REFUSAL_TEXT: Record<string, string> = {
   APPLICATION_DISPATCH_ACTIVE:
     "Outra candidatura está em andamento ou ficou incerta (uma por vez): termine ou libere o card dela antes.",
   APPLICATION_CDP_DOWN:
-    "O Application Browser (Chrome com o Claude, CDP 9227) está fechado: abra o navegador da candidatura e tente de novo.",
+    "O job-search não consegue controlar o Chrome da candidatura (ele está fechado ou foi aberto fora do atalho Application Browser): abra o navegador da candidatura e tente de novo.",
   CLOUDDESIGN_CDP_DOWN:
-    "O Chrome do Cloud Design (CDP 9226) está fechado: abra o navegador do currículo e faça login no Claude.",
+    "O job-search não consegue controlar o Chrome do Cloud Design (ele está fechado ou foi aberto fora do atalho Cloud Design Browser): abra o navegador do currículo e faça login no Claude.",
   CLAUDE_PANEL_CLOSED: "Abra o painel do Claude nas abas de currículo PT e EN do Cloud Design e tente de novo.",
   APPLICATION_STATE_BLOCKS: "O estado da candidatura no runtime do Grok impede um novo disparo: use o Hermes.",
   APPLICATION_LOCK_HELD: "Outra candidatura segura o lock do Application Operator.",
@@ -181,14 +181,26 @@ const REFUSAL_TEXT: Record<string, string> = {
   NO_GRAPHICAL_SESSION:
     "O job-search não achou a sessão gráfica (DISPLAY/Wayland): abra pelo atalho (Cloud Design Browser ou Application Browser).",
   CLOUDDESIGN_OPEN_NO_CDP:
-    "O Chrome do Cloud Design está aberto sem CDP: feche essa janela e clique em Abrir navegador do currículo de novo.",
+    "O Chrome do Cloud Design já está aberto, mas foi aberto fora do atalho e o job-search não consegue controlá-lo: use Fechar e abrir de novo (ou feche todas as janelas desse Chrome e clique em Abrir navegador do currículo).",
   CLOUDDESIGN_OPEN_FAILED:
     "O job-search não conseguiu abrir o Chrome do Cloud Design: tente o atalho Cloud Design Browser (log em native-clouddesign.log).",
   // "Abrir navegador da candidatura" (dispatch.py open-browser application).
   APPLICATION_OPEN_NO_CDP:
-    "O Chrome da candidatura está aberto sem CDP: feche essa janela e clique em Abrir navegador da candidatura de novo.",
+    "O Chrome da candidatura já está aberto, mas foi aberto fora do atalho e o job-search não consegue controlá-lo: use Fechar e abrir de novo (ou feche todas as janelas desse Chrome e clique em Abrir navegador da candidatura).",
   APPLICATION_OPEN_FAILED:
     "O job-search não conseguiu abrir o Chrome da candidatura: tente o atalho Application Browser (log em native-application.log).",
+  // "Abrir navegador do portal" (dispatch.py open-browser portal).
+  PORTAL_OPEN_NO_CDP:
+    "O navegador do portal já está aberto, mas foi aberto fora do atalho e o job-search não consegue controlá-lo: use Fechar e abrir de novo (ou feche todas as janelas desse Chrome e clique em Abrir navegador do portal).",
+  // "Fechar e abrir de novo" (dispatch.py open-browser <nome> --restart): um bot rodando usa esse navegador.
+  CLOUDDESIGN_BROWSER_BUSY:
+    "Um currículo ou candidatura em andamento usa o Chrome do Cloud Design: espere terminar antes de fechar e abrir de novo.",
+  APPLICATION_BROWSER_BUSY:
+    "Uma candidatura em andamento usa o Chrome da candidatura: espere terminar antes de fechar e abrir de novo.",
+  PORTAL_BROWSER_BUSY:
+    "Uma cotação ou análise em andamento usa o navegador do portal: espere terminar antes de fechar e abrir de novo.",
+  PORTAL_OPEN_FAILED:
+    "O job-search não conseguiu abrir o navegador do portal: tente o atalho Job Search Browser (log em native-portal.log).",
   // "Analisar" (dispatch.py start ANALISAR_VAGA).
   CHATGPT_BUSY: "O ChatGPT do job-search já está ocupado com outra cotação, currículo ou análise: espere terminar.",
   // "Pedir edição" do currículo (dispatch.py start EDITAR_CURRICULO).
@@ -804,7 +816,7 @@ export function listUpdatedText(updatedAt: string, now: Date = new Date()): stri
 /** Why a host "Cotar vagas" or "Atualizar lista" stopped for the user, and what fixes it. */
 export function searchStopText(code: string | null | undefined): string {
   if (code === "BLOCKED_DISCOVERY_CDP")
-    return "o navegador do portal (Job Search Browser, CDP 9223) está fechado e não abriu sozinho: use “Abrir navegador do portal” e tente de novo."
+    return "o job-search não consegue controlar o navegador do portal (Job Search Browser) e não conseguiu abri-lo sozinho: use “Abrir navegador do portal” e tente de novo."
   if (code === "BLOCKED_SEARCHES_INVALID")
     return "o arquivo das buscas (methodology/discovery-searches.json) está fora do formato: corrija e tente de novo."
   if (code?.startsWith("HUMAN_"))

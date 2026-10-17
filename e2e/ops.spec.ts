@@ -216,6 +216,29 @@ test.describe("Central de operações (bots)", () => {
     await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toBeEnabled()
   })
 
+  test("preencher vaga: Chrome da candidatura aberto fora do atalho fecha e abre de novo pelo diálogo", async ({
+    page,
+  }) => {
+    mkdirSync(E2E_FAKE_DISPATCH_STATE, { recursive: true })
+    writeFileSync(`${E2E_FAKE_DISPATCH_STATE}/application-no-cdp`, "1\n")
+    await page.goto("/vaga/fake-1004")
+    await page.getByTestId("job-detail").getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
+    const dialog = page.getByTestId("dispatch-dialog")
+    await dialog.getByTestId("platform-hermes").click()
+    await dialog.getByTestId("open-application-browser-button").click()
+    const outcome = dialog.getByTestId("open-application-browser-outcome")
+    await expect(outcome).toContainText("foi aberto fora do atalho")
+    await expect(outcome).not.toContainText("CDP")
+    // Nothing closes before the user confirms what the restart closes.
+    await dialog.getByTestId("open-application-browser-restart").click()
+    await expect(dialog.getByTestId("open-application-browser-restart-confirm")).toContainText(
+      "fecha todas as janelas do Chrome da candidatura"
+    )
+    await dialog.getByTestId("open-application-browser-restart-yes").click()
+    await expect(outcome).toContainText("Chrome da candidatura aberto")
+    await expect(dialog.getByTestId("open-application-browser-restart")).toHaveCount(0)
+  })
+
   test("hoje: atualizar lista mostra as etapas, troca a fila sem recarregar e explica quem saiu", async ({ page }) => {
     test.setTimeout(60_000)
     await page.goto("/")

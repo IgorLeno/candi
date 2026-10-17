@@ -543,6 +543,30 @@ export async function openApplicationBrowser(): Promise<ActionResult<OpenBrowser
 }
 
 /**
+ * "Fechar e abrir de novo" (2026-10-17), after `{BROWSER}_OPEN_NO_CDP`: that Chrome profile is open without the
+ * remote-debugging port (plain Chrome icon, restored session) and Chrome allows one instance per profile. job-search
+ * (`dispatch.py open-browser <name> --restart`) closes only that profile, gently, and opens it the shortcut's way; it
+ * refuses `{BROWSER}_BROWSER_BUSY` while a running dispatch uses it. The browser name is fixed here, never the client's.
+ */
+async function restartBrowser(browser: OpenBrowserResult["browser"]): Promise<ActionResult<OpenBrowserResult>> {
+  await requireSession()
+  const result = await runDispatcher(["open-browser", browser, "--restart"], openBrowserResultSchema)
+  return result.ok ? { ok: true, value: result.value.open_browser } : { ok: false, code: result.code }
+}
+
+export async function restartCvBrowser(): Promise<ActionResult<OpenBrowserResult>> {
+  return restartBrowser("clouddesign")
+}
+
+export async function restartApplicationBrowser(): Promise<ActionResult<OpenBrowserResult>> {
+  return restartBrowser("application")
+}
+
+export async function restartPortalBrowser(): Promise<ActionResult<OpenBrowserResult>> {
+  return restartBrowser("portal")
+}
+
+/**
  * "Excluir vaga": the job leaves the Sheet. job-search (`dispatch.py delete-job` → `application.py delete`) backs the
  * rows up locally, then deletes the main-tab row and its Eventos/Dossiers rows with its own credential; the panel
  * sends only the job_id. The Sheet snapshot is dropped afterwards whatever the answer. There is no undo.

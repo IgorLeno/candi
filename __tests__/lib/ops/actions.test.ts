@@ -33,6 +33,9 @@ import {
   listDispatches,
   markJobClosed,
   openApplicationBrowser,
+  restartApplicationBrowser,
+  restartCvBrowser,
+  restartPortalBrowser,
   openCvBrowser,
   recordSent,
   reassessCv,
@@ -70,6 +73,9 @@ describe("ops server actions", () => {
     await expect(markJobClosed("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(openCvBrowser()).rejects.toThrow("UNAUTHENTICATED")
     await expect(openApplicationBrowser()).rejects.toThrow("UNAUTHENTICATED")
+    await expect(restartCvBrowser()).rejects.toThrow("UNAUTHENTICATED")
+    await expect(restartApplicationBrowser()).rejects.toThrow("UNAUTHENTICATED")
+    await expect(restartPortalBrowser()).rejects.toThrow("UNAUTHENTICATED")
     await expect(deleteJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(resumeCv("d-20260929T120000Z-abcdef", { option: "claude" })).rejects.toThrow("UNAUTHENTICATED")
@@ -580,6 +586,29 @@ describe("ops server actions", () => {
     ])
     runDispatcher.mockResolvedValue({ ok: false, code: "APPLICATION_OPEN_NO_CDP", detail: "x" })
     await expect(openApplicationBrowser()).resolves.toEqual({ ok: false, code: "APPLICATION_OPEN_NO_CDP" })
+  })
+
+  it("fechar e abrir de novo: fixed browser and --restart, no client input", async () => {
+    const restarts = [
+      [restartCvBrowser, "clouddesign"],
+      [restartApplicationBrowser, "application"],
+      [restartPortalBrowser, "portal"],
+    ] as const
+    for (const [restart, browser] of restarts) {
+      runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, open_browser: { browser, already_open: false } } })
+      await expect((restart as (...args: unknown[]) => Promise<unknown>)("clouddesign", "--evil")).resolves.toEqual({
+        ok: true,
+        value: { browser, already_open: false },
+      })
+    }
+    expect(runDispatcher.mock.calls.map((call) => call[0])).toEqual([
+      ["open-browser", "clouddesign", "--restart"],
+      ["open-browser", "application", "--restart"],
+      ["open-browser", "portal", "--restart"],
+    ])
+    runDispatcher.mockResolvedValue({ ok: false, code: "APPLICATION_BROWSER_BUSY", detail: "x" })
+    await expect(restartApplicationBrowser()).resolves.toEqual({ ok: false, code: "APPLICATION_BROWSER_BUSY" })
+    expect(updateTag).not.toHaveBeenCalled()
   })
 
   it("excluir vaga: send only a validated job_id, accept only the fixed counts, re-read the Sheet always", async () => {
