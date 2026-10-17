@@ -138,6 +138,8 @@ test.describe("Central de operações (bots)", () => {
     const card = ops.getByTestId("dispatch-BUSCAR_VAGAS")
     await expect(card.getByTestId("dispatch-status")).toHaveText("Rodando")
     await expect(card.locator(".animate-spin").first()).toBeVisible()
+    // A host search shows no bot platform in its header.
+    await expect(card).toContainText(/\(host\) · \d{2}\//)
 
     // The session ends (as after its 7 days): the next poll fails and the card keeps what it last read.
     await context.clearCookies()
@@ -179,7 +181,7 @@ test.describe("Central de operações (bots)", () => {
     await job("fake-9101").getByTestId("left-out-send").click()
     const analysis = job("fake-9101").getByTestId("dispatch-ANALISAR_DESCOBERTA")
     await expect(analysis).toBeVisible()
-    await expect(analysis).toContainText("ChatGPT (host) · Hermes")
+    await expect(analysis).toContainText(/ChatGPT \(host\) · \d{2}\//)
     await expect(job("fake-9101").getByTestId("left-out-send")).toBeDisabled()
     // ChatGPT has no global lock (2026-10-14): a running analysis never disables a new search.
     await expect(ops.getByTestId("dispatch-button-BUSCAR_VAGAS")).toBeEnabled()
@@ -320,7 +322,7 @@ test.describe("Central de operações (bots)", () => {
     await expect(analysis.getByTestId("intake-diagnosis")).toContainText("SELECIONADA")
     await expect(analysis.getByTestId("intake-diagnosis")).toContainText("interesse ALTO")
     // Host pipeline: ChatGPT straight from job-search; the reason is shown as plain text (no HTML).
-    await expect(analysis).toContainText("ChatGPT (host) · Hermes")
+    await expect(analysis).toContainText(/ChatGPT \(host\) · \d{2}\//)
     await expect(analysis.getByTestId("intake-diagnosis")).toContainText("Diagnóstico do ChatGPT")
     await expect(analysis.getByTestId("diagnosis-reason")).toHaveText(
       "Gate 4 aprovado: <b>núcleo</b> de processos químicos com evidência direta"
@@ -759,7 +761,7 @@ test.describe("Central de operações (bots)", () => {
     await form.getByTestId("cv-edit-submit").click()
     const edit = section.getByTestId("dispatch-EDITAR_CURRICULO")
     await expect(edit.getByTestId("cv-edit-request")).toContainText(request)
-    await expect(edit).toContainText("Claude in Chrome (host) · Hermes")
+    await expect(edit).toContainText(/Claude in Chrome \(host\) · \d{2}\//)
     await expect(input).toHaveValue("")
     await expect(form.getByTestId("cv-edit-disabled")).toHaveText("Edição em andamento.")
     await expect(edit).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
@@ -937,7 +939,7 @@ test.describe("Central de operações (bots)", () => {
     const card = ops.getByTestId("dispatch-ANALISAR_VAGA")
     await expect(card).toBeVisible()
     await expect(ops.getByTestId("analyze-button")).toBeDisabled()
-    await expect(card).toContainText("ChatGPT (host) · Hermes")
+    await expect(card).toContainText(/ChatGPT \(host\) · \d{2}\//)
 
     await expect(card).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
     for (const stage of ["planilha", "posting", "analise", "writeset"]) {
