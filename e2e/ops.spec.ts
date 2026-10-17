@@ -127,6 +127,27 @@ test.describe("Central de operações (bots)", () => {
     await expect(ops.getByTestId("dispatch-BUSCAR_VAGAS")).toHaveCount(0)
   })
 
+  test("cotar vagas: sem conseguir ler os disparos, o card mostra o último estado sem fingir que roda", async ({
+    page,
+    context,
+  }) => {
+    await page.goto("/cotar")
+    const ops = page.getByTestId("search-ops")
+    await ops.getByTestId("dispatch-button-BUSCAR_VAGAS").click()
+    await page.getByTestId("dispatch-confirm").click()
+    const card = ops.getByTestId("dispatch-BUSCAR_VAGAS")
+    await expect(card.getByTestId("dispatch-status")).toHaveText("Rodando")
+    await expect(card.locator(".animate-spin").first()).toBeVisible()
+
+    // The session ends (as after its 7 days): the next poll fails and the card keeps what it last read.
+    await context.clearCookies()
+    await expect(card.getByTestId("dispatch-status")).toHaveText("Sem atualização", { timeout: 15_000 })
+    await expect(card.getByTestId("dispatch-stale")).toContainText(/Último estado lido em \d{2}\/\d{2}\/\d{4}/)
+    await expect(card.getByTestId("dispatch-stale")).toContainText("Pode já ter terminado.")
+    await expect(card.locator(".animate-spin")).toHaveCount(0)
+    await expect(ops).toContainText("Não deu para atualizar os disparos. Se a sessão expirou, entre de novo")
+  })
+
   test("cotar vagas: as que ficaram de fora aparecem com o motivo e vão ao ChatGPT só a pedido", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(120_000)

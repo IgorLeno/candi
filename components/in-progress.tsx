@@ -86,7 +86,8 @@ export function useAttention(enabled: boolean): Attention {
     const now = () => {
       if (!document.hidden) void refresh()
     }
-    const timer = window.setInterval(now, running ? POLL_RUNNING_MS : POLL_IDLE_MS)
+    // After a failed read the list is only the last one read: retry at the idle pace.
+    const timer = window.setInterval(now, running && !error ? POLL_RUNNING_MS : POLL_IDLE_MS)
     document.addEventListener("visibilitychange", now)
     window.addEventListener(ATTENTION_REFRESH_EVENT, now)
     return () => {
@@ -94,15 +95,15 @@ export function useAttention(enabled: boolean): Attention {
       document.removeEventListener("visibilitychange", now)
       window.removeEventListener(ATTENTION_REFRESH_EVENT, now)
     }
-  }, [disabled, running, refresh])
+  }, [disabled, running, error, refresh])
 
   return { entries: disabled ? null : entries, error: !disabled && error }
 }
 
-function EntryIcon({ entry }: { entry: AttentionEntry }) {
+function EntryIcon({ entry, stale }: { entry: AttentionEntry; stale: boolean }) {
   const className = "h-3.5 w-3.5 shrink-0"
   if (entry.kind === "RUNNING")
-    return <Loader2 className={cn(className, "motion-safe:animate-spin")} aria-hidden="true" />
+    return <Loader2 className={cn(className, !stale && "motion-safe:animate-spin")} aria-hidden="true" />
   if (entry.kind === "WRITESET_PENDING") return <FileSpreadsheet className={className} aria-hidden="true" />
   if (entry.status === "MANUAL") return <Hand className={className} aria-hidden="true" />
   const tone = attentionBadge(entry).tone
@@ -110,7 +111,16 @@ function EntryIcon({ entry }: { entry: AttentionEntry }) {
   return <Icon className={className} aria-hidden="true" />
 }
 
-function EntryList({ entries, onNavigate }: { entries: AttentionEntry[]; onNavigate?: () => void }) {
+function EntryList({
+  entries,
+  stale,
+  onNavigate,
+}: {
+  entries: AttentionEntry[]
+  /** The last read failed: the list is what the panel saw before, so nothing spins. */
+  stale: boolean
+  onNavigate?: () => void
+}) {
   return (
     <ul className="space-y-1" data-testid="in-progress-list">
       {entries.map((entry) => {
@@ -137,7 +147,7 @@ function EntryList({ entries, onNavigate }: { entries: AttentionEntry[]; onNavig
                     TONE_CLASSES[badge.tone]
                   )}
                 >
-                  <EntryIcon entry={entry} />
+                  <EntryIcon entry={entry} stale={stale} />
                   {badge.label}
                 </span>
                 <span className="truncate text-sidebar-foreground/70">{ACTION_META[entry.action].label}</span>
@@ -166,7 +176,9 @@ function CountBadge({ count }: { count: number }) {
 function Empty({ error }: { error: boolean }) {
   return (
     <p className="px-3 py-1 text-xs text-sidebar-foreground/70" data-testid="in-progress-empty">
-      {error ? "Não deu para ler os disparos agora." : "Nada rodando nem esperando você."}
+      {error
+        ? "Não deu para atualizar. Se a sessão expirou, entre de novo e recarregue a página."
+        : "Nada rodando nem esperando você."}
     </p>
   )
 }
@@ -191,7 +203,7 @@ export function InProgressSection({ attention }: { attention: Attention }) {
       ) : (
         <div className="max-h-[40vh] overflow-y-auto">
           {error && <Empty error />}
-          <EntryList entries={list} />
+          <EntryList entries={list} stale={error} />
         </div>
       )}
     </section>
@@ -221,7 +233,10 @@ export function InProgressChip({ attention }: { attention: Attention }) {
           {count > 0 ? (
             <AlertOctagon className="h-3.5 w-3.5" aria-hidden="true" />
           ) : (
-            <Loader2 className={cn("h-3.5 w-3.5", running > 0 && "motion-safe:animate-spin")} aria-hidden="true" />
+            <Loader2
+              className={cn("h-3.5 w-3.5", running > 0 && !error && "motion-safe:animate-spin")}
+              aria-hidden="true"
+            />
           )}
           {count > 0 ? `${count} · ${count === 1 ? "precisa" : "precisam"} de você` : "Em andamento"}
         </button>
@@ -234,7 +249,14 @@ export function InProgressChip({ attention }: { attention: Attention }) {
         <h2 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/80">
           Em andamento
         </h2>
-        {list.length === 0 ? <Empty error={error} /> : <EntryList entries={list} onNavigate={() => setOpen(false)} />}
+        {list.length === 0 ? (
+          <Empty error={error} />
+        ) : (
+          <>
+            {error && <Empty error />}
+            <EntryList entries={list} stale={error} onNavigate={() => setOpen(false)} />
+          </>
+        )}
       </PopoverContent>
     </Popover>
   )

@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Circle,
+  CircleDashed,
   Copy,
   Crosshair,
   ExternalLink,
@@ -151,11 +152,20 @@ const ACTION_ICON: Record<DispatchAction, LucideIcon> = {
 }
 
 const POLL_ACTIVE_MS = 5_000
+// After a failed read (expired session, server down) the list keeps the last state it read: retry slowly.
+const POLL_RETRY_MS = 60_000
+
+/**
+ * When the last read failed, the time of the last good one; the cards below it show that state, not a live one
+ * (no spinner, no "Rodando"). Null while the reads succeed.
+ */
+const StaleSinceContext = createContext<string | null>(null)
 
 /** Dispatch list for a job or an action; polls while something is running. */
 function useDispatches(filter: { jobId?: string; action?: DispatchAction }) {
   const [data, setData] = useState<DispatchList | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [readAt, setReadAt] = useState<string | null>(null)
   const { jobId, action } = filter
   const alive = useRef(true)
   const seen = useRef<string | null>(null)
@@ -171,12 +181,15 @@ function useDispatches(filter: { jobId?: string; action?: DispatchAction }) {
           window.dispatchEvent(new Event(ATTENTION_REFRESH_EVENT))
         seen.current = signature
         setData(result.value)
+        setReadAt(new Date().toISOString())
         setError(null)
       } else {
         setError(result.code)
       }
     } catch {
-      if (alive.current) setError("UNAUTHENTICATED")
+      // The server action throws without a session, and the proxy turns an expired one into a redirect: the client
+      // cannot tell that apart from a server that is down.
+      if (alive.current) setError("READ_FAILED")
     }
   }, [jobId, action])
 
@@ -196,11 +209,11 @@ function useDispatches(filter: { jobId?: string; action?: DispatchAction }) {
   )
   useEffect(() => {
     if (!running) return
-    const timer = window.setInterval(() => void refresh(), POLL_ACTIVE_MS)
+    const timer = window.setInterval(() => void refresh(), error ? POLL_RETRY_MS : POLL_ACTIVE_MS)
     return () => window.clearInterval(timer)
-  }, [running, refresh])
+  }, [running, error, refresh])
 
-  return { data, error, refresh }
+  return { data, error, staleSince: error && data ? readAt : null, refresh }
 }
 
 export function PlatformToggle() {
@@ -235,7 +248,10 @@ export function PlatformToggle() {
 }
 
 function StageIcon({ stage }: { stage: DispatchStage }) {
+  const stale = useContext(StaleSinceContext) !== null
   if (stage.state === "done") return <CheckCircle2 className="h-4 w-4 text-st-sent-fg" aria-hidden="true" />
+  if (stage.state === "active" && stale)
+    return <CircleDashed className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
   if (stage.state === "active") return <Loader2 className="h-4 w-4 animate-spin text-st-review-fg" aria-hidden="true" />
   if (stage.state === "failed") return <XCircle className="h-4 w-4 text-st-uncertain-fg" aria-hidden="true" />
   return <Circle className="h-4 w-4 text-muted-foreground/60" aria-hidden="true" />
@@ -1415,7 +1431,12 @@ export function DispatchCard({
     dispatch.action === "BUSCAR_VAGAS" && knownJobIds
       ? withRegistration(dispatch.progress, knownJobIds)
       : dispatch.progress
-  const status = statusBadge(dispatch.status, progress)
+  const staleSince = useContext(StaleSinceContext)
+  // A card left running by a failed read is only the last state the panel saw: it may have finished since.
+  const stale = staleSince !== null && dispatch.active
+  const status = stale
+    ? { label: "Sem atualização", tone: "muted" as const, recovered: false }
+    : statusBadge(dispatch.status, progress)
   const liveView = liveViewUrl(dispatch)
   const Icon = ACTION_ICON[dispatch.action]
   // The "vaga indicada" cards stay on screen until the next intake, so they can be collapsed (view only).
@@ -1444,7 +1465,7 @@ export function DispatchCard({
         >
           {status.label}
         </ToneBadge>
-        {chatgptQueued(dispatch) && (
+        {!stale && chatgptQueued(dispatch) && (
           <ToneBadge tone="muted" data-testid="dispatch-chatgpt-queued">
             Na fila do ChatGPT
           </ToneBadge>
@@ -1485,6 +1506,11 @@ export function DispatchCard({
           </Button>
         )}
       </div>
+      {stale && (
+        <p className="text-xs text-muted-foreground" data-testid="dispatch-stale">
+          Último estado lido em {formatTimestamp(staleSince)}. Pode já ter terminado.
+        </p>
+      )}
       <div className="flex items-center gap-3">
         <Progress
           value={progress.percent}
@@ -2177,7 +2203,7 @@ function CardToggle({
  * that needs the user (`needsUser()`) shows without them.
  */
 export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
-  const { data, error, refresh } = useDispatches({ action: "BUSCAR_VAGAS" })
+  const { data, error, staleSince, refresh } = useDispatches({ action: "BUSCAR_VAGAS" })
   const intakes = useDispatches({ action: "LOCALIZAR_VAGA" })
   const analyses = useDispatches({ action: "ANALISAR_INDICADA" })
   const leftOut = useDispatches({ action: LEFT_OUT_ACTION })
@@ -2216,77 +2242,80 @@ export function SearchOps({ knownJobIds }: { knownJobIds: string[] }) {
     intake?.active || (last?.active && last.mode !== "host") ? "O Lince já está com um disparo em andamento." : null
   const reason = last?.active ? "Já existe uma cotação em andamento." : null
   const intakeReason = linceBusy ?? gatewayReason(data, "hermes")
-  const shownError = error ?? intakes.error ?? analyses.error
+  const shownError = error ?? intakes.error ?? analyses.error ?? leftOut.error
+  const stale = staleSince ?? intakes.staleSince ?? analyses.staleSince ?? leftOut.staleSince
   return (
-    <section className="space-y-4" data-testid="search-ops" aria-label="Cotação de vagas pelos bots">
-      <div className="flex flex-wrap items-center gap-2">
-        <DispatchButton
-          action="BUSCAR_VAGAS"
-          verb={searchVerb(last)}
-          disabledReason={reason}
-          primary
-          onStarted={() => {
-            setShowSearch(true)
-            refreshAll()
-          }}
-        />
-        <IntakeButton
-          disabledReason={intakeReason}
-          onStarted={() => {
-            setShowIntake(true)
-            refreshAll()
-          }}
-        />
-        {last && (
-          <CardToggle
-            label="Última cotação"
-            shown={searchShown}
-            forced={searchForced}
-            onToggle={() => setShowSearch((on) => !on)}
-            testId="toggle-search"
-          />
-        )}
-        {hasIntakes && (
-          <CardToggle
-            label="Última vaga buscada"
-            shown={intakeShown}
-            forced={intakeForced}
-            onToggle={() => {
-              // Showing the group also reopens an intake closed with "Fechar".
-              if (!intakeShown && intake && closed) writeClosed(intake.id, false)
-              setShowIntake((on) => !on)
+    <StaleSinceContext.Provider value={stale}>
+      <section className="space-y-4" data-testid="search-ops" aria-label="Cotação de vagas pelos bots">
+        <div className="flex flex-wrap items-center gap-2">
+          <DispatchButton
+            action="BUSCAR_VAGAS"
+            verb={searchVerb(last)}
+            disabledReason={reason}
+            primary
+            onStarted={() => {
+              setShowSearch(true)
+              refreshAll()
             }}
-            testId="toggle-intake"
           />
-        )}
-        {shownError && <span className="text-xs text-muted-foreground">{refusalText(shownError)}</span>}
-      </div>
-      {searchShown && last && (
-        <DispatchCard dispatch={last} knownJobIds={known} leftOutAnalyses={leftOutOfLast} onChanged={refreshAll} />
-      )}
-      {intakeShown && (
-        <div className="space-y-3" data-testid="intake-group">
-          {intake && !closed && (
-            <div className="grid gap-3 lg:grid-cols-2" data-testid="intake-ops">
-              <DispatchCard dispatch={intake} analysis={analysis} onChanged={refreshAll} onClose={closeIntake} />
-              {analysis && <DispatchCard dispatch={analysis} onChanged={refreshAll} onClose={closeIntake} />}
-            </div>
+          <IntakeButton
+            disabledReason={intakeReason}
+            onStarted={() => {
+              setShowIntake(true)
+              refreshAll()
+            }}
+          />
+          {last && (
+            <CardToggle
+              label="Última cotação"
+              shown={searchShown}
+              forced={searchForced}
+              onToggle={() => setShowSearch((on) => !on)}
+              testId="toggle-search"
+            />
           )}
-          {intake && closed && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-xs text-muted-foreground"
-              data-testid="intake-reopen"
-              onClick={() => writeClosed(intake.id, false)}
-            >
-              Mostrar a vaga específica
-            </Button>
+          {hasIntakes && (
+            <CardToggle
+              label="Última vaga buscada"
+              shown={intakeShown}
+              forced={intakeForced}
+              onToggle={() => {
+                // Showing the group also reopens an intake closed with "Fechar".
+                if (!intakeShown && intake && closed) writeClosed(intake.id, false)
+                setShowIntake((on) => !on)
+              }}
+              testId="toggle-intake"
+            />
           )}
-          <DiscardedIntakes intakes={discarded} onChanged={refreshAll} />
+          {shownError && <span className="text-xs text-muted-foreground">{refusalText(shownError)}</span>}
         </div>
-      )}
-    </section>
+        {searchShown && last && (
+          <DispatchCard dispatch={last} knownJobIds={known} leftOutAnalyses={leftOutOfLast} onChanged={refreshAll} />
+        )}
+        {intakeShown && (
+          <div className="space-y-3" data-testid="intake-group">
+            {intake && !closed && (
+              <div className="grid gap-3 lg:grid-cols-2" data-testid="intake-ops">
+                <DispatchCard dispatch={intake} analysis={analysis} onChanged={refreshAll} onClose={closeIntake} />
+                {analysis && <DispatchCard dispatch={analysis} onChanged={refreshAll} onClose={closeIntake} />}
+              </div>
+            )}
+            {intake && closed && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-xs text-muted-foreground"
+                data-testid="intake-reopen"
+                onClick={() => writeClosed(intake.id, false)}
+              >
+                Mostrar a vaga específica
+              </Button>
+            )}
+            <DiscardedIntakes intakes={discarded} onChanged={refreshAll} />
+          </div>
+        )}
+      </section>
+    </StaleSinceContext.Provider>
   )
 }
 
@@ -2300,9 +2329,13 @@ type JobOpsState = { jobId: string; data: DispatchList | null; error: string | n
 const JobOpsContext = createContext<JobOpsState | null>(null)
 
 export function JobOpsProvider({ jobId, children }: { jobId: string; children: React.ReactNode }) {
-  const { data, error, refresh } = useDispatches({ jobId })
+  const { data, error, staleSince, refresh } = useDispatches({ jobId })
   const value = useMemo(() => ({ jobId, data, error, refresh }), [jobId, data, error, refresh])
-  return <JobOpsContext.Provider value={value}>{children}</JobOpsContext.Provider>
+  return (
+    <JobOpsContext.Provider value={value}>
+      <StaleSinceContext.Provider value={staleSince}>{children}</StaleSinceContext.Provider>
+    </JobOpsContext.Provider>
+  )
 }
 
 export function useJobOps(): JobOpsState {
@@ -2841,7 +2874,7 @@ export function PdfPreview({ jobId, kind = "cv" }: { jobId: string; kind?: keyof
  */
 export function TodayListControls({ leading, trailing }: { leading?: React.ReactNode; trailing?: React.ReactNode }) {
   const router = useRouter()
-  const { data, error, refresh } = useDispatches({ action: TODAY_ACTION })
+  const { data, error, staleSince, refresh } = useDispatches({ action: TODAY_ACTION })
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
   const last = data ? latest(data.dispatches, TODAY_ACTION) : null
@@ -2876,30 +2909,38 @@ export function TodayListControls({ leading, trailing }: { leading?: React.React
             variant="outline"
             size="sm"
             disabled={running}
-            title={running ? "A lista já está sendo atualizada." : undefined}
+            title={
+              running
+                ? staleSince
+                  ? "A última leitura mostrava a lista sendo atualizada; não deu para confirmar depois."
+                  : "A lista já está sendo atualizada."
+                : undefined
+            }
             data-testid="today-refresh-button"
             onClick={() => setOpen(true)}
           >
-            {running ? (
+            {running && !staleSince ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
               <ListRestart className="h-4 w-4" aria-hidden="true" />
             )}
-            {running ? "Atualizando a lista…" : meta.verb}
+            {running && !staleSince ? "Atualizando a lista…" : meta.verb}
           </Button>
           {trailing}
         </div>
       </div>
       {error && <p className="text-xs text-muted-foreground">{refusalText(error)}</p>}
       {last && (needsUser(last) || finished === last.id) && (
-        <DispatchCard
-          dispatch={last}
-          onChanged={() => {
-            void refresh()
-            router.refresh()
-          }}
-          onClose={finished === last.id && !needsUser(last) ? () => setFinished(null) : undefined}
-        />
+        <StaleSinceContext.Provider value={staleSince}>
+          <DispatchCard
+            dispatch={last}
+            onChanged={() => {
+              void refresh()
+              router.refresh()
+            }}
+            onClose={finished === last.id && !needsUser(last) ? () => setFinished(null) : undefined}
+          />
+        </StaleSinceContext.Provider>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent data-testid="today-refresh-dialog">
