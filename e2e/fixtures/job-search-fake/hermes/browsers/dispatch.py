@@ -8,7 +8,10 @@ can be exercised deterministically. `persist` records a REGISTRAR_WRITESET that 
 marks the chain and `delete` hides the whole lineage from `list`. `decline <job_id>` answers like `application.py decline` without writing anything (fake-1006, sent in
 the fixture, is refused with ALREADY_SENT). `delete-job <job_id>` answers like `application.py delete` without deleting
 anything (fake-1006 → ALREADY_SENT, fake-1002 → DELETE_PARTIAL). "Preencher vaga" of fake-1010 on Hermes is refused with APPLICATION_CDP_DOWN. "Preencher vaga" of fake-1007 on Hermes follows the host path and ends with
-the prompt to paste (`prompt_stale` once a later "Pedir edição" finished). `record-sent <job_id> --evidence <tipo>`
+the prompt to paste (`prompt_stale` once a later "Pedir edição" finished). A second "Preencher vaga" on Hermes while
+another runs enters the application queue (PENDENTE, `progress.application_queue`) and starts on the first `list`
+with no fill running (`application-hold` in the state dir keeps a running fill from advancing); `cancel <id>` takes a
+queued fill out (PARADO/CANCELLED_BY_USER, NOT_QUEUED otherwise). `record-sent <job_id> --evidence <tipo>`
 answers ENVIADA without writing
 anything (fake-1006 → ALREADY_SENT). `mark-closed <job_id>` answers ENCERRADA the same way. `confirm-open <job_id>` answers ABERTA without
 writing anything (fake-1005 → DOSSIER_NOT_VALID, also for GERAR_CURRICULO/PREENCHER_CANDIDATURA: never analysed;
@@ -67,6 +70,8 @@ PORTAL_CLOSED_FILE = STATE.parent / "portal-closed"
 # With this file the application Chrome is "open without CDP": `open-browser application` refuses
 # APPLICATION_OPEN_NO_CDP and only `--restart` (which removes the file) opens it.
 APPLICATION_NO_CDP_FILE = STATE.parent / "application-no-cdp"
+# With this file a running "Preencher vaga" does not advance: a second one stays in the application queue.
+APPLICATION_HOLD_FILE = STATE.parent / "application-hold"
 TODAY_LIST = {"schema": "today-list/1", "dispatch_id": None, "updated_at": None,
               "items": [{"job_id": "fake-1004", "interesse": "MUITO_ALTO"},
                         {"job_id": "fake-1001", "interesse": "MUITO_ALTO"},
@@ -400,7 +405,13 @@ def view(rec, recs=()):
                finished_at=None if rec["status"] == "RODANDO" else rec["created_at"],
                bot="job-search (host)" if rec.get("renderer") == "local" else
                    BOTS[rec["action"]][1 if rec["platform"] == "grok" else 0],
-               active=rec["status"] == "RODANDO", progress=progress)
+               active=rec["status"] in ("RODANDO", "PENDENTE"), progress=progress)
+    if rec.get("queued") and rec["status"] == "PENDENTE":
+        line = sorted((r for r in recs if r.get("queued") and r["status"] == "PENDENTE"), key=lambda r: r["queued_at"])
+        pos = next(i for i, r in enumerate(line) if r["id"] == rec["id"])
+        running = next((r for r in recs if r["action"] == "PREENCHER_CANDIDATURA" and r["status"] == "RODANDO"), None)
+        ahead = line[pos - 1] if pos else running
+        progress["application_queue"] = {"position": pos + 1, "ahead_job_id": ahead["job_id"] if ahead else None}
     if rec["action"] in HOST_ANALYSES or rec.get("mode") == "host":
         out["mode"] = "host"
     if rec["action"] == "EDITAR_CURRICULO":
@@ -559,7 +570,7 @@ def main(argv):
             return refuse("EDIT_MODE_INVALID")
         if action in HERMES_ONLY and platform != "hermes":
             return refuse("PLATFORM_NOT_SUPPORTED")
-        if any(r["action"] == action and r["job_id"] == job_id and r["status"] == "RODANDO" for r in recs):
+        if any(r["action"] == action and r["job_id"] == job_id and r["status"] in ("RODANDO", "PENDENTE") for r in recs):
             return refuse("DISPATCH_ACTIVE")
         review = "--chatgpt-review" in argv
         if review and action != "EDITAR_CURRICULO":
@@ -569,9 +580,9 @@ def main(argv):
         if action in LINCE and any(r["action"] in LINCE and r["status"] == "RODANDO" for r in recs):
             return refuse("PROFILE_BUSY")
         holder = next((r for r in recs if action == "PREENCHER_CANDIDATURA" and r["action"] == action
-                       and r["status"] == "RODANDO" and r["job_id"] != job_id), None)
-        if holder:
-            return refuse("APPLICATION_DISPATCH_ACTIVE", holder["job_id"])   # one application at a time
+                       and r["status"] in ("RODANDO", "PENDENTE") and r["job_id"] != job_id), None)
+        if holder and platform != "hermes":
+            return refuse("APPLICATION_DISPATCH_ACTIVE", holder["job_id"])   # Grok: one application at a time
         if action == "PREENCHER_CANDIDATURA" and platform == "hermes" and job_id == "fake-1010":
             return refuse("APPLICATION_CDP_DOWN")   # Chrome da candidatura fechado: o toast oferece abrir
         if action in ("GERAR_CURRICULO", "PREENCHER_CANDIDATURA") and job_id == "fake-1005":
@@ -586,6 +597,8 @@ def main(argv):
                 rec["renderer"] = "local"
         if action == "PREENCHER_CANDIDATURA" and platform == "hermes" and job_id in HOST_APPLY:
             rec.update(mode="host", host_apply=True)
+        if holder and platform == "hermes":
+            rec.update(status="PENDENTE", queued=True, queued_at=f"{now()}#{n:04d}")   # waits its turn (D2)
         if action == "LOCALIZAR_VAGA":
             text = sys.stdin.read() if "--intake-stdin" in argv else ""
             candidate = flag(argv, "--candidate")
@@ -740,6 +753,16 @@ def main(argv):
             kind = rec["action"] if rec["action"] != REGISTER else next(
                 (r["action"] for r in recs if r["id"] == rec["source_id"]), None)
             if action is not None and kind != action:
+                continue
+            if rec.get("queued") and rec["status"] == "PENDENTE":
+                running = any(r["action"] == "PREENCHER_CANDIDATURA" and r["status"] == "RODANDO" for r in recs)
+                head = min((r for r in recs if r.get("queued") and r["status"] == "PENDENTE"),
+                           key=lambda r: r["queued_at"])
+                if not running and head is rec:
+                    rec.update(status="RODANDO", queued=False)
+                continue
+            if (rec["action"] == "PREENCHER_CANDIDATURA" and rec["status"] == "RODANDO"
+                    and APPLICATION_HOLD_FILE.exists()):
                 continue
             if rec["status"] == "RODANDO" and rec["action"] == REGISTER:
                 # Still running on the first list after `persist`, so the panel sees it finish.
@@ -903,6 +926,16 @@ def main(argv):
         item["status"] = DONE_STATUS[item["tipo"]]
         if all(i["status"] != "PENDENTE" for i in rec["fill"]):
             rec.update(status="RODANDO", step=3, code=None)
+        save(recs)
+        print(json.dumps({"ok": True, "dispatch": view(rec, recs)}))
+        return 0
+    if cmd == "cancel":
+        rec = next((r for r in recs if r["id"] == argv[1]), None)
+        if rec is None:
+            return refuse("DISPATCH_NOT_FOUND")
+        if not (rec.get("queued") and rec["status"] == "PENDENTE"):
+            return refuse("NOT_QUEUED")
+        rec.update(status="PARADO", code="CANCELLED_BY_USER", queued=False, acknowledged=True)
         save(recs)
         print(json.dumps({"ok": True, "dispatch": view(rec, recs)}))
         return 0

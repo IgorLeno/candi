@@ -213,6 +213,8 @@ const REFUSAL_TEXT: Record<string, string> = {
   CV_LOCAL_ONLY: "Esta ação só está disponível com o renderer local do currículo.",
   CV_LOCAL_HERMES_ONLY: "O currículo no template local roda pelo Hermes.",
   CV_JOB_BUSY: "O currículo desta vaga já está sendo gerado ou editado: espere terminar.",
+  // "Tirar da fila" (dispatch.py cancel).
+  NOT_QUEUED: "Este preenchimento não está mais na fila: atualize o painel.",
   CV_DOC_MISSING: "Este currículo ainda não tem documento editável local. Gere de novo com o renderer local.",
   CV_DOC_INVALID: "O documento editável da vaga está inválido. Gere o currículo de novo.",
   CV_DOC_CHANGED: "O currículo mudou desde que esta edição foi aberta. Peça uma proposta nova.",
@@ -723,6 +725,17 @@ export function liveViewUrl(dispatch: Dispatch): string | null {
 /** job-search accepted the run and it waits its turn in the ChatGPT queue (no global "ChatGPT busy" refusal). */
 export function chatgptQueued(dispatch: Dispatch): boolean {
   return (dispatch.status === "RODANDO" || dispatch.status === "PENDENTE") && !!dispatch.progress.chatgpt_queued
+}
+
+/** "Preencher vaga" started, but this job's résumé is still being generated or edited: the attachment waits for it. */
+export function waitingCv(dispatch: Dispatch): boolean {
+  return (dispatch.status === "RODANDO" || dispatch.status === "PENDENTE") && !!dispatch.progress.waiting_cv
+}
+
+/** "Preencher vaga" accepted and waiting its turn: one application at a time in the application Chrome. */
+export function applicationQueue(dispatch: Dispatch): NonNullable<Dispatch["progress"]["application_queue"]> | null {
+  if (dispatch.action !== "PREENCHER_CANDIDATURA" || dispatch.status !== "PENDENTE") return null
+  return dispatch.progress.application_queue ?? null
 }
 
 export function canResumeCv(dispatch: Dispatch): boolean {

@@ -22,6 +22,7 @@ import {
   analyzeJob,
   analyzeLeftOut,
   answerFill,
+  cancelDispatch,
   declineJob,
   deleteDispatch,
   deleteJob,
@@ -66,6 +67,7 @@ describe("ops server actions", () => {
     await expect(analyzeIntake("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(refineIntake("d-20260929T120000Z-abcdef", { candidate: 1 })).rejects.toThrow("UNAUTHENTICATED")
     await expect(discardDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(cancelDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(deleteDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
     await expect(declineJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
     await expect(confirmJobOpen("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
@@ -185,6 +187,7 @@ describe("ops server actions", () => {
     ])
     await startDispatch({ action: "BUSCAR_VAGAS", platform: "hermes" })
     expect(runDispatcher.mock.calls[1][0]).toEqual(["start", "BUSCAR_VAGAS", "--platform", "hermes"])
+    runDispatcher.mockResolvedValueOnce({ ok: true, value: { ok: true, dispatches: [] } })
     await listDispatches({ jobId: "fake-1001" })
     expect(runDispatcher.mock.calls[2][0]).toEqual(["list", "--limit", "5", "--job-id", "fake-1001"])
     // Persistence: only the search id; never a path, a flag or a credential.
@@ -273,6 +276,47 @@ describe("ops server actions", () => {
       ok: false,
       code: "ALREADY_REGISTERED",
     })
+  })
+
+  it("fila de candidaturas: Tirar da fila sends only a validated id", async () => {
+    for (const id of [null, "--platform", "d-x; rm", ["d-20260929T120000Z-abcdef"]]) {
+      await expect(cancelDispatch(id)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })
+    }
+    expect(runDispatcher).not.toHaveBeenCalled()
+    await cancelDispatch("d-20260929T120000Z-abcdef")
+    expect(runDispatcher.mock.calls[0][0]).toEqual(["cancel", "d-20260929T120000Z-abcdef"])
+    runDispatcher.mockResolvedValue({ ok: false, code: "NOT_QUEUED", detail: "x" })
+    await expect(cancelDispatch("d-20260929T120000Z-abcdef")).resolves.toEqual({ ok: false, code: "NOT_QUEUED" })
+  })
+
+  it("fila de candidaturas: names the job ahead from the Sheet snapshot, or leaves it unnamed", async () => {
+    const known = (views.current as { job: { job_id: string; empresa: string; cargo: string } }[]).find(
+      (v) => v.job.job_id === "fake-1001"
+    )
+    const queued = (ahead: string | null) => ({
+      id: "d",
+      progress: { application_queue: { position: 1, ahead_job_id: ahead } },
+    })
+    const plain = { id: "e", progress: {} }
+    runDispatcher.mockResolvedValue({
+      ok: true,
+      value: { ok: true, dispatches: [queued("fake-1001"), queued("gone"), queued(null), plain] },
+    })
+    const result = await listDispatches({})
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.dispatches.map((d) => d.progress.application_queue?.ahead_label)).toEqual([
+      `${known?.job.empresa} — ${known?.job.cargo}`,
+      null,
+      undefined,
+      undefined,
+    ])
+    // Without a queue the Sheet is not read at all.
+    const source = await import("@/lib/job-search/source")
+    vi.mocked(source.getJobSearchData).mockClear()
+    runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, dispatches: [plain] } })
+    await listDispatches({})
+    expect(source.getJobSearchData).not.toHaveBeenCalled()
   })
 
   it("vaga indicada: delete sends only the id and returns the hidden ids", async () => {

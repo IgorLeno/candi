@@ -22,6 +22,8 @@ import {
   canResumeCv,
   liveViewUrl,
   chatgptQueued,
+  applicationQueue,
+  waitingCv,
   confirmOpenRefusalText,
   deleteJobConfirmed,
   deleteJobRefusalText,
@@ -512,6 +514,28 @@ describe("canResumeCv", () => {
     expect(chatgptQueued({ ...queued, status: "PENDENTE" })).toBe(true)
     expect(chatgptQueued({ ...queued, status: "FALHOU" })).toBe(false)
     expect(chatgptQueued(stuck)).toBe(false)
+  })
+
+  it("says a fill waits for the résumé only while it is active", () => {
+    const waiting = { ...stuck, status: "RODANDO" as const, progress: { ...stuck.progress, waiting_cv: true } }
+    expect(waitingCv(waiting)).toBe(true)
+    expect(waitingCv({ ...waiting, status: "PRECISA_HUMANO" })).toBe(false)
+    expect(waitingCv(stuck)).toBe(false)
+  })
+
+  it("shows the application queue only for a fill still waiting its turn", () => {
+    const queue = { position: 2, ahead_job_id: "fake-1001", ahead_label: "Acme — Estágio" }
+    const queued = {
+      ...stuck,
+      action: "PREENCHER_CANDIDATURA" as const,
+      status: "PENDENTE" as const,
+      progress: { ...stuck.progress, application_queue: queue },
+    }
+    expect(applicationQueue(queued)).toEqual(queue)
+    expect(applicationQueue({ ...queued, status: "RODANDO" })).toBeNull()
+    expect(applicationQueue({ ...queued, action: "GERAR_CURRICULO" })).toBeNull()
+    expect(applicationQueue({ ...queued, progress: { ...stuck.progress } })).toBeNull()
+    expect(refusalText("NOT_QUEUED")).toContain("não está mais na fila")
   })
 
   it("links only the view-only noVNC of the container while the run is going", () => {

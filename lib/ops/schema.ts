@@ -405,6 +405,18 @@ const progressSchema = z.object({
   live_view_url: z.string().max(300).nullable().optional(),
   /** Waiting for a free ChatGPT conversation slot in job-search's queue (2026-10-14): accepted, never refused. */
   chatgpt_queued: z.boolean().optional(),
+  /** "Preencher vaga" waiting for this job's résumé generation or edit to finish before using it (2026-10-21, D1). */
+  waiting_cv: z.boolean().optional(),
+  /** "Preencher vaga" waiting its turn in job-search's application queue (2026-10-21, D2). `ahead_label` is added by
+   *  the panel from the Sheet snapshot (company — title), never by job-search. */
+  application_queue: z
+    .object({
+      position: z.number().int().min(1).max(999),
+      ahead_job_id: z.string().regex(JOB_ID_RE).nullable(),
+      ahead_label: z.string().max(300).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
   /** GERAR_CARTA: job-search's verdict on the letter this run recorded. */
   letter: z.enum(["VALID", "MISSING", "INVALID"]).optional(),
   /** EDITAR_CARTA by request: the proposal waiting for (or past) the user's decision. */

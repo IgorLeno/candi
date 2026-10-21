@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test"
 import { execFileSync } from "child_process"
-import { mkdirSync, writeFileSync } from "fs"
+import { mkdirSync, rmSync, writeFileSync } from "fs"
 import path from "path"
 import { E2E_AUTH_ENV, signInAs } from "./auth"
 import { E2E_FAKE_DISPATCH_STATE, E2E_OPS_ENV, resetFakeDispatches } from "./ops-env"
@@ -1021,6 +1021,44 @@ test.describe("Central de operações (bots)", () => {
       "aria-checked",
       "true"
     )
+  })
+
+  test("preencher vaga: a segunda candidatura entra na fila, sai com Tirar da fila e começa sozinha", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000)
+    // Another job's application is running (job-search moving on while the panel shows this page) and stays running.
+    mkdirSync(E2E_FAKE_DISPATCH_STATE, { recursive: true })
+    writeFileSync(`${E2E_FAKE_DISPATCH_STATE}/application-hold`, "1\n")
+    // fake-1001 follows the fake's bot path, which finishes (the fake host path never leaves Rodando).
+    fakeDispatch("start", "PREENCHER_CANDIDATURA", "--platform", "hermes", "--job-id", "fake-1001")
+
+    await page.goto("/vaga/fake-1007")
+    const start = async () => {
+      await page.getByTestId("job-detail").getByTestId("dispatch-button-PREENCHER_CANDIDATURA").click()
+      await page.getByTestId("dispatch-dialog").getByTestId("platform-hermes").click()
+      await page.getByTestId("dispatch-confirm").click()
+    }
+    await start()
+    const card = page.getByTestId("job-detail").getByTestId("dispatch-PREENCHER_CANDIDATURA")
+    await expect(card).toHaveAttribute("data-status", "PENDENTE")
+    await expect(card.getByTestId("dispatch-status")).toHaveText("Na fila")
+    const queue = card.getByTestId("application-queue")
+    await expect(queue).toContainText("Próxima da fila")
+    await expect(queue.getByTestId("application-queue-ahead")).toHaveAttribute("href", "/vaga/fake-1001")
+    await expect(page.getByText("Outra candidatura está em andamento")).toHaveCount(0)
+
+    await queue.getByTestId("application-queue-cancel").click()
+    await expect(card).toHaveAttribute("data-status", "PARADO")
+    await expect(card.getByTestId("application-queue-cancelled")).toHaveText("Tirada da fila por você.")
+    await expect(card.getByTestId("application-queue")).toHaveCount(0)
+
+    // In the queue again; once the other application moves on and stops waiting for the user, this one starts.
+    await start()
+    await expect(card).toHaveAttribute("data-status", "PENDENTE")
+    rmSync(`${E2E_FAKE_DISPATCH_STATE}/application-hold`, { force: true })
+    await expect(card).not.toHaveAttribute("data-status", "PENDENTE", { timeout: 60_000 })
+    await expect(card.getByTestId("application-queue")).toHaveCount(0)
   })
 
   test("preencher vaga: o Claude preenche e o painel pede só o que falta, uma pendência por vez", async ({ page }) => {

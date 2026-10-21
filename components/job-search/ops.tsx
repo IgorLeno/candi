@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   AppWindow,
@@ -38,6 +39,7 @@ import {
   analyzeLeftOut,
   answerFill,
   applyCvChanges,
+  cancelDispatch,
   deleteDispatch,
   editCv,
   discardDispatch,
@@ -111,6 +113,8 @@ import {
   leftOutBlocker,
   liveViewUrl,
   chatgptQueued,
+  applicationQueue,
+  waitingCv,
   leftOutKindLabel,
   needsUser,
   persistSummary,
@@ -1411,6 +1415,53 @@ function CvProposalApproval({ dispatch, onChanged }: { dispatch: Dispatch; onCha
   )
 }
 
+/** "Preencher vaga" waiting its turn: who is ahead and "Tirar da fila" (2026-10-21, D2). */
+function ApplicationQueueNote({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () => void }) {
+  const [pending, startTransition] = useTransition()
+  const queue = applicationQueue(dispatch)
+  if (!queue) return null
+  const ahead = queue.ahead_job_id
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="application-queue">
+      <p className="text-muted-foreground">
+        {queue.position > 1 ? `${queue.position}º na fila. ` : "Próxima da fila. "}
+        Começa sozinha quando a candidatura
+        {ahead ? (
+          <>
+            {" de "}
+            <Link
+              href={`/vaga/${encodeURIComponent(ahead)}`}
+              prefetch={false}
+              className="font-medium text-foreground underline-offset-2 hover:underline"
+              data-testid="application-queue-ahead"
+            >
+              {queue.ahead_label ?? `vaga ${ahead}`}
+            </Link>
+          </>
+        ) : (
+          " em andamento"
+        )}{" "}
+        terminar ou parar esperando você.
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={pending}
+        data-testid="application-queue-cancel"
+        onClick={() =>
+          startTransition(async () => {
+            const result = await cancelDispatch(dispatch.id)
+            if (!result.ok) toast.error(refusalText(result.code))
+            onChanged()
+          })
+        }
+      >
+        Tirar da fila
+      </Button>
+    </div>
+  )
+}
+
 export function DispatchCard({
   dispatch,
   knownJobIds,
@@ -1476,6 +1527,11 @@ export function DispatchCard({
             Na fila do ChatGPT
           </ToneBadge>
         )}
+        {!stale && waitingCv(dispatch) && (
+          <ToneBadge tone="muted" data-testid="dispatch-waiting-cv">
+            Aguardando o currículo terminar
+          </ToneBadge>
+        )}
         {dispatch.discarded && (
           <ToneBadge tone="muted" data-testid="dispatch-discarded">
             Descartada
@@ -1517,6 +1573,7 @@ export function DispatchCard({
           Último estado lido em {formatTimestamp(staleSince)}. Pode já ter terminado.
         </p>
       )}
+      {!stale && <ApplicationQueueNote dispatch={dispatch} onChanged={onChanged} />}
       <div className="flex items-center gap-3">
         <Progress
           value={progress.percent}
@@ -1630,38 +1687,45 @@ export function DispatchCard({
         {dispatch.action === "BUSCAR_VAGAS" && (
           <LeftOutJobs search={dispatch} progress={progress} analyses={leftOutAnalyses ?? []} onChanged={onChanged} />
         )}
-        {(dispatch.code || dispatch.marker) && dispatch.status !== "CONCLUIDO" && (
-          <p className="text-xs text-muted-foreground">
-            Código: <span className="font-mono">{dispatch.code ?? dispatch.marker}</span>
-            {dispatch.status === "PRECISA_HUMANO" &&
-              (dispatch.mode === "host"
-                ? dispatch.code === "PASTE_PROMPT_IN_CLAUDE"
-                  ? " — cole o prompt abaixo no Claude in Chrome."
-                  : dispatch.code === "POSTING_UNAVAILABLE" && dispatch.action === "ANALISAR_DESCOBERTA"
-                    ? " — o job-search não conseguiu ler o texto desta vaga (página fora do ar ou sem descrição); abra a publicação e use \u201cBuscar vaga específica\u201d."
-                    : dispatch.code === "POSTING_UNAVAILABLE"
-                      ? " — o job-search não achou o texto desta vaga (sem publicação salva, sem dossier anterior e fora do LinkedIn)."
-                      : canResumeCv(dispatch)
-                        ? " — veja o motivo acima e escolha como seguir."
-                        : dispatch.action === "EDITAR_CURRICULO"
-                          ? ` — ${cvEditStopText(dispatch.code, dispatch.renderer)}`
-                          : dispatch.action === "EDITAR_CARTA"
-                            ? ` — ${letterEditStopText(dispatch.code)}`
-                            : dispatch.action === "PREENCHER_CANDIDATURA"
-                              ? ` — ${applicationStopText(dispatch.code)}`
-                              : dispatch.action === "BUSCAR_VAGAS" || dispatch.action === TODAY_ACTION
-                                ? ` — ${searchStopText(dispatch.code)}`
-                                : " — ação sua necessária (veja o código)."
-                : canRefineIntake(dispatch)
-                  ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
-                  : " — veja o Bot Chat no Hermes Desktop.")}
-            {status.recovered && " — a análise foi refeita fora deste disparo e o writeset foi gravado na planilha."}
-            {dispatch.status === "INCERTO" &&
-              (dispatch.mode === "host"
-                ? " — o processo do job-search caiu; confira o runtime antes de liberar um novo disparo."
-                : " — o acompanhamento caiu; confira o Bot Chat no Hermes Desktop antes de liberar um novo disparo.")}
+        {dispatch.code === "CANCELLED_BY_USER" && (
+          <p className="text-xs text-muted-foreground" data-testid="application-queue-cancelled">
+            Tirada da fila por você.
           </p>
         )}
+        {(dispatch.code || dispatch.marker) &&
+          dispatch.status !== "CONCLUIDO" &&
+          dispatch.code !== "CANCELLED_BY_USER" && (
+            <p className="text-xs text-muted-foreground">
+              Código: <span className="font-mono">{dispatch.code ?? dispatch.marker}</span>
+              {dispatch.status === "PRECISA_HUMANO" &&
+                (dispatch.mode === "host"
+                  ? dispatch.code === "PASTE_PROMPT_IN_CLAUDE"
+                    ? " — cole o prompt abaixo no Claude in Chrome."
+                    : dispatch.code === "POSTING_UNAVAILABLE" && dispatch.action === "ANALISAR_DESCOBERTA"
+                      ? " — o job-search não conseguiu ler o texto desta vaga (página fora do ar ou sem descrição); abra a publicação e use \u201cBuscar vaga específica\u201d."
+                      : dispatch.code === "POSTING_UNAVAILABLE"
+                        ? " — o job-search não achou o texto desta vaga (sem publicação salva, sem dossier anterior e fora do LinkedIn)."
+                        : canResumeCv(dispatch)
+                          ? " — veja o motivo acima e escolha como seguir."
+                          : dispatch.action === "EDITAR_CURRICULO"
+                            ? ` — ${cvEditStopText(dispatch.code, dispatch.renderer)}`
+                            : dispatch.action === "EDITAR_CARTA"
+                              ? ` — ${letterEditStopText(dispatch.code)}`
+                              : dispatch.action === "PREENCHER_CANDIDATURA"
+                                ? ` — ${applicationStopText(dispatch.code)}`
+                                : dispatch.action === "BUSCAR_VAGAS" || dispatch.action === TODAY_ACTION
+                                  ? ` — ${searchStopText(dispatch.code)}`
+                                  : " — ação sua necessária (veja o código)."
+                  : canRefineIntake(dispatch)
+                    ? " — escolha a vaga acima ou acrescente informações em \u201cOutro\u201d."
+                    : " — veja o Bot Chat no Hermes Desktop.")}
+              {status.recovered && " — a análise foi refeita fora deste disparo e o writeset foi gravado na planilha."}
+              {dispatch.status === "INCERTO" &&
+                (dispatch.mode === "host"
+                  ? " — o processo do job-search caiu; confira o runtime antes de liberar um novo disparo."
+                  : " — o acompanhamento caiu; confira o Bot Chat no Hermes Desktop antes de liberar um novo disparo.")}
+            </p>
+          )}
         {(dispatch.action === "BUSCAR_VAGAS" || dispatch.action === TODAY_ACTION) &&
           dispatch.mode === "host" &&
           (dispatch.code === "BLOCKED_DISCOVERY_CDP" || progress.discovery_code === "BLOCKED_DISCOVERY_CDP") && (

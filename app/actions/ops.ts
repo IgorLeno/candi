@@ -104,7 +104,28 @@ export async function listDispatches(input: unknown): Promise<ActionResult<Dispa
   if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
   const { jobId, action } = parsed.data
   const args = ["list", "--limit", "5", ...(jobId ? ["--job-id", jobId] : []), ...(action ? ["--action", action] : [])]
-  return strip(await runDispatcher(args, listResultSchema))
+  const result = await runDispatcher(args, listResultSchema)
+  if (!result.ok) return strip(result)
+  return { ok: true, value: await withQueueLabels(result.value) }
+}
+
+/** A queued "Preencher vaga" names the job ahead of it by company and title from the read-only Sheet snapshot. */
+async function withQueueLabels(list: DispatchList): Promise<DispatchList> {
+  if (!list.dispatches.some((item) => item.progress.application_queue?.ahead_job_id)) return list
+  const views = await getJobSearchData().then(
+    (data) => data.views,
+    () => []
+  )
+  const labels = new Map(views.map((view) => [view.job.job_id, `${view.job.empresa} — ${view.job.cargo}`]))
+  return {
+    ...list,
+    dispatches: list.dispatches.map((item) => {
+      const queue = item.progress.application_queue
+      if (!queue?.ahead_job_id) return item
+      const label = labels.get(queue.ahead_job_id) ?? null
+      return { ...item, progress: { ...item.progress, application_queue: { ...queue, ahead_label: label } } }
+    }),
+  }
 }
 
 /**
@@ -419,6 +440,17 @@ export async function analyzeLeftOut(searchId: unknown, jobId: unknown): Promise
 }
 
 /** "Descartar" a vaga indicada: job-search only marks its records; nothing goes to the Sheet. */
+/**
+ * "Tirar da fila": `dispatch.py cancel <id>` stops a "Preencher vaga" still waiting its turn (job-search refuses
+ * anything else with NOT_QUEUED). Only the dispatch id is sent.
+ */
+export async function cancelDispatch(id: unknown): Promise<ActionResult<Dispatch>> {
+  await requireSession()
+  if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["cancel", id], oneResultSchema)
+  return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
 export async function discardDispatch(id: unknown): Promise<ActionResult<Dispatch>> {
   await requireSession()
   if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
