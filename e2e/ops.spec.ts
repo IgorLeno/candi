@@ -330,6 +330,59 @@ test.describe("Central de operações (bots)", () => {
     await expect(page.getByTestId("queue-list")).toHaveCount(0)
   })
 
+  test("hoje: adicionar vaga específica põe na fila sem recarregar; sem resultado, busca fora da planilha", async ({
+    page,
+  }) => {
+    // The fake advances one stage per poll (5 s).
+    test.setTimeout(120_000)
+    await page.goto("/")
+    await page.getByTestId("today-refresh-button").click()
+    const dialog = page.getByTestId("today-settings-dialog")
+    const query = dialog.getByTestId("today-add-query")
+    const result = (id: string) => dialog.locator(`[data-testid="today-add-result"][data-job-id="${id}"]`)
+
+    // Jobs already in the queue say so; sent or discarded ones never show.
+    await query.fill("Minera")
+    await expect(result("fake-1001").getByTestId("today-add-queued")).toHaveText("Na fila")
+    await expect(result("fake-1009")).toHaveCount(0)
+    await query.fill("fake-1008")
+    await expect(dialog.getByTestId("today-add-result")).toHaveCount(1)
+    await result("fake-1008").getByTestId("today-add-pin").click()
+    await expect(page.getByText("Vaga posta na fila.")).toBeVisible()
+    await expect(result("fake-1008").getByTestId("today-add-queued")).toHaveText("Na fila")
+    await dialog.getByTestId("today-settings-cancel").click()
+    const next = page.getByTestId("next-move")
+    await expect(next).toHaveAttribute("data-job-id", "fake-1008")
+    await expect(next.getByTestId("pinned-badge")).toBeVisible()
+
+    // Nothing in the Sheet: the specific-job search starts from the same text, with its guards.
+    const text = "Estágio em processos na Braskem, Camaçari"
+    await page.getByTestId("today-refresh-button").click()
+    await query.fill(text)
+    await expect(dialog.getByTestId("today-add-result")).toHaveCount(0)
+    await dialog.getByTestId("today-add-outside").click()
+    await expect(dialog).toHaveCount(0)
+    const group = page.getByTestId("today-intake")
+    const intake = group.getByTestId("dispatch-LOCALIZAR_VAGA")
+    await expect(intake.getByTestId("intake-text")).toHaveText(text)
+    await expect(intake).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    await intake.getByTestId("intake-analyze").click()
+    await page.getByTestId("intake-decision-confirm").click()
+    const analysis = group.getByTestId("dispatch-ANALISAR_INDICADA")
+    await expect(analysis).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    // Before the Sheet has it, there is nothing to pin.
+    await expect(analysis.getByTestId("today-pin-registered")).toHaveCount(0)
+    await analysis.getByTestId("register-writeset").click()
+    await page.getByTestId("register-confirm").click()
+    await expect(analysis.getByTestId("writeset-registration")).toHaveAttribute("data-registration", "CONCLUIDO", {
+      timeout: 20_000,
+    })
+    // Registered: the card offers "Pôr na fila" (the user confirms; it never pins on its own).
+    await analysis.getByTestId("today-pin-registered").click()
+    await expect(page.getByText("Vaga posta na fila.")).toBeVisible()
+    await expect(analysis.getByTestId("today-pin-registered")).toHaveText("Na fila")
+  })
+
   test("hoje: vaga fixada fica na fila fora da regra, com o selo, e sai com Tirar da fila", async ({ page }) => {
     // fake-1008 is NÃO CONFIRMADA (No radar): pinned, the user's choice keeps it in the queue anyway.
     fakeDispatch("today-pin", "fake-1004")

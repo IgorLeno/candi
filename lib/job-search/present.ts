@@ -595,3 +595,38 @@ export function todayView(
   const fresh = queued.filter((item) => !known.has(item.jobId)).map((item) => ({ item, motivo: "NOVA" }))
   return { queue, out: [...left, ...fresh], pinned }
 }
+
+/** A job "Adicionar vaga específica" can offer: only what the window shows (plan 2026-10-22). */
+export interface TodayPick {
+  jobId: string
+  empresa: string
+  cargo: string
+  state: JobState
+  interesse: CellDisplay
+}
+
+/** The slim list the Hoje page hands to the settings window: jobs that can still enter the queue. */
+export function todayPickList(items: JobListItem[]): TodayPick[] {
+  return items
+    .filter((item) => !GONE_FROM_HOJE.has(jobState(item)))
+    .map((item) => ({
+      jobId: item.jobId,
+      empresa: item.empresa,
+      cargo: item.cargo,
+      state: jobState(item),
+      interesse: item.interesse,
+    }))
+}
+
+function foldSearch(text: string): string {
+  return text.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim()
+}
+
+/** Local search of the settings window: company, title or job_id contains the text, no accents or case; ≥ 2 characters. */
+export function todaySearch(picks: TodayPick[], query: string, limit = 8): TodayPick[] {
+  const needle = foldSearch(query)
+  if (needle.length < 2) return []
+  return picks
+    .filter((pick) => [pick.empresa, pick.cargo, pick.jobId].some((field) => foldSearch(field).includes(needle)))
+    .slice(0, limit)
+}

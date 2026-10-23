@@ -77,7 +77,9 @@ import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Textarea } from "@/components/ui/textarea"
 import { ToneBadge } from "@/components/job-search/tone-badge"
-import { formatTimestamp, safeHttpUrl } from "@/lib/job-search/present"
+import { formatTimestamp, safeHttpUrl, todaySearch, type TodayPick } from "@/lib/job-search/present"
+import { Flames, StateBadge } from "@/components/job-search/visual"
+import { PinTodayButton } from "@/components/job-search/today-pin"
 import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
 import { normalizeFocus } from "@/lib/ops/today-settings"
 import { CvManualEditor } from "@/components/job-search/cv-manual-editor"
@@ -1477,6 +1479,7 @@ export function DispatchCard({
   leftOutAnalyses,
   onChanged,
   onClose,
+  extra,
 }: {
   dispatch: Dispatch
   knownJobIds?: ReadonlySet<string>
@@ -1487,6 +1490,8 @@ export function DispatchCard({
   onChanged: () => void
   /** "Fechar": takes the card off the panel (view only, the dispatcher is not told). */
   onClose?: () => void
+  /** A control the page adds at the end of the card (Hoje: "Pôr na fila" once the specific job is registered). */
+  extra?: React.ReactNode
 }) {
   const intake = dispatch.action === "LOCALIZAR_VAGA" || dispatch.action === "ANALISAR_INDICADA"
   const [pending, startTransition] = useTransition()
@@ -1776,6 +1781,7 @@ export function DispatchCard({
               : "Dispensar"}
           </Button>
         )}
+        {extra}
       </CollapsibleContent>
     </Collapsible>
   )
@@ -3019,9 +3025,41 @@ export function PdfPreview({ jobId, kind = "cv" }: { jobId: string; kind?: keyof
  * while it runs or needs the user (a refused Sheet write offers "Registrar na planilha"); when the run the panel
  * watched finishes, the Sheet snapshot and the page are read again, so the new list shows without a reload.
  */
-export function TodayListControls({ leading, trailing }: { leading?: React.ReactNode; trailing?: React.ReactNode }) {
+export function TodayListControls({
+  leading,
+  trailing,
+  picks = [],
+  queued = [],
+}: {
+  leading?: React.ReactNode
+  trailing?: React.ReactNode
+  /** Jobs "Adicionar vaga específica" may offer (`todayPickList`) and the ones in the queue now. */
+  picks?: TodayPick[]
+  queued?: string[]
+}) {
   const router = useRouter()
   const { data, error, staleSince, refresh } = useDispatches({ action: TODAY_ACTION })
+  const intakes = useDispatches({ action: "LOCALIZAR_VAGA" })
+  const analyses = useDispatches({ action: "ANALISAR_INDICADA" })
+  const { refresh: refreshIntakes } = intakes
+  const { refresh: refreshAnalyses } = analyses
+  const intake = intakes.data ? activeIntake(intakes.data.dispatches) : null
+  const analysis = intake && analyses.data ? analysisOf(analyses.data.dispatches, intake.id) : null
+  const intakeClosed = useClosed(intake?.id ?? null)
+  // The specific job found from this window shows here too (not only on /cotar): while it needs the user, and for the
+  // rest of this view once seen, so "Pôr na fila" is there after the registration. A reload hides a finished one.
+  const [intakeSeen, setIntakeSeen] = useState<string | null>(null)
+  const intakeNeedsUser = needsUser(intake) || needsUser(analysis)
+  useEffect(() => {
+    if (intake && intakeNeedsUser) setIntakeSeen(intake.id)
+  }, [intake, intakeNeedsUser])
+  const intakeShown = intake !== null && !intakeClosed && (intakeNeedsUser || intakeSeen === intake.id)
+  const refreshIntake = useCallback(() => {
+    void refreshIntakes()
+    void refreshAnalyses()
+  }, [refreshIntakes, refreshAnalyses])
+  const registeredJob =
+    analysis?.progress.registration?.status === "CONCLUIDO" ? (analysis.progress.writeset_job_ids?.[0] ?? null) : null
   const [open, setOpen] = useState(false)
   const last = data ? latest(data.dispatches, TODAY_ACTION) : null
   const watched = useRef<{ id: string; active: boolean } | null>(null)
@@ -3088,7 +3126,47 @@ export function TodayListControls({ leading, trailing }: { leading?: React.React
           />
         </StaleSinceContext.Provider>
       )}
-      <TodaySettingsDialog open={open} onOpenChange={setOpen} running={running} onStarted={() => void refresh()} />
+      {intakeShown && intake && (
+        <StaleSinceContext.Provider value={intakes.staleSince ?? analyses.staleSince}>
+          <div className="grid gap-3 lg:grid-cols-2" data-testid="today-intake">
+            <DispatchCard
+              dispatch={intake}
+              analysis={analysis}
+              onChanged={refreshIntake}
+              onClose={!intake.active && !analysis?.active ? () => writeClosed(intake.id, true) : undefined}
+            />
+            {analysis && (
+              <DispatchCard
+                dispatch={analysis}
+                onChanged={refreshIntake}
+                onClose={!intake.active && !analysis.active ? () => writeClosed(intake.id, true) : undefined}
+                extra={
+                  registeredJob && (
+                    <PinTodayButton
+                      jobId={registeredJob}
+                      queued={queued.includes(registeredJob)}
+                      testId="today-pin-registered"
+                      queuedTestId="today-pin-registered"
+                    />
+                  )
+                }
+              />
+            )}
+          </div>
+        </StaleSinceContext.Provider>
+      )}
+      <TodaySettingsDialog
+        open={open}
+        onOpenChange={setOpen}
+        running={running}
+        onStarted={() => void refresh()}
+        picks={picks}
+        queued={queued}
+        onIntakeStarted={(id) => {
+          setIntakeSeen(id)
+          refreshIntake()
+        }}
+      />
     </div>
   )
 }
@@ -3106,13 +3184,20 @@ function TodaySettingsDialog({
   onOpenChange,
   running,
   onStarted,
+  picks,
+  queued,
+  onIntakeStarted,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   running: boolean
   onStarted: () => void
+  picks: TodayPick[]
+  queued: string[]
+  onIntakeStarted: (id: string) => void
 }) {
   const [form, setForm] = useState<TodayForm | null>(null)
+  const [pinned, setPinned] = useState<string[]>([])
   const [readError, setReadError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -3129,8 +3214,9 @@ function TodaySettingsDialog({
           setReadError(result.code)
           return
         }
-        const { focus, replace } = result.value.settings
+        const { focus, replace, pinned: pins } = result.value.settings
         setForm({ cargo: focus.cargo, lugar: focus.lugar, replace })
+        setPinned(pins)
       } catch {
         if (alive) setReadError("UNAUTHENTICATED")
       }
@@ -3259,6 +3345,14 @@ function TodaySettingsDialog({
                 contar na troca, e as fixadas nunca são trocadas.
               </p>
             </fieldset>
+            <TodayAddJob
+              picks={picks}
+              queued={[...queued, ...pinned]}
+              onIntakeStarted={(id) => {
+                onOpenChange(false)
+                onIntakeStarted(id)
+              }}
+            />
           </div>
         )}
         <p className="text-xs text-muted-foreground">
@@ -3290,5 +3384,118 @@ function TodaySettingsDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * "Adicionar vaga específica" in the "Atualizar lista" window (plan 2026-10-22): a local search over the Sheet jobs the
+ * page already read (company, title, job_id; ≥ 2 characters, up to 8) with "Pôr na fila". Nothing found: "Buscar fora
+ * da planilha" starts the specific-job search with the same text and its guards (`normalizeIntake`); once that job is
+ * registered, its card on Hoje offers "Pôr na fila" (the user confirms, it never pins on its own).
+ */
+function TodayAddJob({
+  picks,
+  queued,
+  onIntakeStarted,
+}: {
+  picks: TodayPick[]
+  queued: string[]
+  onIntakeStarted: (id: string) => void
+}) {
+  const [text, setText] = useState("")
+  const [query, setQuery] = useState("")
+  const [pending, startTransition] = useTransition()
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(text), 250)
+    return () => window.clearTimeout(timer)
+  }, [text])
+  const results = useMemo(() => todaySearch(picks, query), [picks, query])
+  const searched = query.trim().length >= 2 && query === text
+  const intake = normalizeIntake(text)
+  return (
+    <fieldset className="space-y-3" data-testid="today-add">
+      <legend className="font-semibold text-foreground">Adicionar vaga específica</legend>
+      <div className="space-y-1">
+        <Label htmlFor="today-add-query">Empresa, cargo ou job_id</Label>
+        <Input
+          id="today-add-query"
+          value={text}
+          placeholder="Ex.: Braskem"
+          aria-describedby="today-add-hint"
+          data-testid="today-add-query"
+          onChange={(event) => setText(event.target.value)}
+        />
+        <p id="today-add-hint" className="text-xs text-muted-foreground">
+          Procura nas vagas da planilha. A vaga posta na fila fica fixada no topo da Hoje até ser enviada, descartada ou
+          você tirar da fila (no máximo 5), mesmo sem ter sido selecionada pelo ChatGPT.
+        </p>
+      </div>
+      {results.length > 0 && (
+        <ul className="space-y-2" data-testid="today-add-results">
+          {results.map((pick) => (
+            <li
+              key={pick.jobId}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border px-3 py-2"
+              data-testid="today-add-result"
+              data-job-id={pick.jobId}
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium text-foreground">
+                  {[pick.empresa || "(sem empresa)", pick.cargo || "(sem cargo)"].join(" · ")}
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <StateBadge state={pick.state} />
+                  <Flames cell={pick.interesse} />
+                </div>
+              </div>
+              <PinTodayButton jobId={pick.jobId} queued={queued.includes(pick.jobId)} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {searched && results.length === 0 && (
+        <div className="space-y-2 rounded-xl border border-dashed border-border p-3" data-testid="today-add-empty">
+          <p className="text-xs text-muted-foreground">
+            Nenhuma vaga da planilha com esse texto. &ldquo;Buscar fora da planilha&rdquo; pede ao Lince para procurar
+            essa vaga a partir do que você escreveu (o texto vira dado, não comando); depois você decide se ela vai para
+            o ChatGPT e para a planilha.
+          </p>
+          {!intake.ok && (
+            <p className="text-xs text-st-uncertain-fg" data-testid="today-add-outside-problem">
+              {refusalText(intake.code)}
+            </p>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending || !intake.ok}
+            data-testid="today-add-outside"
+            onClick={() =>
+              startTransition(async () => {
+                try {
+                  const result = await startIntake(text)
+                  if (!result.ok) {
+                    toast.error(refusalText(result.code))
+                    return
+                  }
+                  toast.success(`${result.value.bot} procurando a vaga.`)
+                  setText("")
+                  onIntakeStarted(result.value.id)
+                } catch {
+                  toast.error(refusalText("UNAUTHENTICATED"))
+                }
+              })
+            }
+          >
+            {pending ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Crosshair className="h-4 w-4" aria-hidden="true" />
+            )}
+            Buscar fora da planilha
+          </Button>
+        </div>
+      )}
+    </fieldset>
   )
 }

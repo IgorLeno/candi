@@ -8,6 +8,7 @@ import {
   jobState,
   listHref,
   toListItem,
+  todayPickList,
   todayView,
   type AttentionGroup,
   type JobListItem,
@@ -202,6 +203,8 @@ export default async function HojePage() {
         {dispatch ? (
           <div className="relative mt-6">
             <TodayListControls
+              picks={todayPickList(items)}
+              queued={queue.map((item) => item.jobId)}
               leading={chips.map((group) => (
                 <AttentionChip key={group.id} group={group} />
               ))}

@@ -10,7 +10,9 @@ import {
   isUserDeclined,
   jobState,
   journeyStep,
+  todayPickList,
   todayQueue,
+  todaySearch,
   todayView,
   filtersToParams,
   formatDay,
@@ -290,5 +292,34 @@ describe("todayView (Atualizar lista, 2026-10-16)", () => {
       ["fake-1002", "NOVA"],
       ["fake-1003", "NOVA"],
     ])
+  })
+})
+
+describe("todaySearch (Adicionar vaga específica, 2026-10-22)", () => {
+  const picks = todayPickList(items)
+
+  it("offers only jobs that can still enter the queue (not sent, withdrawn, discarded or uncertain)", () => {
+    const ids = picks.map((pick) => pick.jobId)
+    expect(ids).toContain("fake-1008")
+    expect(ids).toContain("fake-1010")
+    expect(ids).not.toContain("fake-1006") // ENVIADA
+    expect(ids).not.toContain("fake-1009") // RETIRADA by the user
+    expect(picks.every((pick) => pick.state !== "enviada" && pick.state !== "descartada")).toBe(true)
+  })
+
+  it("matches company, title or job_id without accents or case, from 2 characters, up to 8", () => {
+    expect(todaySearch(picks, "m")).toEqual([])
+    expect(todaySearch(picks, "  ")).toEqual([])
+    expect(todaySearch(picks, "MINERACAO").map((pick) => pick.jobId)).toEqual([])
+    expect(todaySearch(picks, "mineradora").map((pick) => pick.jobId)).toEqual([
+      "fake-1001",
+      "fake-1002",
+      "fake-1003",
+      "fake-1004",
+    ])
+    expect(todaySearch(picks, "engenharia quimica").length).toBeGreaterThan(1)
+    expect(todaySearch(picks, "FAKE-1008").map((pick) => pick.jobId)).toEqual(["fake-1008"])
+    expect(todaySearch(picks, "fake").length).toBe(8)
+    expect(todaySearch(picks, "fake", 3).length).toBe(3)
   })
 })
