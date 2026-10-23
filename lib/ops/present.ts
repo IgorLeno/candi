@@ -12,6 +12,7 @@ import type {
   RecordPlatform,
   SentEvidence,
   TodayList,
+  TodayReplace,
 } from "@/lib/ops/schema"
 
 // Labels and UX gating for bot dispatches. The dispatcher and the bots are the authority; nothing here
@@ -82,7 +83,7 @@ export const ACTION_META: Record<DispatchAction, { label: string; verb: string; 
     label: "Atualização da lista",
     verb: "Atualizar lista",
     description:
-      "O job-search confere se as vagas da Hoje continuam abertas (LinkedIn e Gupy), faz uma cotação nova, leva ao ChatGPT até 10 vagas (primeiro as da Hoje sem análise, depois as novas), grava o resultado na planilha e escolhe as 5 selecionadas e abertas de maior interesse. Quem sai da lista não muda na planilha.",
+      "O job-search confere se as vagas da Hoje continuam abertas (LinkedIn e Gupy), faz uma cotação nova, leva ao ChatGPT até 10 vagas (primeiro as da Hoje sem análise, depois as novas), grava o resultado na planilha e monta a lista de 5: as fixadas primeiro, depois as selecionadas e abertas de maior interesse dentro do foco. Quem sai da lista não muda na planilha.",
   },
   REGISTRAR_WRITESET: {
     label: "Registrar na planilha",
@@ -834,6 +835,27 @@ export function listUpdatedText(updatedAt: string, now: Date = new Date()): stri
           ? `há ${Math.floor(minutes / 60)} h`
           : `há ${Math.floor(minutes / (24 * 60))} ${Math.floor(minutes / (24 * 60)) === 1 ? "dia" : "dias"}`
   return `Lista atualizada em ${parts.day}/${parts.month} às ${parts.hour}:${parts.minute} · ${ago}`
+}
+
+// "Quantas trocar" (plan 2026-10-22): job-search's `replace` modes, worded for the settings window.
+const TODAY_REPLACE_TEXT: Record<TodayReplace, string> = {
+  AVALIAR: "Reordena todas e troca só as que forem superadas por vagas melhores.",
+  "1": "Mantém as atuais e troca a de menor posição pela melhor vaga que ainda não está na lista.",
+  "2": "Mantém as atuais e troca as 2 de menor posição pelas 2 melhores vagas que ainda não estão na lista.",
+  "3": "Mantém as atuais e troca as 3 de menor posição pelas 3 melhores vagas que ainda não estão na lista.",
+  TODAS: "Monta a lista com vagas que não estavam nela; as atuais só completam se faltar.",
+}
+
+export const TODAY_REPLACE_LABEL: Record<TodayReplace, string> = {
+  AVALIAR: "Avaliar",
+  "1": "1",
+  "2": "2",
+  "3": "3",
+  TODAS: "Todas",
+}
+
+export function todayReplaceText(replace: TodayReplace): string {
+  return TODAY_REPLACE_TEXT[replace]
 }
 
 /**

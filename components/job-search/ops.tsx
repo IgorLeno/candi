@@ -45,6 +45,7 @@ import {
   discardDispatch,
   getCvFile,
   getLetterFile,
+  getTodaySettings,
   listDispatches,
   openApplicationBrowser,
   openCvBrowser,
@@ -57,6 +58,7 @@ import {
   registerWriteset,
   reassessCv,
   resumeCv,
+  saveTodaySettings,
   startDispatch,
   startIntake,
 } from "@/app/actions/ops"
@@ -70,12 +72,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Textarea } from "@/components/ui/textarea"
 import { ToneBadge } from "@/components/job-search/tone-badge"
 import { formatTimestamp, safeHttpUrl } from "@/lib/job-search/present"
 import { INTAKE_MAX, intakeLength, normalizeIntake } from "@/lib/ops/intake"
+import { normalizeFocus } from "@/lib/ops/today-settings"
 import { CvManualEditor } from "@/components/job-search/cv-manual-editor"
 import { LetterProposalApproval } from "@/components/job-search/letter-proposal"
 import { usePlatform, writePlatform } from "@/lib/ops/platform-pref"
@@ -123,6 +127,8 @@ import {
   resumeCvRefusalText,
   searchStopText,
   searchVerb,
+  TODAY_REPLACE_LABEL,
+  todayReplaceText,
   withRegistration,
 } from "@/lib/ops/present"
 import {
@@ -130,6 +136,7 @@ import {
   LEFT_OUT_ACTION,
   PLATFORMS,
   TODAY_ACTION,
+  TODAY_REPLACE,
   type BotAction,
   type CvFileInfo,
   type CvChange,
@@ -141,6 +148,7 @@ import {
   type DispatchStage,
   type FillItem,
   type OpenBrowserResult,
+  type TodayReplace,
 } from "@/lib/ops/schema"
 import { cn } from "@/lib/utils"
 
@@ -3015,7 +3023,6 @@ export function TodayListControls({ leading, trailing }: { leading?: React.React
   const router = useRouter()
   const { data, error, staleSince, refresh } = useDispatches({ action: TODAY_ACTION })
   const [open, setOpen] = useState(false)
-  const [pending, startTransition] = useTransition()
   const last = data ? latest(data.dispatches, TODAY_ACTION) : null
   const watched = useRef<{ id: string; active: boolean } | null>(null)
   // A run that finished while the page watched keeps its card (stages and counts) until "Fechar".
@@ -3081,47 +3088,207 @@ export function TodayListControls({ leading, trailing }: { leading?: React.React
           />
         </StaleSinceContext.Provider>
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent data-testid="today-refresh-dialog">
-          <DialogHeader>
-            <DialogTitle>{meta.label}</DialogTitle>
-            <DialogDescription>{meta.description}</DialogDescription>
-          </DialogHeader>
-          <p className="text-xs text-muted-foreground">
-            Roda pelo Hermes, no job-search. O clique é o seu pedido para gravar na planilha; pode levar alguns minutos
-            (até 2 lotes no ChatGPT).
-          </p>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)} data-testid="today-refresh-cancel">
-              Cancelar
-            </Button>
-            <Button
-              disabled={pending}
-              data-testid="today-refresh-confirm"
-              onClick={() =>
-                startTransition(async () => {
-                  try {
-                    const result = await refreshTodayList()
-                    if (!result.ok) {
-                      setOpen(false)
-                      toastRefusal(result.code)
-                      return
-                    }
-                    setOpen(false)
-                    toast.success("Atualizando a lista no job-search.")
-                    void refresh()
-                  } catch {
-                    toast.error(refusalText("UNAUTHENTICATED"))
-                  }
-                })
-              }
-            >
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-              {meta.verb}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TodaySettingsDialog open={open} onOpenChange={setOpen} running={running} onStarted={() => void refresh()} />
     </div>
+  )
+}
+
+type TodayForm = { cargo: string; lugar: string; replace: TodayReplace }
+
+/**
+ * The "Atualizar lista" window (plan 2026-10-22, front A): the focus (Cargo, Lugar) and how many jobs a refresh
+ * replaces, read from and saved to job-search (`today-settings`); "Salvar e atualizar agora" saves and starts the
+ * refresh. The automatic refresh joins this window with its trigger (front B): a switch here would promise a run that
+ * does not exist yet.
+ */
+function TodaySettingsDialog({
+  open,
+  onOpenChange,
+  running,
+  onStarted,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  running: boolean
+  onStarted: () => void
+}) {
+  const [form, setForm] = useState<TodayForm | null>(null)
+  const [readError, setReadError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    setForm(null)
+    setReadError(null)
+    void (async () => {
+      try {
+        const result = await getTodaySettings()
+        if (!alive) return
+        if (!result.ok) {
+          setReadError(result.code)
+          return
+        }
+        const { focus, replace } = result.value.settings
+        setForm({ cargo: focus.cargo, lugar: focus.lugar, replace })
+      } catch {
+        if (alive) setReadError("UNAUTHENTICATED")
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [open])
+
+  const check = form ? normalizeFocus({ cargo: form.cargo, lugar: form.lugar }) : null
+  const problem = check && !check.ok ? check.field : null
+  const ready = form !== null && check?.ok === true && !pending
+  const meta = ACTION_META[TODAY_ACTION]
+
+  const save = (run: boolean) =>
+    startTransition(async () => {
+      if (!form) return
+      try {
+        const saved = await saveTodaySettings({
+          replace: form.replace,
+          focus: { cargo: form.cargo, lugar: form.lugar },
+        })
+        if (!saved.ok) {
+          toast.error(refusalText(saved.code))
+          return
+        }
+        if (!run) {
+          onOpenChange(false)
+          toast.success("Ajustes salvos.")
+          return
+        }
+        const result = await refreshTodayList()
+        onOpenChange(false)
+        if (!result.ok) {
+          toastRefusal(result.code)
+          return
+        }
+        toast.success("Ajustes salvos. Atualizando a lista no job-search.")
+        onStarted()
+      } catch {
+        toast.error(refusalText("UNAUTHENTICATED"))
+      }
+    })
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl" data-testid="today-settings-dialog">
+        <DialogHeader>
+          <DialogTitle>{meta.verb}</DialogTitle>
+          <DialogDescription>{meta.description}</DialogDescription>
+        </DialogHeader>
+        {readError ? (
+          <p className="text-sm text-st-uncertain-fg" data-testid="today-settings-error">
+            Não deu para ler os ajustes: {refusalText(readError)}
+          </p>
+        ) : !form ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Lendo os ajustes no job-search…
+          </p>
+        ) : (
+          <div className="space-y-6 text-sm">
+            <fieldset className="space-y-3" data-testid="today-focus">
+              <legend className="font-semibold text-foreground">Foco</legend>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="today-focus-cargo">Cargo</Label>
+                  <Input
+                    id="today-focus-cargo"
+                    value={form.cargo}
+                    placeholder="Ex.: analista de processos"
+                    aria-invalid={problem === "cargo"}
+                    aria-describedby="today-focus-hint"
+                    data-testid="today-focus-cargo"
+                    onChange={(event) => setForm({ ...form, cargo: event.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="today-focus-lugar">Lugar</Label>
+                  <Input
+                    id="today-focus-lugar"
+                    value={form.lugar}
+                    placeholder="Ex.: Belo Horizonte"
+                    aria-invalid={problem === "lugar"}
+                    aria-describedby="today-focus-hint"
+                    data-testid="today-focus-lugar"
+                    onChange={(event) => setForm({ ...form, lugar: event.target.value })}
+                  />
+                </div>
+              </div>
+              <p
+                id="today-focus-hint"
+                data-testid="today-focus-problem"
+                className={cn("text-xs text-muted-foreground", problem && "text-st-uncertain-fg")}
+              >
+                {problem
+                  ? `${problem === "cargo" ? "Cargo" : "Lugar"}: ${refusalText("FOCUS_INVALID")}`
+                  : "Em branco = sem foco. Com foco, a cotação busca esse cargo nesse lugar e a lista só aceita vagas cujo cargo tem o termo e cuja cidade é a do lugar (vaga remota conta em qualquer lugar). Se faltar vaga no foco, a lista fica menor: ela não completa com vaga de fora."}
+              </p>
+            </fieldset>
+            <fieldset className="space-y-3" data-testid="today-replace">
+              <legend className="font-semibold text-foreground">Quantas trocar</legend>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Quantas trocar">
+                {TODAY_REPLACE.map((option) => (
+                  <label
+                    key={option}
+                    className={cn(
+                      "inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-3 py-1.5",
+                      form.replace === option && "border-primary bg-primary/10 text-foreground"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="today-replace"
+                      className="accent-primary"
+                      checked={form.replace === option}
+                      data-testid={`today-replace-${option}`}
+                      onChange={() => setForm({ ...form, replace: option })}
+                    />
+                    {TODAY_REPLACE_LABEL[option]}
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground" data-testid="today-replace-hint">
+                {todayReplaceText(form.replace)} Vagas que saíram sozinhas (enviadas, encerradas) são repostas sem
+                contar na troca, e as fixadas nunca são trocadas.
+              </p>
+            </fieldset>
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          &ldquo;Salvar&rdquo; só guarda os ajustes para a próxima atualização. &ldquo;Salvar e atualizar agora&rdquo;
+          roda no job-search e é o seu pedido para gravar na planilha; pode levar alguns minutos (até 2 lotes no
+          ChatGPT).
+        </p>
+        <DialogFooter>
+          <Button
+            variant="ghost"
+            disabled={pending}
+            onClick={() => onOpenChange(false)}
+            data-testid="today-settings-cancel"
+          >
+            Cancelar
+          </Button>
+          <Button variant="outline" disabled={!ready} onClick={() => save(false)} data-testid="today-settings-save">
+            Salvar
+          </Button>
+          <Button
+            disabled={!ready || running}
+            title={running ? "A lista já está sendo atualizada." : undefined}
+            onClick={() => save(true)}
+            data-testid="today-settings-run"
+          >
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+            Salvar e atualizar agora
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -249,14 +249,14 @@ test.describe("Central de operações (bots)", () => {
 
     // Cancel never dispatches.
     await page.getByTestId("today-refresh-button").click()
-    const dialog = page.getByTestId("today-refresh-dialog")
+    const dialog = page.getByTestId("today-settings-dialog")
     await expect(dialog).toContainText("até 10 vagas")
     await expect(dialog).toContainText("grava o resultado na planilha")
-    await page.getByTestId("today-refresh-cancel").click()
+    await page.getByTestId("today-settings-cancel").click()
     await expect(page.getByTestId("dispatch-ATUALIZAR_LISTA")).toHaveCount(0)
 
     await page.getByTestId("today-refresh-button").click()
-    await page.getByTestId("today-refresh-confirm").click()
+    await page.getByTestId("today-settings-run").click()
     const card = page.getByTestId("dispatch-ATUALIZAR_LISTA")
     await expect(card).toBeVisible()
     await expect(page.getByTestId("today-refresh-button")).toBeDisabled()
@@ -288,6 +288,46 @@ test.describe("Central de operações (bots)", () => {
     await page.reload()
     await expect(page.getByTestId("next-move")).toHaveAttribute("data-job-id", "fake-1004")
     await expect(page.getByTestId("dispatch-ATUALIZAR_LISTA")).toHaveCount(0)
+  })
+
+  test("hoje: a janela do Atualizar lista guarda o foco e quantas trocar, e atualiza com eles", async ({ page }) => {
+    test.setTimeout(60_000)
+    await page.goto("/")
+    await page.getByTestId("today-refresh-button").click()
+    const dialog = page.getByTestId("today-settings-dialog")
+    // job-search's defaults: no focus, "Avaliar".
+    await expect(dialog.getByTestId("today-focus-cargo")).toHaveValue("")
+    await expect(dialog.getByTestId("today-focus-lugar")).toHaveValue("")
+    await expect(dialog.getByTestId("today-replace-AVALIAR")).toBeChecked()
+    // No "Atualização automática" block before the trigger exists (front B).
+    await expect(dialog).not.toContainText("automática")
+
+    // The same guards as job-search explain a refusal before anything is sent.
+    await dialog.getByTestId("today-focus-cargo").fill("analista ok 1a2b3c4d")
+    await expect(dialog.getByTestId("today-focus-problem")).toContainText("80 caracteres")
+    await expect(dialog.getByTestId("today-settings-save")).toBeDisabled()
+    await expect(dialog.getByTestId("today-settings-run")).toBeDisabled()
+    await dialog.getByTestId("today-focus-cargo").fill("analista")
+    await dialog.getByTestId("today-focus-lugar").fill("Belo Horizonte")
+    await dialog.getByTestId("today-replace-2").check()
+    await dialog.getByTestId("today-settings-save").click()
+    await expect(page.getByText("Ajustes salvos.")).toBeVisible()
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByTestId("dispatch-ATUALIZAR_LISTA")).toHaveCount(0)
+
+    // Reopening shows what job-search keeps; "Salvar e atualizar agora" runs with it.
+    await page.getByTestId("today-refresh-button").click()
+    await expect(dialog.getByTestId("today-focus-cargo")).toHaveValue("analista")
+    await expect(dialog.getByTestId("today-focus-lugar")).toHaveValue("Belo Horizonte")
+    await expect(dialog.getByTestId("today-replace-2")).toBeChecked()
+    await dialog.getByTestId("today-settings-run").click()
+    const card = page.getByTestId("dispatch-ATUALIZAR_LISTA")
+    await expect(card).toHaveAttribute("data-status", "CONCLUIDO", { timeout: 30_000 })
+    const updated = page.getByTestId("today-list-updated")
+    await expect(updated).toContainText("foco: analista em Belo Horizonte", { timeout: 15_000 })
+    await expect(updated).toContainText("faltaram 4 no foco")
+    await expect(page.getByTestId("next-move")).toHaveAttribute("data-job-id", "fake-1004")
+    await expect(page.getByTestId("queue-list")).toHaveCount(0)
   })
 
   test("hoje: vaga fixada fica na fila fora da regra, com o selo, e sai com Tirar da fila", async ({ page }) => {

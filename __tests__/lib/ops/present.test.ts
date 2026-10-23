@@ -3,6 +3,8 @@ import {
   ACTION_META,
   listUpdatedText,
   todayListLine,
+  todayReplaceText,
+  TODAY_REPLACE_LABEL,
   searchStopText,
   todayOutReason,
   CV_GENERATE_LOCAL_DESCRIPTION,
@@ -828,6 +830,14 @@ describe("Atualizar lista (2026-10-16)", () => {
     expect(
       todayListLine({ ...v2, focus: { cargo: "analista", lugar: "" }, missing_reason: "SEM_ELEGIVEIS" }, now)
     ).toBe(`${at} · foco: analista · faltaram 3 para completar 5`)
+  })
+
+  it("words every 'Quantas trocar' option job-search accepts", () => {
+    expect(Object.keys(TODAY_REPLACE_LABEL).sort()).toEqual(["1", "2", "3", "AVALIAR", "TODAS"])
+    expect(todayReplaceText("AVALIAR")).toContain("Reordena")
+    expect(todayReplaceText("1")).toContain("a de menor posição")
+    expect(todayReplaceText("3")).toContain("as 3 de menor posição")
+    expect(todayReplaceText("TODAS")).toContain("não estavam nela")
   })
 
   it("search and list stops say what fixes them", () => {
