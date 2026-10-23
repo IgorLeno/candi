@@ -231,8 +231,8 @@ export default async function HojePage() {
       {uncertain && <UncertainSubmitAlert group={uncertain} />}
 
       {next && (
-        <section aria-labelledby="proxima-candidatura">
-          <ShelfTitle id="proxima-candidatura">Próxima candidatura</ShelfTitle>
+        <section aria-labelledby="candidatura-atual">
+          <ShelfTitle id="candidatura-atual">Candidatura atual</ShelfTitle>
           <NextMoveCard
             item={next}
             pinned={pinned.includes(next.jobId)}

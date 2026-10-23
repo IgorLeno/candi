@@ -31,7 +31,7 @@ const themeInitializationScript = `
 
 export const metadata: Metadata = {
   title: "Candi",
-  description: "Central do candidato do job-search: o que está aberto e qual é a próxima candidatura",
+  description: "Central do candidato do job-search: o que está aberto e qual é a candidatura atual",
   generator: "v0.app",
   icons: {
     icon: [
