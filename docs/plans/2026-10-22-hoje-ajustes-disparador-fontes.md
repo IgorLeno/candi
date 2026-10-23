@@ -213,3 +213,65 @@ Objetivo do usuário: "varredura geral, umas duas vagas de cada", sem prioridade
 - Portais novos sem leitor de disponibilidade: opção (a), entram na Hoje com selo "aberta? confirmar".
 - Vaga remota conta no foco de Lugar.
 - Disparador a qualquer hora.
+
+## Plano — frente A (cada item = um commit; teste vermelho antes da implementação)
+
+Base lida em 2026-10-22: job-search main 2959f6e (working tree com 5 arquivos alheios, fora dos commits); painel
+main 29c9f28. `run_today` é uma função só (dispatch.py ~2843); `job_discovery.search(searches=…)` já aceita buscas
+injetadas (`{"linkedin": [(keywords, location)], "gupy": [termo]}`); `todayView` (present.ts) só conhece `/1`.
+
+Decisão de execução (usuário confirmou 2026-10-22): **o bloco "Atualização automática" não aparece na janela na frente A**.
+O `today-settings.json` já guarda `auto` (padrão desligada, 12 h), mas sem o disparador (frente B) uma chave na tela
+prometeria algo que não roda. Entra na tela junto com o `today-tick`.
+
+### job-search
+
+- [ ] J1 `feat(dispatch): keep the Hoje settings` — `$STATE/today-settings.json` (`today-settings/1`, 0600, atômico,
+      ausente/fora do contrato = padrão); `normalize_focus` (NFKC, sem Cc/Cf, 0–80 por campo, sem `[painel:`,
+      marcador ou aprovação → `FOCUS_INVALID`); `dispatch.py today-settings` e `today-settings set --replace … [--auto
+      on|off --every N] [--focus-stdin]` (foco JSON pela stdin, nunca argv). Testes: padrão, cada guarda, arquivo
+      0600, `main(argv)` com o argv exato do painel + stdin.
+- [ ] J2 `feat(dispatch): pin a job on the Hoje list` — `today-pin`/`today-unpin <job_id>`: lê a planilha (só
+      leitura), recusa `JOB_NOT_FOUND`/`JOB_GONE`/`PIN_FULL`, grava `pinned` no settings e reescreve a lista na hora
+      como `today-list/2` (fixada no topo, `pinned: true`; desfixada vai a `left` com `DESFIXADA`). `today_list()`
+      devolve `/1` e `/2`. Testes com `read` falso; lock contra corrida com o `run_today`.
+- [ ] J3 `feat(dispatch): focus and replace in the Hoje selection` — seleção extraída para uma função pura
+      (`_today_pick`): fixadas primeiro (sem filtro nem troca, saem só se enviada/retirada/descartada); filtro de foco
+      (cargo contém; lugar contém em município/UF do dossier ou `local`, ou modalidade REMOTO/"remoto"; sem acento e
+      sem caixa); `replace` AVALIAR/1/2/3/TODAS; motivos `TROCADA`, `FORA_DO_FOCO`; `missing_reason` FOCO |
+      SEM_ELEGIVEIS; `focus` gravado na lista. Testes por modo, com e sem fixadas, lista anterior `/1`.
+- [ ] J4 `feat(dispatch): search with the Hoje focus` — `_focus_searches(settings, base)`: LinkedIn cargo × lugar
+      (ou × locations do arquivo / famílias × lugar) + busca remota por cargo (`f_WT=2`, "Brasil"; tupla ganha o
+      campo opcional `remote`); Gupy termo = cargo e lugar filtra os cards pela localização (remoto passa). Prefilter
+      e teto iguais. Com foco, as SELECIONADA sem análise do host no foco vão primeiro ao ChatGPT. Testes da URL
+      montada (sem rede) e da ordem.
+- [ ] J5 `docs(dispatch): Hoje settings, focus and pinned jobs` — docstring do dispatch.py e
+      `methodology/job-analysis.md` (shortlist com foco e fixadas).
+
+### Painel
+
+- [ ] P1 `feat(ops): read and save the Hoje settings` — `lib/ops/schema.ts` (settings, `today-list/2`, motivos
+      novos), `lib/ops/today-settings.ts` (espelho das guardas, só UX), textos de recusa em `present.ts`, server
+      actions `getTodaySettings`/`saveTodaySettings`/`pinTodayJob`/`unpinTodayJob` (`getAllowedSession()` primeiro;
+      foco pela stdin), fake do e2e com os comandos novos. Vitest: schema, guardas, argv exato.
+- [ ] P2 `feat(today): pinned jobs in the queue` — `todayView` aceita `/2`: fixada fica na fila mesmo fora de
+      `todayQueue()` (some só se enviada/retirada/descartada/incerta); card fixado com selo "Fixada" e "Tirar da
+      fila"; linha da Hoje com foco e "faltaram N no foco". Vitest de `todayView` `/1` e `/2`.
+- [ ] P3 `feat(today): settings window for Atualizar lista` — `TodayListControls` abre a janela: Foco (Cargo,
+      Lugar), Quantas trocar, rodapé "Salvar" e "Salvar e atualizar agora"; textos da janela inteira revisados.
+      E2E: abrir → salvar → reabrir mostra o salvo; salvar e atualizar dispara.
+- [ ] P4 `feat(today): add a specific job from the settings window` — busca local (≥ 2 caracteres, debounce, até 8,
+      empresa/cargo/job_id) sobre a lista enxuta que a página passa; "Pôr na fila"/"Na fila"; sem resultado,
+      "Buscar fora da planilha" → `startIntake` com o texto; cards de LOCALIZAR_VAGA/ANALISAR_INDICADA também na
+      Hoje; depois do registro, o card oferece "Pôr na fila". E2E: fixar → topo sem reload; buscar fora abre o fluxo.
+- [ ] P5 `feat(today): call the first job the current application` — "Próxima candidatura" → "Candidatura atual",
+      id `candidatura-atual`, testes.
+- [ ] P6 `docs: Hoje settings window` — CLAUDE.md do painel.
+
+### Verificação
+
+- [ ] job-search: `python3 scripts/validate_job_search.py`; `python3 -m unittest discover -s scripts -p 'test_*.py'`;
+      `python3 -m pytest -q hermes/browsers` (comparar com a base, que tem falhas antigas); `ruff check` nos tocados.
+- [ ] Painel: `pnpm exec tsc --noEmit`, eslint, prettier, `pnpm exec vitest run`, e2e ops.spec + dashboard.spec
+      (porta alternativa se a 3000 estiver ocupada).
+- [ ] Rodada real com foco "Belo Horizonte": só com OK do usuário.
