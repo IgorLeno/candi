@@ -132,6 +132,12 @@ const REFUSAL_TEXT: Record<string, string> = {
   LETTER_DOC_CHANGED: "A carta mudou depois que você abriu o editor. Abra de novo.",
   INPUT_INVALID: "Pedido inválido.",
   JOB_NOT_FOUND: "Vaga não encontrada na planilha.",
+  // Hoje settings and pinned jobs (2026-10-22).
+  FOCUS_INVALID:
+    "Cargo e Lugar aceitam até 80 caracteres de texto simples, sem marcador de bot nem código de aprovação.",
+  SETTINGS_INVALID: "Ajuste fora das opções. Reabra a janela e tente de novo.",
+  JOB_GONE: "Essa vaga já foi enviada, retirada ou descartada: não entra mais na fila.",
+  PIN_FULL: "Já há 5 vagas fixadas na fila. Tire uma da fila antes de pôr outra.",
   GATEWAY_NOT_RUNNING: "O gateway Hermes está parado ou sem inferência. Inicie-o ou use o Grok.",
   DISPATCH_ACTIVE: "Já existe um disparo igual em andamento.",
   APPLICATION_DISPATCH_ACTIVE:
@@ -789,6 +795,9 @@ const TODAY_OUT_TEXT: Record<string, string> = {
   SEM_TEXTO: "O job-search não achou o texto da vaga para mandar ao ChatGPT.",
   INTERESSE_MENOR: "Selecionada e aberta, mas com interesse menor que as 5 da lista.",
   NOVA: "Selecionada e aberta depois da última atualização da lista.",
+  TROCADA: "Trocada por uma vaga nova, pelo ajuste “Quantas trocar”.",
+  FORA_DO_FOCO: "Fora do foco escolhido (cargo ou lugar).",
+  DESFIXADA: "Você tirou da fila com “Tirar da fila”.",
 }
 
 export function todayOutReason(motivo: string): string {

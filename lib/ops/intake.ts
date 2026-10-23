@@ -8,7 +8,7 @@ export const INTAKE_MAX = 1500
 export const INTAKE_COMPLEMENT = "\n\nComplemento:\n"
 
 /** Same as job-search `dispatch.APPROVAL_RE` (an approval is `ok|não` + 8 hex typed in the bot chat). */
-const APPROVAL_RE = /\b(ok|n[aã]o)\s+[0-9a-f]{8}\b/i
+export const APPROVAL_RE = /\b(ok|n[aã]o)\s+[0-9a-f]{8}\b/i
 
 /** job-search `dispatch.MARKERS`: contract markers the bots report; a request must not carry them. */
 export const CONTRACT_MARKERS = [
@@ -29,7 +29,7 @@ export const CONTRACT_MARKERS = [
   "WRITESET_COMPLETE",
   "WAITING",
 ] as const
-const MARKER_RE = new RegExp(`\\b(${CONTRACT_MARKERS.join("|")})\\b`)
+export const MARKER_RE = new RegExp(`\\b(${CONTRACT_MARKERS.join("|")})\\b`)
 
 export type IntakeCheck =
   | { ok: true; text: string }

@@ -9,6 +9,7 @@ import { cvFileInfo, letterFileInfo } from "@/lib/ops/cv-file"
 import { checkManualDoc, payload as manualPayload } from "@/lib/ops/cv-manual"
 import { runDispatcher, type RunResult } from "@/lib/ops/dispatcher"
 import { INTAKE_MAX, normalizeIntake } from "@/lib/ops/intake"
+import { normalizeFocus } from "@/lib/ops/today-settings"
 import {
   ANALYZE_ACTION,
   CV_RESUME_OPTIONS,
@@ -21,6 +22,7 @@ import {
   LETTER_EDIT_ACTION,
   PLATFORMS,
   TODAY_ACTION,
+  TODAY_REPLACE,
   SENT_EVIDENCE,
   attentionResultSchema,
   confirmOpenResultSchema,
@@ -37,6 +39,8 @@ import {
   openBrowserResultSchema,
   recordSentResultSchema,
   startInputSchema,
+  todayPinResultSchema,
+  todaySettingsResultSchema,
   type ConfirmOpenResult,
   type CvFileInfo,
   type CvDoc,
@@ -49,6 +53,8 @@ import {
   type MarkClosedResult,
   type OpenBrowserResult,
   type RecordSentResult,
+  type TodayPinResult,
+  type TodaySettingsView,
 } from "@/lib/ops/schema"
 
 // Bot dispatch from the panel. Server Functions are not covered by `proxy.ts`: every action checks the
@@ -561,6 +567,65 @@ export async function refreshTodayList(): Promise<ActionResult<Dispatch>> {
   await requireSession()
   const result = await runDispatcher(["start", TODAY_ACTION, "--platform", "hermes"], oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
+}
+
+/** "Atualizar lista" settings (plan 2026-10-22): job-search keeps them in its own state (`dispatch.py today-settings`). */
+export async function getTodaySettings(): Promise<ActionResult<TodaySettingsView>> {
+  await requireSession()
+  const result = await runDispatcher(["today-settings"], todaySettingsResultSchema)
+  return result.ok
+    ? { ok: true, value: { settings: result.value.settings, next_run_at: result.value.next_run_at } }
+    : { ok: false, code: result.code }
+}
+
+// Front A saves only the focus and how many to replace; the automatic refresh comes with front B.
+const todaySettingsInputSchema = z
+  .object({
+    replace: z.enum(TODAY_REPLACE),
+    focus: z.object({ cargo: z.string().max(400), lugar: z.string().max(400) }).strict(),
+  })
+  .strict()
+
+/**
+ * "Salvar" in the "Atualizar lista" window. The focus (cargo, lugar) is the fifth free text the panel sends: guarded
+ * here and again by job-search, sent over stdin as JSON, never argv. job-search only filters text and builds searches
+ * with it; it never reaches the ChatGPT as an instruction.
+ */
+export async function saveTodaySettings(input: unknown): Promise<ActionResult<TodaySettingsView>> {
+  await requireSession()
+  const parsed = todaySettingsInputSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
+  const focus = normalizeFocus(parsed.data.focus)
+  if (!focus.ok) return { ok: false, code: focus.code }
+  const args = ["today-settings", "set", "--replace", parsed.data.replace, "--focus-stdin"]
+  const result = await runDispatcher(args, todaySettingsResultSchema, undefined, { stdin: JSON.stringify(focus.focus) })
+  return result.ok
+    ? { ok: true, value: { settings: result.value.settings, next_run_at: result.value.next_run_at } }
+    : { ok: false, code: result.code }
+}
+
+/**
+ * "Pôr na fila": job-search pins a job of the Sheet on the Hoje list at once (kept until sent, discarded or taken out,
+ * up to 5) without asking for SELECIONADA: the user chose it. Only the job_id leaves the panel; job-search reads the
+ * Sheet itself (the snapshot here may not have a job registered a moment ago).
+ */
+export async function pinTodayJob(jobId: unknown): Promise<ActionResult<TodayPinResult>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["today-pin", jobId], todayPinResultSchema)
+  return result.ok
+    ? { ok: true, value: { today: result.value.today, settings: result.value.settings } }
+    : { ok: false, code: result.code }
+}
+
+/** "Tirar da fila": job-search unpins the job; it goes to "Fora da lista" as DESFIXADA. Nothing changes in the Sheet. */
+export async function unpinTodayJob(jobId: unknown): Promise<ActionResult<TodayPinResult>> {
+  await requireSession()
+  if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
+  const result = await runDispatcher(["today-unpin", jobId], todayPinResultSchema)
+  return result.ok
+    ? { ok: true, value: { today: result.value.today, settings: result.value.settings } }
+    : { ok: false, code: result.code }
 }
 
 /**

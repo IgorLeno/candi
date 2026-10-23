@@ -32,7 +32,10 @@ render → letter (fake-1002 stops with one ChatGPT doubt and ready answers; `re
 `letter-doc` answer once it finished; EDITAR_CARTA `--manual-stdin` (letter-manual/1, LETTER_DOC_CHANGED on another sha)
 finishes, `--request-stdin` stops in LETTER_PENDING with a before/after proposal until `apply-letter --decision
 approve|reject`; `list` shows `job.letter` and `job.letter_hint` (fake-1001). `open-browser clouddesign|application|portal` opens nothing and answers already_open false. ATUALIZAR_LISTA (Hermes,
-host) moves three stages per poll and, at the end, writes today-list.json, which `today` reads. BUSCAR_VAGAS on Hermes
+host) moves three stages per poll and, at the end, writes today-list.json, which `today` reads. `today-settings [set
+--replace X --focus-stdin]` keeps the Hoje settings in today-settings.json (FOCUS_INVALID like job-search); `today-pin`/
+`today-unpin <job_id>` rewrite the list at once as today-list/2 (fake-1006/fake-1009 → JOB_GONE, an id outside the
+fixture and fake-9002 → JOB_NOT_FOUND, a sixth pin → PIN_FULL). BUSCAR_VAGAS on Hermes
 runs on the host (it never holds the Lince). `attention` lists, read-only,
 the newest record per job+action that runs, waits on the user or holds an unregistered writeset. State lives in $JOB_SEARCH_BROWSERS_STATE/fake-dispatch.json.
 """
@@ -79,7 +82,20 @@ TODAY_LIST = {"schema": "today-list/1", "dispatch_id": None, "updated_at": None,
               "left": [{"job_id": "fake-1002", "motivo": "SEM_ANALISE"},
                        {"job_id": "fake-1008", "motivo": "A_CONFIRMAR"}],
               "missing": 2}
-TODAY_SUMMARY = {"items": 3, "missing": 2, "analysed": 2, "failed": 0, "changes": 1, "written": True}
+TODAY_SUMMARY = {"items": 3, "missing": 2, "analysed": 2, "failed": 0, "changes": 1, "written": True, "pinned": 0}
+# Hoje settings (plano 2026-10-22, frente A): job-search keeps them in its state; the panel never writes the list.
+TODAY_SETTINGS_FILE = STATE.parent / "today-settings.json"
+TODAY_SETTINGS = {"schema": "today-settings/1", "auto": {"enabled": False, "every_hours": 12},
+                  "focus": {"cargo": "", "lugar": ""}, "replace": "AVALIAR", "pinned": [], "updated_at": None}
+TODAY_REPLACE = ("AVALIAR", "1", "2", "3", "TODAS")
+# The Sheet the fake "reads" for a pin: status_candidatura and interesse of the fixture rows. fake-9002 (the specific
+# job) counts as registered once its writeset was registered, like on the real Sheet.
+SHEET_ROWS = {"fake-1001": ("EM PREPARAÇÃO", "MUITO_ALTO"), "fake-1002": ("NÃO INICIADA", "MUITO_ALTO"),
+              "fake-1003": ("PRONTA PARA REVISÃO", "BAIXO"), "fake-1004": ("NÃO INICIADA", "MUITO_ALTO"),
+              "fake-1005": ("NÃO INICIADA", ""), "fake-1006": ("ENVIADA", "ALTO"),
+              "fake-1007": ("EM PREPARAÇÃO", "NORMAL"), "fake-1008": ("NÃO INICIADA", "NORMAL"),
+              "fake-1009": ("RETIRADA", "NORMAL"), "fake-1010": ("NÃO INICIADA", "ALTO"),
+              "fake-0999": ("NÃO INICIADA", "ALTO")}
 LETTER_ACTIONS = ("GERAR_CARTA", "EDITAR_CARTA")
 # Carta de apresentação (plano 2026-10-15): o anúncio de fake-1001 menciona carta (letter_hint).
 LETTER_HINT_JOBS = ("fake-1001",)
@@ -548,6 +564,47 @@ def manual_diff(old, new):
     changed = [p for p, t in after if old_map.get(p) != t] + [p for p, _ in before if p not in new_map]
     order = [p for p, _ in after if p in old_map] != [p for p, _ in before if p in new_map]
     return changed + (["ordem"] if order else [])
+
+
+def today_settings():
+    try:
+        return json.loads(TODAY_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return json.loads(json.dumps(TODAY_SETTINGS))
+
+
+def write_today_settings(settings):
+    TODAY_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    TODAY_SETTINGS_FILE.write_text(json.dumps(settings), encoding="utf-8")
+
+
+def read_today():
+    try:
+        return json.loads(TODAY_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def relist_pinned(pinned, interest, out_reason):
+    """Like job-search's _relist_pinned: pinned on top, then the rest of the previous list; who does not fit leaves as
+    TROCADA. Time and dispatch stay those of the last refresh (a pin before any refresh has none)."""
+    prev = read_today() or {"updated_at": now(), "dispatch_id": None, "items": [], "left": []}
+    level = {i["job_id"]: i.get("interesse") or "" for i in prev["items"]}
+    items = [{"job_id": j, "interesse": level.get(j) or interest.get(j, ""), "pinned": True} for j in pinned]
+    rest = [{"job_id": i["job_id"], "interesse": i.get("interesse") or "", "pinned": False}
+            for i in prev["items"] if i["job_id"] not in pinned and i["job_id"] not in out_reason]
+    room = max(5 - len(items), 0)
+    items += rest[:room]
+    reasons = {x["job_id"]: x["motivo"] for x in prev["left"]}
+    reasons.update({i["job_id"]: "TROCADA" for i in rest[room:]})
+    reasons.update(out_reason)
+    listed = {i["job_id"] for i in items}
+    data = {"schema": "today-list/2", "updated_at": prev["updated_at"], "dispatch_id": prev.get("dispatch_id"),
+            "items": items, "left": [{"job_id": j, "motivo": m} for j, m in reasons.items() if j not in listed],
+            "missing": 5 - len(items), "focus": prev.get("focus"), "missing_reason": prev.get("missing_reason")}
+    TODAY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    TODAY_FILE.write_text(json.dumps(data), encoding="utf-8")
+    return data
 
 
 def main(argv):
@@ -1122,6 +1179,55 @@ def main(argv):
                 return 0
         print(json.dumps({"ok": False, "code": "DISPATCH_NOT_FOUND", "detail": ""}))
         return 1
+    if cmd == "today-settings":
+        settings = today_settings()
+        if argv[1:2] == ["set"]:
+            replace = flag(argv, "--replace")
+            if replace is not None and replace not in TODAY_REPLACE:
+                return refuse("SETTINGS_INVALID")
+            if "--focus-stdin" in argv:
+                try:
+                    focus = json.loads(sys.stdin.read(4097))
+                except ValueError:
+                    return refuse("FOCUS_INVALID")
+                if not isinstance(focus, dict) or set(focus) != {"cargo", "lugar"} or any(
+                        not isinstance(v, str) or len(v) > 80 or APPROVAL_RE.search(v) or "[painel:" in v.lower()
+                        or MARKERS_RE.search(v) for v in focus.values()):
+                    return refuse("FOCUS_INVALID")
+                settings["focus"] = {k: " ".join(v.split()) for k, v in focus.items()}
+            if replace is not None:
+                settings["replace"] = replace
+            settings["updated_at"] = now()
+            write_today_settings(settings)
+        elif argv[1:]:
+            return refuse("SETTINGS_INVALID")
+        print(json.dumps({"ok": True, "settings": settings, "next_run_at": None}))
+        return 0
+    if cmd in ("today-pin", "today-unpin"):
+        job_id = argv[1] if len(argv) > 1 else ""
+        settings = today_settings()
+        if cmd == "today-pin":
+            analyses = {r["id"] for r in recs if r["action"] == "ANALISAR_INDICADA"}
+            registered = any(r["action"] == REGISTER and r["status"] == "CONCLUIDO" and r.get("source_id") in analyses
+                             for r in recs)
+            row = SHEET_ROWS.get(job_id) or (("NÃO INICIADA", "") if job_id == "fake-9002" and registered else None)
+            if row is None:
+                return refuse("JOB_NOT_FOUND")
+            if row[0] in ("ENVIADA", "RETIRADA", "ENVIO INCERTO"):
+                return refuse("JOB_GONE")
+            if job_id not in settings["pinned"]:
+                if len(settings["pinned"]) >= 5:
+                    return refuse("PIN_FULL")
+                settings["pinned"].append(job_id)
+            today = relist_pinned(settings["pinned"], {job_id: row[1]}, {})
+        elif job_id in settings["pinned"]:
+            settings["pinned"].remove(job_id)
+            today = relist_pinned(settings["pinned"], {}, {job_id: "DESFIXADA"})
+        else:
+            today = read_today()
+        write_today_settings(settings)
+        print(json.dumps({"ok": True, "today": today, "settings": settings}))
+        return 0
     if cmd == "today":
         try:
             today = json.loads(TODAY_FILE.read_text(encoding="utf-8"))

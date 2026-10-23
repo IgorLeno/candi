@@ -345,6 +345,8 @@ const todaySummarySchema = z.object({
   failed: z.number().int().nonnegative(),
   changes: z.number().int().nonnegative(),
   written: z.boolean(),
+  /** Pinned jobs at the top of the list (since 2026-10-22); older records omit it. */
+  pinned: z.number().int().nonnegative().optional(),
 })
 
 const progressSchema = z.object({
@@ -581,30 +583,105 @@ export const openBrowserResultSchema = z.object({
 })
 export type OpenBrowserResult = z.infer<typeof openBrowserResultSchema>["open_browser"]
 
-/** Why a job left the Hoje list (job-search `run_today`); `REANALISADA_<status_analise>` carries the new verdict. */
-export const TODAY_LEFT_REASONS = ["ENCERRADA", "A_CONFIRMAR", "SEM_ANALISE", "SEM_TEXTO", "INTERESSE_MENOR"] as const
+/**
+ * Why a job left the Hoje list (job-search `run_today`); `REANALISADA_<status_analise>` carries the new verdict. Since
+ * 2026-10-22: TROCADA (out by "Quantas trocar"), FORA_DO_FOCO and DESFIXADA ("Tirar da fila").
+ */
+export const TODAY_LEFT_REASONS = [
+  "ENCERRADA",
+  "A_CONFIRMAR",
+  "SEM_ANALISE",
+  "SEM_TEXTO",
+  "INTERESSE_MENOR",
+  "TROCADA",
+  "FORA_DO_FOCO",
+  "DESFIXADA",
+] as const
 const todayLeftReasonSchema = z.union([
   z.enum(TODAY_LEFT_REASONS),
   z.string().regex(/^REANALISADA_[A-ZÃÇÕÁÉÍÓÚ ]{1,40}$/),
 ])
+const todayLeftSchema = z
+  .array(z.object({ job_id: z.string().regex(JOB_ID_RE), motivo: todayLeftReasonSchema }))
+  .max(200)
+
+/** "Atualizar lista" settings (plan 2026-10-22): how many jobs a refresh replaces; AVALIAR = re-rank all (default). */
+export const TODAY_REPLACE = ["AVALIAR", "1", "2", "3", "TODAS"] as const
+export type TodayReplace = (typeof TODAY_REPLACE)[number]
+export const TODAY_PIN_MAX = 5
+// job-search keeps 80 code points per field; an astral character counts two here, so the bound is loose on purpose.
+const focusSchema = z.object({ cargo: z.string().max(160), lugar: z.string().max(160) }).strict()
+export type TodayFocus = z.infer<typeof focusSchema>
 
 /**
- * `dispatch.py today`: the Hoje list of the last "Atualizar lista" (`today-list/1`), or null before the first one
- * (the panel keeps the old rule, SELECIONADA + ABERTA from the Sheet). Job ids and codes only: the jobs come from the
- * Sheet snapshot.
+ * `dispatch.py today-settings` (`today-settings/1`, job-search's own state): the focus (cargo, lugar), how many to
+ * replace, the pinned jobs and the automatic refresh (front B). Absent or broken file = job-search's defaults.
  */
-export const todayListSchema = z.object({
+export const todaySettingsSchema = z.object({
+  schema: z.literal("today-settings/1"),
+  auto: z.object({
+    enabled: z.boolean(),
+    every_hours: z.union([z.literal(3), z.literal(6), z.literal(12), z.literal(24)]),
+  }),
+  focus: focusSchema,
+  replace: z.enum(TODAY_REPLACE),
+  pinned: z.array(z.string().regex(JOB_ID_RE)).max(TODAY_PIN_MAX),
+  updated_at: z.string().max(40).nullable(),
+})
+export type TodaySettings = z.infer<typeof todaySettingsSchema>
+
+export const todaySettingsResultSchema = z.object({
+  ok: z.literal(true),
+  settings: todaySettingsSchema,
+  next_run_at: z.string().max(40).nullable(),
+})
+export type TodaySettingsView = Omit<z.infer<typeof todaySettingsResultSchema>, "ok">
+
+const todayListV1Schema = z.object({
   schema: z.literal("today-list/1"),
   updated_at: z.string().max(40),
   dispatch_id: z.string().regex(DISPATCH_ID_RE),
   items: z.array(z.object({ job_id: z.string().regex(JOB_ID_RE), interesse: z.string().max(40) })).max(5),
-  left: z.array(z.object({ job_id: z.string().regex(JOB_ID_RE), motivo: todayLeftReasonSchema })).max(200),
+  left: todayLeftSchema,
   missing: z.number().int().min(0).max(5),
 })
+
+/**
+ * `today-list/2` (2026-10-22): pinned jobs first (`pinned`), the focus the refresh used and why the list is short
+ * (`FOCO`: not enough jobs inside the focus; `SEM_ELEGIVEIS`: not enough jobs at all). A pin before any refresh writes a
+ * list with no dispatch behind it, and a pinned job may have no interest yet.
+ */
+const todayListV2Schema = todayListV1Schema.extend({
+  schema: z.literal("today-list/2"),
+  dispatch_id: z.string().regex(DISPATCH_ID_RE).nullable(),
+  items: z
+    .array(z.object({ job_id: z.string().regex(JOB_ID_RE), interesse: z.string().max(40), pinned: z.boolean() }))
+    .max(5),
+  focus: focusSchema.nullable(),
+  missing_reason: z.enum(["FOCO", "SEM_ELEGIVEIS"]).nullable(),
+})
+
+/**
+ * `dispatch.py today`: the Hoje list of the last "Atualizar lista" (`today-list/1` or `/2`), or null before the first
+ * one (the panel keeps the old rule, SELECIONADA + ABERTA from the Sheet). Job ids and codes only: the jobs come from
+ * the Sheet snapshot.
+ */
+export const todayListSchema = z.discriminatedUnion("schema", [todayListV1Schema, todayListV2Schema])
 export type TodayList = z.infer<typeof todayListSchema>
 export type TodayLeftReason = TodayList["left"][number]["motivo"]
 
 export const todayResultSchema = z.object({ ok: z.literal(true), today: todayListSchema.nullable() })
+
+/**
+ * `dispatch.py today-pin|today-unpin <job_id>`: job-search rewrote the list at once (pinned on top, an unpinned job out
+ * as DESFIXADA) and answers it with the settings. Unpinning a job that was not pinned may answer no list.
+ */
+export const todayPinResultSchema = z.object({
+  ok: z.literal(true),
+  today: todayListSchema.nullable(),
+  settings: todaySettingsSchema,
+})
+export type TodayPinResult = Omit<z.infer<typeof todayPinResultSchema>, "ok">
 
 const rowCount = z.number().int().nonnegative()
 
