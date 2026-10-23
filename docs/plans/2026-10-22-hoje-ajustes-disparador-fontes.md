@@ -226,26 +226,26 @@ prometeria algo que não roda. Entra na tela junto com o `today-tick`.
 
 ### job-search
 
-- [ ] J1 `feat(dispatch): keep the Hoje settings` — `$STATE/today-settings.json` (`today-settings/1`, 0600, atômico,
+- [x] J1 `feat(dispatch): keep the Hoje settings` — `$STATE/today-settings.json` (`today-settings/1`, 0600, atômico,
       ausente/fora do contrato = padrão); `normalize_focus` (NFKC, sem Cc/Cf, 0–80 por campo, sem `[painel:`,
       marcador ou aprovação → `FOCUS_INVALID`); `dispatch.py today-settings` e `today-settings set --replace … [--auto
       on|off --every N] [--focus-stdin]` (foco JSON pela stdin, nunca argv). Testes: padrão, cada guarda, arquivo
       0600, `main(argv)` com o argv exato do painel + stdin.
-- [ ] J2 `feat(dispatch): pin a job on the Hoje list` — `today-pin`/`today-unpin <job_id>`: lê a planilha (só
+- [x] J2 `feat(dispatch): pin a job on the Hoje list` — `today-pin`/`today-unpin <job_id>`: lê a planilha (só
       leitura), recusa `JOB_NOT_FOUND`/`JOB_GONE`/`PIN_FULL`, grava `pinned` no settings e reescreve a lista na hora
       como `today-list/2` (fixada no topo, `pinned: true`; desfixada vai a `left` com `DESFIXADA`). `today_list()`
       devolve `/1` e `/2`. Testes com `read` falso; lock contra corrida com o `run_today`.
-- [ ] J3 `feat(dispatch): focus and replace in the Hoje selection` — seleção extraída para uma função pura
+- [x] J3 `feat(dispatch): focus and replace in the Hoje selection` — seleção extraída para uma função pura
       (`_today_pick`): fixadas primeiro (sem filtro nem troca, saem só se enviada/retirada/descartada); filtro de foco
       (cargo contém; lugar contém em município/UF do dossier ou `local`, ou modalidade REMOTO/"remoto"; sem acento e
       sem caixa); `replace` AVALIAR/1/2/3/TODAS; motivos `TROCADA`, `FORA_DO_FOCO`; `missing_reason` FOCO |
       SEM_ELEGIVEIS; `focus` gravado na lista. Testes por modo, com e sem fixadas, lista anterior `/1`.
-- [ ] J4 `feat(dispatch): search with the Hoje focus` — `_focus_searches(settings, base)`: LinkedIn cargo × lugar
+- [x] J4 `feat(dispatch): search with the Hoje focus` — `_focus_searches(settings, base)`: LinkedIn cargo × lugar
       (ou × locations do arquivo / famílias × lugar) + busca remota por cargo (`f_WT=2`, "Brasil"; tupla ganha o
       campo opcional `remote`); Gupy termo = cargo e lugar filtra os cards pela localização (remoto passa). Prefilter
       e teto iguais. Com foco, as SELECIONADA sem análise do host no foco vão primeiro ao ChatGPT. Testes da URL
       montada (sem rede) e da ordem.
-- [ ] J5 `docs(dispatch): Hoje settings, focus and pinned jobs` — docstring do dispatch.py e
+- [x] J5 `docs(dispatch): Hoje settings, focus and pinned jobs` — docstring do dispatch.py e
       `methodology/job-analysis.md` (shortlist com foco e fixadas).
 
 ### Painel
@@ -275,3 +275,15 @@ prometeria algo que não roda. Entra na tela junto com o `today-tick`.
 - [ ] Painel: `pnpm exec tsc --noEmit`, eslint, prettier, `pnpm exec vitest run`, e2e ops.spec + dashboard.spec
       (porta alternativa se a 3000 estiver ocupada).
 - [ ] Rodada real com foco "Belo Horizonte": só com OK do usuário.
+
+### Execução — job-search (2026-10-22/23)
+
+- Commits (main, sem push): 2beb2d5 J1, 4ec9853 J2, 88325e7 J3, 4368dbb J4, 337469e J5.
+- Gates: `validate_job_search.py` OK; unittest de `scripts` 683 OK; `pytest hermes/browsers` 491 passed + as mesmas
+  12 falhas antigas da base (474 passed antes; lista de falhas idêntica); `ruff check` limpo nos arquivos tocados (o
+  `hashlib` sem uso em `test_dispatch.py` já existia).
+- Desvios do desenho: a planilha não tem coluna de local, então o Lugar vale pelo município/UF/modalidade do dossier
+  (vaga sem dossier só passa pelo filtro de cargo na ordem do ChatGPT). Fixar antes de qualquer Atualizar cria uma
+  lista só com as fixadas (com o horário do momento). Card da Gupy fora do lugar é descartado em silêncio na busca com
+  foco (não vai para "Ficaram de fora").
+- Não verificado: rodada real (precisa do OK do usuário); nada no painel ainda (P1–P6).
