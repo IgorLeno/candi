@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   ACTION_META,
   listUpdatedText,
+  todayListLine,
   searchStopText,
   todayOutReason,
   CV_GENERATE_LOCAL_DESCRIPTION,
@@ -802,6 +803,31 @@ describe("Atualizar lista (2026-10-16)", () => {
     expect(listUpdatedText("2026-10-16T17:10:00Z", now)).toBe("Lista atualizada em 16/10 às 14:10 · há 30 min")
     expect(listUpdatedText("2026-10-13T17:40:00Z", now)).toBe("Lista atualizada em 13/10 às 14:40 · há 3 dias")
     expect(listUpdatedText("lixo", now)).toBe("Lista atualizada (horário ilegível)")
+  })
+
+  it("adds the focus and the gap to the list line (today-list/2)", () => {
+    const now = new Date("2026-10-22T19:30:00Z")
+    const base = {
+      schema: "today-list/1" as const,
+      updated_at: "2026-10-22T17:30:00Z",
+      dispatch_id: "d-20261022T173000Z-abcdef",
+      items: [],
+      left: [],
+      missing: 0,
+    }
+    const at = "Lista atualizada em 22/10 às 14:30 · há 2 h"
+    expect(todayListLine(base, now)).toBe(at)
+    expect(todayListLine({ ...base, missing: 2 }, now)).toBe(`${at} · faltaram 2 para completar 5`)
+    const v2 = { ...base, schema: "today-list/2" as const, missing: 3, focus: null, missing_reason: null }
+    expect(
+      todayListLine({ ...v2, focus: { cargo: "analista", lugar: "Belo Horizonte" }, missing_reason: "FOCO" }, now)
+    ).toBe(`${at} · foco: analista em Belo Horizonte · faltaram 3 no foco`)
+    expect(todayListLine({ ...v2, focus: { cargo: "", lugar: "Belo Horizonte" }, missing_reason: "FOCO" }, now)).toBe(
+      `${at} · foco: Belo Horizonte · faltaram 3 no foco`
+    )
+    expect(
+      todayListLine({ ...v2, focus: { cargo: "analista", lugar: "" }, missing_reason: "SEM_ELEGIVEIS" }, now)
+    ).toBe(`${at} · foco: analista · faltaram 3 para completar 5`)
   })
 
   it("search and list stops say what fixes them", () => {

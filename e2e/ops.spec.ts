@@ -290,6 +290,31 @@ test.describe("Central de operações (bots)", () => {
     await expect(page.getByTestId("dispatch-ATUALIZAR_LISTA")).toHaveCount(0)
   })
 
+  test("hoje: vaga fixada fica na fila fora da regra, com o selo, e sai com Tirar da fila", async ({ page }) => {
+    // fake-1008 is NÃO CONFIRMADA (No radar): pinned, the user's choice keeps it in the queue anyway.
+    fakeDispatch("today-pin", "fake-1004")
+    fakeDispatch("today-pin", "fake-1008")
+    await page.goto("/")
+    const next = page.getByTestId("next-move")
+    await expect(next).toHaveAttribute("data-job-id", "fake-1004")
+    await expect(next).toHaveAttribute("data-pinned", "true")
+    await expect(next.getByTestId("pinned-badge")).toHaveText("Fixada")
+    const pinned = page.getByTestId("queue-list").locator('[data-testid="job-row"][data-job-id="fake-1008"]')
+    await expect(pinned).toHaveAttribute("data-pinned", "true")
+    await expect(page.getByTestId("radar-list")).toHaveCount(0)
+    await expect(page.getByTestId("today-list-updated")).toContainText("Lista atualizada em")
+
+    await pinned.getByTestId("today-unpin").click()
+    await expect(pinned).toHaveCount(0)
+    await expect(page.getByTestId("radar-list").locator('[data-job-id="fake-1008"]')).toBeVisible()
+    const out = page.getByTestId("out-of-list")
+    await out.locator("summary").click()
+    await expect(out.locator('[data-job-id="fake-1008"]').getByTestId("out-of-list-reason")).toContainText(
+      "Tirar da fila"
+    )
+    await expect(next).toHaveAttribute("data-job-id", "fake-1004")
+  })
+
   test("vaga específica: localizar, mandar para o ChatGPT e registrar na planilha", async ({ page }) => {
     // The fake advances one stage per poll (5 s).
     test.setTimeout(90_000)

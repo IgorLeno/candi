@@ -11,6 +11,7 @@ import type {
   PersistResult,
   RecordPlatform,
   SentEvidence,
+  TodayList,
 } from "@/lib/ops/schema"
 
 // Labels and UX gating for bot dispatches. The dispatcher and the bots are the authority; nothing here
@@ -833,6 +834,22 @@ export function listUpdatedText(updatedAt: string, now: Date = new Date()): stri
           ? `há ${Math.floor(minutes / 60)} h`
           : `há ${Math.floor(minutes / (24 * 60))} ${Math.floor(minutes / (24 * 60)) === 1 ? "dia" : "dias"}`
   return `Lista atualizada em ${parts.day}/${parts.month} às ${parts.hour}:${parts.minute} · ${ago}`
+}
+
+/**
+ * The line under "Atualizar lista": when, the focus the refresh used (today-list/2) and why the list is short. With
+ * `FOCO` the list stays short on purpose: the focus filters and never fills with jobs outside it.
+ */
+export function todayListLine(list: TodayList, now: Date = new Date()): string {
+  const parts = [listUpdatedText(list.updated_at, now)]
+  const focus = list.schema === "today-list/2" ? list.focus : null
+  const terms = focus ? [focus.cargo, focus.lugar].filter(Boolean) : []
+  if (terms.length > 0) parts.push(`foco: ${terms.join(" em ")}`)
+  if (list.missing > 0) {
+    const inFocus = list.schema === "today-list/2" && list.missing_reason === "FOCO"
+    parts.push(inFocus ? `faltaram ${list.missing} no foco` : `faltaram ${list.missing} para completar 5`)
+  }
+  return parts.join(" · ")
 }
 
 /** Why a host "Cotar vagas" or "Atualizar lista" stopped for the user, and what fixes it. */

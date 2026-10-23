@@ -19,9 +19,10 @@ import { isDispatchEnabled } from "@/lib/ops/dispatcher"
 import { UncertainSubmitAlert } from "@/components/job-search/overview"
 import { DeclineJobButton } from "@/components/job-search/decline-job"
 import { JobCard, NextMoveCard, ShelfTitle, StateLegend } from "@/components/job-search/visual"
-import { canDeclineJob, listUpdatedText, todayOutReason } from "@/lib/ops/present"
+import { canDeclineJob, todayListLine, todayOutReason } from "@/lib/ops/present"
 import { readTodayList } from "@/lib/ops/today"
 import { TodayListControls } from "@/components/job-search/ops"
+import { UnpinTodayButton } from "@/components/job-search/today-pin"
 import { cn } from "@/lib/utils"
 
 // "Hoje": the action queue. Charts and data quality live in /analise.
@@ -54,27 +55,53 @@ function AttentionChip({ group }: { group: AttentionGroup }) {
   )
 }
 
-/** "Descartar vaga" where the user chooses what to apply for; only with bot dispatch enabled. */
-function declineAction(item: JobListItem, enabled: boolean): React.ReactNode {
-  if (!enabled || !canDeclineJob(item)) return undefined
-  const label = [item.empresa || "(sem empresa)", item.cargo || "(sem cargo)"].join(" · ")
-  return <DeclineJobButton jobId={item.jobId} label={label} />
+/**
+ * "Descartar vaga" where the user chooses what to apply for, and "Tirar da fila" on a job the user pinned; only with
+ * bot dispatch enabled.
+ */
+function cardActions(item: JobListItem, enabled: boolean, pinned = false): React.ReactNode {
+  if (!enabled) return undefined
+  const unpin = pinned ? <UnpinTodayButton jobId={item.jobId} /> : null
+  const decline = canDeclineJob(item) ? (
+    <DeclineJobButton
+      jobId={item.jobId}
+      label={[item.empresa || "(sem empresa)", item.cargo || "(sem cargo)"].join(" · ")}
+    />
+  ) : null
+  if (!unpin && !decline) return undefined
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      {unpin}
+      {decline}
+    </div>
+  )
 }
 
 function CardGrid({
   items,
   testId,
-  withDecline = false,
+  withActions = false,
+  pinned = [],
 }: {
   items: JobListItem[]
   testId: string
-  withDecline?: boolean
+  withActions?: boolean
+  pinned?: string[]
 }) {
   return (
     <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid={testId}>
-      {items.map((item, index) => (
-        <JobCard key={item.jobId} item={item} index={index} action={declineAction(item, withDecline)} />
-      ))}
+      {items.map((item, index) => {
+        const isPinned = pinned.includes(item.jobId)
+        return (
+          <JobCard
+            key={item.jobId}
+            item={item}
+            index={index}
+            pinned={isPinned}
+            action={cardActions(item, withActions, isPinned)}
+          />
+        )
+      })}
     </ul>
   )
 }
@@ -88,7 +115,7 @@ export default async function HojePage() {
   const items = data.views.map(toListItem)
   const dispatch = isDispatchEnabled()
   const today = dispatch ? await readTodayList() : { list: null, failed: false }
-  const { queue, out } = todayView(items, today.list)
+  const { queue, out, pinned } = todayView(items, today.list)
   const [next, ...rest] = queue
 
   const now = new Date()
@@ -107,8 +134,11 @@ export default async function HojePage() {
 
   const hot = queue.filter((item) => !item.interesse.invalid && item.interesse.value === "MUITO_ALTO").length
   const review = queue.filter((item) => jobState(item) === "revisao").length
+  // A pinned job the user put in the queue is not repeated on the radar.
+  const queued = new Set(queue.map((item) => item.jobId))
   const radar = items.filter(
     (item) =>
+      !queued.has(item.jobId) &&
       !item.archived &&
       !item.statusAnalise.invalid &&
       item.statusAnalise.value === "SELECIONADA" &&
@@ -121,8 +151,7 @@ export default async function HojePage() {
   const listLine = !dispatch
     ? null
     : today.list
-      ? listUpdatedText(today.list.updated_at, now) +
-        (today.list.missing > 0 ? ` · faltaram ${today.list.missing} para completar 5` : "")
+      ? todayListLine(today.list, now)
       : today.failed
         ? "Não foi possível ler a lista do job-search: a Hoje mostra todas as selecionadas e abertas."
         : "Lista ainda não atualizada: a Hoje mostra todas as selecionadas e abertas."
@@ -201,7 +230,11 @@ export default async function HojePage() {
       {next && (
         <section aria-labelledby="proxima-candidatura">
           <ShelfTitle id="proxima-candidatura">Próxima candidatura</ShelfTitle>
-          <NextMoveCard item={next} action={declineAction(next, dispatch)} />
+          <NextMoveCard
+            item={next}
+            pinned={pinned.includes(next.jobId)}
+            action={cardActions(next, dispatch, pinned.includes(next.jobId))}
+          />
         </section>
       )}
 
@@ -221,7 +254,7 @@ export default async function HojePage() {
           >
             Na fila · {rest.length}
           </ShelfTitle>
-          <CardGrid items={rest} testId="queue-list" withDecline={dispatch} />
+          <CardGrid items={rest} testId="queue-list" withActions={dispatch} pinned={pinned} />
         </section>
       )}
 

@@ -262,5 +262,33 @@ describe("todayView (Atualizar lista, 2026-10-16)", () => {
       // Selected and open after the list was made: shown out of it until the next update.
       ["fake-1003", "NOVA"],
     ])
+    expect(view.pinned).toEqual([])
+  })
+
+  it("keeps a pinned job in the queue outside the Sheet rule until it is sent, withdrawn or uncertain (/2)", () => {
+    const v2 = {
+      schema: "today-list/2" as const,
+      updated_at: "2026-10-22T17:30:00Z",
+      dispatch_id: null,
+      items: [
+        { job_id: "fake-1008", interesse: "NORMAL", pinned: true }, // NÃO CONFIRMADA: out of todayQueue
+        { job_id: "fake-1005", interesse: "", pinned: true }, // DESCARTADA by the ChatGPT: the user chose it anyway
+        { job_id: "fake-1009", interesse: "NORMAL", pinned: true }, // declined since: leaves the queue
+        { job_id: "fake-1006", interesse: "ALTO", pinned: true }, // sent since: leaves the queue
+        { job_id: "fake-1004", interesse: "MUITO_ALTO", pinned: false },
+      ],
+      left: [{ job_id: "fake-1001", motivo: "DESFIXADA" as const }],
+      missing: 0,
+      focus: null,
+      missing_reason: null,
+    }
+    const view = todayView(items, v2)
+    expect(view.queue.map((item) => item.jobId)).toEqual(["fake-1008", "fake-1005", "fake-1004"])
+    expect(view.pinned).toEqual(["fake-1008", "fake-1005"])
+    expect(view.out.map((entry) => [entry.item.jobId, entry.motivo])).toEqual([
+      ["fake-1001", "DESFIXADA"],
+      ["fake-1002", "NOVA"],
+      ["fake-1003", "NOVA"],
+    ])
   })
 })

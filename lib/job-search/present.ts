@@ -547,7 +547,8 @@ export function todayQueue(items: JobListItem[]): JobListItem[] {
 
 /** The Hoje list job-search keeps after "Atualizar lista" (`dispatch.py today`); only the fields used here. */
 export interface TodayListInput {
-  items: { job_id: string }[]
+  /** `pinned` since today-list/2 (2026-10-22): the user put the job in the queue ("Pôr na fila"). */
+  items: { job_id: string; pinned?: boolean }[]
   left: { job_id: string; motivo: string }[]
 }
 
@@ -561,20 +562,29 @@ const GONE_FROM_HOJE: ReadonlySet<JobState> = new Set(["enviada", "retirada", "d
 
 /**
  * "Hoje" after an "Atualizar lista" (plan 2026-10-16): the list order, keeping only jobs the Sheet still queues (a job
- * sent or closed since leaves on its own; one not in the snapshot yet waits for the next read). Out of the list: the
- * jobs job-search left out, with its reason, then the ones that qualified after the update (NOVA). Without a list, the
- * Sheet rule (`todayQueue`).
+ * sent or closed since leaves on its own; one not in the snapshot yet waits for the next read). A pinned job (plan
+ * 2026-10-22) stays even outside the Sheet rule, since the user chose it, and leaves only once sent, withdrawn,
+ * discarded or uncertain. Out of the list: the jobs job-search left out, with its reason, then the ones that qualified
+ * after the update (NOVA). Without a list, the Sheet rule (`todayQueue`).
  */
 export function todayView(
   items: JobListItem[],
   list: TodayListInput | null
-): { queue: JobListItem[]; out: TodayOut[] } {
+): { queue: JobListItem[]; out: TodayOut[]; pinned: string[] } {
   const queued = todayQueue(items)
-  if (!list) return { queue: queued, out: [] }
+  if (!list) return { queue: queued, out: [], pinned: [] }
   const byId = new Map(items.map((item) => [item.jobId, item]))
   const eligible = new Set(queued.map((item) => item.jobId))
   const listed = new Set(list.items.map((entry) => entry.job_id))
-  const queue = list.items.flatMap((entry) => (eligible.has(entry.job_id) ? [byId.get(entry.job_id)!] : []))
+  const queue = list.items.flatMap((entry) => {
+    const item = byId.get(entry.job_id)
+    if (!item) return []
+    const stays = entry.pinned ? !GONE_FROM_HOJE.has(jobState(item)) : eligible.has(entry.job_id)
+    return stays ? [item] : []
+  })
+  const pinned = list.items.flatMap((entry) =>
+    entry.pinned && queue.some((item) => item.jobId === entry.job_id) ? [entry.job_id] : []
+  )
   const left = list.left.flatMap((entry) => {
     const item = byId.get(entry.job_id)
     return item && !listed.has(item.jobId) && !GONE_FROM_HOJE.has(jobState(item))
@@ -583,5 +593,5 @@ export function todayView(
   })
   const known = new Set([...listed, ...left.map((entry) => entry.item.jobId)])
   const fresh = queued.filter((item) => !known.has(item.jobId)).map((item) => ({ item, motivo: "NOVA" }))
-  return { queue, out: [...left, ...fresh] }
+  return { queue, out: [...left, ...fresh], pinned }
 }

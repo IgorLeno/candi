@@ -585,6 +585,26 @@ def read_today():
         return None
 
 
+def refreshed_today(dispatch_id):
+    """today-list/2 at the end of a refresh, like run_today: pinned jobs on top (never filtered or replaced), then the
+    fixed list. With a focus the fake keeps only the first job of the rest: the others leave as FORA_DO_FOCO and the
+    list says the focus left gaps (it never fills with jobs outside it)."""
+    settings = today_settings()
+    pins = [j for j in settings["pinned"] if SHEET_ROWS.get(j, ("",))[0] not in ("ENVIADA", "RETIRADA", "ENVIO INCERTO")]
+    rest = [i for i in TODAY_LIST["items"] if i["job_id"] not in pins]
+    focus = settings["focus"] if any(settings["focus"].values()) else None
+    left = [x for x in TODAY_LIST["left"] if x["job_id"] not in pins]
+    if focus:
+        left += [{"job_id": i["job_id"], "motivo": "FORA_DO_FOCO"} for i in rest[1:]]
+        rest = rest[:1]
+    items = ([{"job_id": j, "interesse": SHEET_ROWS.get(j, ("", ""))[1], "pinned": True} for j in pins]
+             + [{**i, "pinned": False} for i in rest])[:5]
+    missing = 5 - len(items)
+    return {"schema": "today-list/2", "dispatch_id": dispatch_id, "updated_at": now(), "items": items, "left": left,
+            "missing": missing, "focus": focus,
+            "missing_reason": None if not missing else "FOCO" if focus else "SEM_ELEGIVEIS"}
+
+
 def relist_pinned(pinned, interest, out_reason):
     """Like job-search's _relist_pinned: pinned on top, then the rest of the previous list; who does not fit leaves as
     TROCADA. Time and dispatch stay those of the last refresh (a pin before any refresh has none)."""
@@ -832,8 +852,7 @@ def main(argv):
                 if rec["step"] >= len(STAGES["ATUALIZAR_LISTA"]):
                     rec["status"] = "CONCLUIDO"
                     TODAY_FILE.parent.mkdir(parents=True, exist_ok=True)
-                    TODAY_FILE.write_text(json.dumps({**TODAY_LIST, "dispatch_id": rec["id"], "updated_at": now()}),
-                                          encoding="utf-8")
+                    TODAY_FILE.write_text(json.dumps(refreshed_today(rec["id"])), encoding="utf-8")
             elif rec["status"] == "RODANDO":
                 rec["step"] += 1
                 if rec["action"] == "EDITAR_CARTA" and not rec.get("approved"):

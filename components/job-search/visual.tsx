@@ -8,6 +8,7 @@ import {
   HelpCircle,
   Lock,
   MinusCircle,
+  Pin,
   Send,
   Undo2,
   Zap,
@@ -205,6 +206,20 @@ export function DoneStamp({ className, declined = false }: { className?: string;
   )
 }
 
+/** "Fixada": the user put this job in the Hoje queue ("Pôr na fila"); it stays until sent, discarded or taken out. */
+export function PinnedBadge() {
+  return (
+    <span
+      data-testid="pinned-badge"
+      title="Você pôs esta vaga na fila. Ela fica até ser enviada, descartada ou você tirar da fila."
+      className="inline-flex items-center gap-1 rounded-full border border-st-info/40 bg-st-info/15 px-2 py-0.5 text-xs font-semibold text-st-info-fg"
+    >
+      <Pin className="h-3 w-3" aria-hidden="true" />
+      Fixada
+    </span>
+  )
+}
+
 function place(item: JobListItem): string {
   return [item.empresa || "(sem empresa)", item.local].filter(Boolean).join(" · ")
 }
@@ -217,11 +232,14 @@ export function JobCard({
   item,
   index = 0,
   action,
+  pinned = false,
 }: {
   item: JobListItem
   index?: number
   /** Control above the stretched link (e.g. "Descartar vaga"); it must set its own `relative z-10`. */
   action?: React.ReactNode
+  /** Pinned on the Hoje list by the user (today-list/2). */
+  pinned?: boolean
 }) {
   const state = jobState(item)
   const style = STATE_STYLES[state]
@@ -230,6 +248,7 @@ export function JobCard({
       data-testid="job-row"
       data-job-id={item.jobId}
       data-state={state}
+      data-pinned={pinned || undefined}
       style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}
       className={cn(
         "animate-rise-in group relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-2xl border border-border bg-card p-4 pl-5",
@@ -240,7 +259,10 @@ export function JobCard({
     >
       <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-1.5", style.bar)} />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <StateBadge state={state} />
+        <div className="flex flex-wrap items-center gap-2">
+          <StateBadge state={state} />
+          {pinned && <PinnedBadge />}
+        </div>
         <Flames cell={item.interesse} testId="row-interesse" />
       </div>
       <div className="min-w-0">
@@ -276,12 +298,21 @@ export function JobCard({
 }
 
 /** The highlighted "next move": the top of the queue, with its call to action. */
-export function NextMoveCard({ item, action }: { item: JobListItem; action?: React.ReactNode }) {
+export function NextMoveCard({
+  item,
+  action,
+  pinned = false,
+}: {
+  item: JobListItem
+  action?: React.ReactNode
+  pinned?: boolean
+}) {
   const state = jobState(item)
   return (
     <article
       data-testid="next-move"
       data-job-id={item.jobId}
+      data-pinned={pinned || undefined}
       className="animate-rise-in relative overflow-hidden rounded-3xl border-2 border-st-open bg-card p-5 sm:p-6"
     >
       <span
@@ -292,6 +323,7 @@ export function NextMoveCard({ item, action }: { item: JobListItem; action?: Rea
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <StateBadge state={state} />
+            {pinned && <PinnedBadge />}
             <Flames cell={item.interesse} size="lg" />
           </div>
           <div>
