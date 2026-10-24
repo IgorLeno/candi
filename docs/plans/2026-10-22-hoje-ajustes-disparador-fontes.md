@@ -250,29 +250,29 @@ prometeria algo que não roda. Entra na tela junto com o `today-tick`.
 
 ### Painel
 
-- [ ] P1 `feat(ops): read and save the Hoje settings` — `lib/ops/schema.ts` (settings, `today-list/2`, motivos
+- [x] P1 `feat(ops): read and save the Hoje settings` — `lib/ops/schema.ts` (settings, `today-list/2`, motivos
       novos), `lib/ops/today-settings.ts` (espelho das guardas, só UX), textos de recusa em `present.ts`, server
       actions `getTodaySettings`/`saveTodaySettings`/`pinTodayJob`/`unpinTodayJob` (`getAllowedSession()` primeiro;
       foco pela stdin), fake do e2e com os comandos novos. Vitest: schema, guardas, argv exato.
-- [ ] P2 `feat(today): pinned jobs in the queue` — `todayView` aceita `/2`: fixada fica na fila mesmo fora de
+- [x] P2 `feat(today): pinned jobs in the queue` — `todayView` aceita `/2`: fixada fica na fila mesmo fora de
       `todayQueue()` (some só se enviada/retirada/descartada/incerta); card fixado com selo "Fixada" e "Tirar da
       fila"; linha da Hoje com foco e "faltaram N no foco". Vitest de `todayView` `/1` e `/2`.
-- [ ] P3 `feat(today): settings window for Atualizar lista` — `TodayListControls` abre a janela: Foco (Cargo,
+- [x] P3 `feat(today): settings window for Atualizar lista` — `TodayListControls` abre a janela: Foco (Cargo,
       Lugar), Quantas trocar, rodapé "Salvar" e "Salvar e atualizar agora"; textos da janela inteira revisados.
       E2E: abrir → salvar → reabrir mostra o salvo; salvar e atualizar dispara.
-- [ ] P4 `feat(today): add a specific job from the settings window` — busca local (≥ 2 caracteres, debounce, até 8,
+- [x] P4 `feat(today): add a specific job from the settings window` — busca local (≥ 2 caracteres, debounce, até 8,
       empresa/cargo/job_id) sobre a lista enxuta que a página passa; "Pôr na fila"/"Na fila"; sem resultado,
       "Buscar fora da planilha" → `startIntake` com o texto; cards de LOCALIZAR_VAGA/ANALISAR_INDICADA também na
       Hoje; depois do registro, o card oferece "Pôr na fila". E2E: fixar → topo sem reload; buscar fora abre o fluxo.
-- [ ] P5 `feat(today): call the first job the current application` — "Próxima candidatura" → "Candidatura atual",
+- [x] P5 `feat(today): call the first job the current application` — "Próxima candidatura" → "Candidatura atual",
       id `candidatura-atual`, testes.
-- [ ] P6 `docs: Hoje settings window` — CLAUDE.md do painel.
+- [x] P6 `docs: Hoje settings window` — CLAUDE.md do painel.
 
 ### Verificação
 
 - [ ] job-search: `python3 scripts/validate_job_search.py`; `python3 -m unittest discover -s scripts -p 'test_*.py'`;
       `python3 -m pytest -q hermes/browsers` (comparar com a base, que tem falhas antigas); `ruff check` nos tocados.
-- [ ] Painel: `pnpm exec tsc --noEmit`, eslint, prettier, `pnpm exec vitest run`, e2e ops.spec + dashboard.spec
+- [x] Painel: `pnpm exec tsc --noEmit`, eslint, prettier, `pnpm exec vitest run`, e2e ops.spec + dashboard.spec
       (porta alternativa se a 3000 estiver ocupada).
 - [ ] Rodada real com foco "Belo Horizonte": só com OK do usuário.
 
@@ -287,3 +287,30 @@ prometeria algo que não roda. Entra na tela junto com o `today-tick`.
   lista só com as fixadas (com o horário do momento). Card da Gupy fora do lugar é descartado em silêncio na busca com
   foco (não vai para "Ficaram de fora").
 - Não verificado: rodada real (precisa do OK do usuário); nada no painel ainda (P1–P6).
+
+### Execução — painel (2026-10-23)
+
+- Commits (main, sem push): 029a570 P1, f6f0fc2 P2, 9551fc2 P3, 0bbdf12 P4, e6d9d4d P5, P6 (este).
+- Gates: `pnpm exec tsc --noEmit` limpo; eslint e prettier limpos nos arquivos tocados (os 2 avisos de `_geist` em
+  `app/layout.tsx` já existiam); `pnpm exec vitest run` 314 (base 293); e2e de ops.spec + dashboard.spec na cópia
+  :3100: 40 passaram, 4 falharam. Duas são as falhas antigas da base c577b4f ("currículo local: comentários e
+  edição manual…" e "carta travada com dúvida…"). As outras duas ("hoje: fila, candidatura atual e meta" e "análise →
+  lista → vaga") esperaram 5 s por uma navegação na primeira compilação do `next dev` sob carga; rodadas isoladas
+  (`--repeat-each 2`, com "preencher vaga: a segunda candidatura entra na fila…", que tinha falhado numa rodada
+  interrompida e passou nesta) deram 6 de 6. Instáveis, não regressão da frente A.
+- Desvios do desenho:
+  - `today-list/2` aceita `dispatch_id: null` e `interesse: ""`: fixar antes de qualquer "Atualizar lista" grava uma
+    lista sem disparo, e a fixada pode não ter interesse.
+  - `REGISTRY_UNAVAILABLE` já tinha texto no painel (o do "Descartar vaga"); ficou o mesmo.
+  - O "Pôr na fila" do card da vaga específica aparece quando o registro do writeset está `CONCLUIDO`, não pelo
+    snapshot (que pode ainda não ter a vaga); o job-search confere na planilha.
+  - Os cards da vaga específica na Hoje aparecem enquanto precisam de você e, depois de vistos, ficam até recarregar
+    (para o "Pôr na fila" estar lá depois do registro). Um registrado antigo não volta para a Hoje.
+  - A vaga fixada não se repete no "No radar".
+  - O botão "Atualizar lista" continua desativado enquanto a lista atualiza; a janela (e o "Pôr na fila" dela) fica
+    indisponível nesse tempo. Os botões "Tirar da fila" dos cards continuam.
+- Achado para decidir depois: fixar antes do primeiro "Atualizar lista" cria uma lista só com as fixadas (desvio do
+  job-search, acima), e a Hoje deixa de mostrar a regra da planilha até a próxima atualização. Não afeta quem já tem
+  lista (a de 16/10 existe).
+- Não verificado: rodada real (precisa do OK do usuário). Os e2e novos do P3 e do P4 foram escritos antes da
+  implementação, mas só rodaram depois (verdes); o vermelho foi conferido no vitest (P1, P2, P4) e no e2e do P5.

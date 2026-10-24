@@ -9,7 +9,7 @@ O Candi é a central de quem está procurando emprego. Em um só lugar, o candid
 
 E acompanha tudo: a fila do dia, a meta da semana, o funil da busca e o estado de cada candidatura.
 
-![Tela "Hoje": próxima candidatura, fila de vagas abertas e meta da semana](docs/screenshots/hoje-escuro.png)
+![Tela "Hoje": candidatura atual, fila de vagas abertas e meta da semana](docs/screenshots/hoje-escuro.png)
 
 > Todos os prints usam dados fictícios (empresas e vagas de exemplo), gerados com o contrato do `job-search` pelo mesmo gerador da fixture local; nenhum dado real.
 
@@ -26,7 +26,7 @@ O perfil do candidato (experiências, evidências, preferências) e as regras de
 
 ## As telas
 
-- **Hoje**: próxima candidatura, fila de vagas abertas, meta da semana e o que precisa de atenção.
+- **Hoje**: candidatura atual, fila de vagas abertas (com as que você fixou), meta da semana e o que precisa de atenção; "Atualizar lista" abre os ajustes (foco, quantas trocar, adicionar vaga específica).
 - **Cotar vagas**: pede uma nova busca ou a análise de uma vaga específica e acompanha cada etapa até o registro na planilha.
 - **Vagas** e **Vaga**: todas as vagas com filtros e, em cada uma, três seções: análise, currículo e candidatura, cada uma com os seus botões.
 - **Análise**: KPIs, funil da busca, evolução semanal, distribuições, cobertura de fontes e qualidade dos dados. Todo gráfico tem visão em tabela.
