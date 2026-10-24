@@ -370,7 +370,8 @@ o último disparo). `_spawn_host` repassa `DISPLAY`/`WAYLAND_DISPLAY` só se est
       antigas), `ruff check` nos tocados.
 - [x] Painel: `pnpm exec tsc --noEmit`, `pnpm lint`, prettier nos tocados, `pnpm test`, e2e ops.spec + dashboard.spec
       (cópia na :3100).
-- [ ] Só com OK do usuário: instalar e habilitar o timer; ver um tick real.
+- [x] Só com OK do usuário: instalar e habilitar o timer (2026-10-24; um tick manual com a automática desligada).
+- [ ] Só com OK do usuário: ver um tick real com a automática ligada (rodada automática de verdade).
 
 ### Execução — frente B (2026-10-24)
 
@@ -394,5 +395,10 @@ o último disparo). `_spawn_host` repassa `DISPLAY`/`WAYLAND_DISPLAY` só se est
     ambiente para o `_spawn_host` repassar ao filho (o painel não repassa, porque o Chrome já está aberto).
   - Código de pulo sem texto curto aparece como "recusa CÓDIGO" na linha.
   - O fake do e2e não tem tick: o card "Atualização automática" só tem vitest (`dispatchTitle`), não e2e.
-- Não verificado: timer instalado e um tick real (precisa do OK do usuário: `browsers.sh install-today-timer`);
-  rodada automática real.
+- Timer instalado com o OK do usuário (2026-10-24 20:58 -03): `browsers.sh install-today-timer` copiou as duas
+  unidades para `~/.config/systemd/user/` e habilitou o timer; `list-timers` mostra o próximo às 21:00 e `status`
+  diz `enabled`, `active (waiting)`. `systemctl --user start job-search-today.service` terminou `Result=success`; o
+  journal mostra `{"ok": true, "tick": {"started": null, "skip": null}}` (automática desligada, `every_hours` 12,
+  `last_skip` null). Desfazer: `browsers.sh uninstall-today-timer`.
+- Não verificado: um tick com a automática ligada e a rodada automática real (usa o ChatGPT e grava na planilha;
+  precisa de um OK separado do usuário para ligar a chave).
