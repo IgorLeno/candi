@@ -54,7 +54,7 @@ export function ConfirmOpenButton({
         setOpen(false)
         router.refresh()
       } catch {
-        toast.error(confirmOpenRefusalText("UNAUTHENTICATED"))
+        toast.error(confirmOpenRefusalText("REQUEST_FAILED"))
       }
     })
 

@@ -1,22 +1,12 @@
-import type { NextFetchEvent, NextRequest } from "next/server"
-import { auth } from "@/auth"
-import { stripSessionSetCookies } from "@/lib/auth/session-cookie"
+import { NextResponse, type NextRequest } from "next/server"
+import { isLoopbackHost } from "@/lib/auth/local"
 
-// Auth.js' inline middleware form (`export { auth as proxy }`); its typings only expose
-// the wrapper form, which would run a handler even when `authorized` returns false.
-const authorize = auth as unknown as (request: NextRequest, event: NextFetchEvent) => Promise<Response>
-
-// Every request except Next's build assets and files in `public/` goes through the
-// `authorized` callback in `auth.ts` (pages, route handlers and server actions alike).
-// Server-side code still checks the session itself: the proxy is not the only gate.
-//
-// The proxy only reads the session: it never writes the session cookie, so a response
-// that lands after "Sair" cannot bring the session back. The cookie is written only by
-// sign-in and sign-out, and a session lasts `maxAge` from sign-in (no sliding renewal).
-export async function proxy(request: NextRequest, event: NextFetchEvent): Promise<Response> {
-  const response = await authorize(request, event)
-  stripSessionSetCookies(response.headers)
-  return response
+// No login: every request except Next's build assets and files in `public/` must be addressed to this machine
+// (`localhost`, `127.0.0.1` or `[::1]`, any port). Anything else gets 403, pages and API alike. Server-side code
+// checks again (`isLocalRequest()`): the proxy is not the only gate.
+export function proxy(request: NextRequest): Response {
+  if (isLoopbackHost(request.headers.get("host"))) return NextResponse.next()
+  return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 })
 }
 
 export const config = {

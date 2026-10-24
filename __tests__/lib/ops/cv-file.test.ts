@@ -4,10 +4,10 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-const session = vi.hoisted(() => ({ current: null as null | { user: { email: string } } }))
+const local = vi.hoisted(() => ({ current: false }))
 const runDispatcher = vi.hoisted(() => vi.fn())
 
-vi.mock("@/lib/auth/session", () => ({ getAllowedSession: vi.fn(async () => session.current) }))
+vi.mock("@/lib/auth/local-request", () => ({ isLocalRequest: vi.fn(async () => local.current) }))
 vi.mock("@/lib/ops/dispatcher", () => ({ runDispatcher, isDispatchEnabled: () => true }))
 vi.mock("@/lib/job-search/source", () => ({ JOB_SEARCH_CACHE_TAG: "job-search", getJobSearchData: vi.fn() }))
 vi.mock("next/cache", () => ({ updateTag: vi.fn() }))
@@ -37,7 +37,7 @@ const params = (jobId: string) => ({ params: Promise.resolve({ job_id: jobId }) 
 
 describe("résumé PDF for the job page", () => {
   beforeEach(() => {
-    session.current = { user: { email: "owner@e2e.test" } }
+    local.current = true
     runDispatcher.mockReset()
   })
 
@@ -71,11 +71,11 @@ describe("résumé PDF for the job page", () => {
     expect(await readCvPdf("4466682591")).toEqual({ ok: false, code: "CV_NOT_VALID", detail: "CV_JSON_MISSING" })
   })
 
-  it("route: 401 without session, PDF inline with session, JSON refusal otherwise", async () => {
-    session.current = null
-    expect((await GET(new Request("http://x"), params("4466682591"))).status).toBe(401)
+  it("route: 403 when not local, PDF inline when local, JSON refusal otherwise", async () => {
+    local.current = false
+    expect((await GET(new Request("http://x"), params("4466682591"))).status).toBe(403)
     expect(runDispatcher).not.toHaveBeenCalled()
-    session.current = { user: { email: "owner@e2e.test" } }
+    local.current = true
     runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, cv_file: pdfOnDisk() } })
     const ok = await GET(new Request("http://x"), params("4466682591"))
     expect(ok.status).toBe(200)
@@ -96,8 +96,8 @@ describe("résumé PDF for the job page", () => {
       "sha256",
       "size",
     ])
-    session.current = null
-    await expect(getCvFile("4466682591")).rejects.toThrow("UNAUTHENTICATED")
+    local.current = false
+    await expect(getCvFile("4466682591")).rejects.toThrow("NOT_LOCAL")
   })
 
   it("explains why there is no PDF", () => {

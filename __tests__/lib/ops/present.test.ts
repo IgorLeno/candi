@@ -126,7 +126,7 @@ describe("deleteJobRefusalText", () => {
       expect(deleteJobRefusalText(code)).toMatch(/confira/)
     }
     expect(deleteJobRefusalText("BACKUP_FAILED")).toMatch(/nada foi apagado/i)
-    expect(deleteJobRefusalText("UNAUTHENTICATED")).toBe(refusalText("UNAUTHENTICATED"))
+    expect(deleteJobRefusalText("REQUEST_FAILED")).toBe(refusalText("REQUEST_FAILED"))
     expect(deleteJobRefusalText("NOVO_CODIGO")).toBe(refusalText("NOVO_CODIGO"))
   })
 })
@@ -265,7 +265,7 @@ describe("confirmOpenRefusalText", () => {
     expect(confirmOpenRefusalText("JOB_DISPATCH_ACTIVE")).toMatch(/confirmar/)
     expect(confirmOpenRefusalText("ALREADY_OPEN")).toMatch(/já está ABERTA/)
     expect(confirmOpenRefusalText("OPEN_UNCERTAIN")).toMatch(/confira/)
-    expect(confirmOpenRefusalText("UNAUTHENTICATED")).toBe(refusalText("UNAUTHENTICATED"))
+    expect(confirmOpenRefusalText("REQUEST_FAILED")).toBe(refusalText("REQUEST_FAILED"))
     expect(confirmOpenRefusalText("NOVO_CODIGO")).toBe(refusalText("NOVO_CODIGO"))
   })
 })

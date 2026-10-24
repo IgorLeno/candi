@@ -2,8 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BarChart3, Flame, LayoutGrid, LogOut, Radar, Settings2 } from "lucide-react"
-import { signOutAction } from "@/app/actions/auth"
+import { BarChart3, Flame, LayoutGrid, Radar, Settings2 } from "lucide-react"
 import { CandiMark } from "@/components/brand/candi-logo"
 import { InProgressChip, InProgressSection, useAttention } from "@/components/in-progress"
 import { cn } from "@/lib/utils"
@@ -79,21 +78,6 @@ export function Sidebar({ opsEnabled = false }: { opsEnabled?: boolean }) {
         </nav>
 
         <InProgressSection attention={attention} />
-
-        <form action={signOutAction} className="relative px-3 pb-6">
-          <button
-            type="submit"
-            data-testid="sidebar-sair"
-            className={cn(
-              "w-full h-10 rounded-lg flex items-center gap-3 px-3 transition-colors duration-200",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-              "text-sidebar-foreground hover:text-sidebar-primary hover:bg-sidebar-border/40"
-            )}
-          >
-            <LogOut className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-            <span className="text-sm font-medium">Sair</span>
-          </button>
-        </form>
       </aside>
 
       <header className="sticky top-0 z-50 border-b border-sidebar-border bg-sidebar lg:hidden">
@@ -103,16 +87,6 @@ export function Sidebar({ opsEnabled = false }: { opsEnabled?: boolean }) {
           <div className="ml-auto">
             <InProgressChip attention={attention} />
           </div>
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              data-testid="mobile-sair"
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-sidebar-foreground hover:text-sidebar-primary"
-            >
-              <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
-              Sair
-            </button>
-          </form>
         </div>
         <nav aria-label="Navegação principal" className="flex gap-1 overflow-x-auto px-3 py-2">
           {menuItems.map((item) => {

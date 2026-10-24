@@ -1,6 +1,6 @@
 import "server-only"
 import { unstable_cache } from "next/cache"
-import { getAllowedSession } from "@/lib/auth/session"
+import { isLocalRequest } from "@/lib/auth/local-request"
 import { buildJobSearchData } from "@/lib/job-search/build"
 import {
   JobSearchSourceError,
@@ -24,7 +24,7 @@ export function dataSource(env: Record<string, string | undefined> = process.env
 
 const readSheets = unstable_cache(
   async (): Promise<JobSearchData> => {
-    // Only reached through `getJobSearchData()`, after the allowed-session check.
+    // Only reached through `getJobSearchData()`, after the local-request check.
     const spreadsheetId = process.env.JOB_SEARCH_SHEET_ID
     if (!spreadsheetId) throw new JobSearchSourceError("SHEET_ID_MISSING")
     const token = await getAccessToken(loadServiceAccount())
@@ -38,8 +38,8 @@ const readSheets = unstable_cache(
 export async function getJobSearchData(): Promise<JobSearchData> {
   if (dataSource() === "sheets") {
     // Checked outside the cache on every call: a cached snapshot is never served to a
-    // request without an allowed session, whatever route or action triggered it.
-    if (!(await getAllowedSession())) throw new JobSearchSourceError("UNAUTHENTICATED")
+    // request not addressed to this machine, whatever route or action triggered it.
+    if (!(await isLocalRequest())) throw new JobSearchSourceError("NOT_LOCAL")
     return readSheets()
   }
   return buildJobSearchData(fixture as RawSnapshot, "fixture", new Date().toISOString())

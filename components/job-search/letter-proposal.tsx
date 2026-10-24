@@ -42,7 +42,7 @@ export function LetterProposalApproval({ dispatch, onChanged }: { dispatch: Disp
           onChanged()
         } else toast.error(refusalText(result.code))
       } catch {
-        toast.error(refusalText("UNAUTHENTICATED"))
+        toast.error(refusalText("REQUEST_FAILED"))
       }
     })
   return (

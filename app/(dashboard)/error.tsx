@@ -3,7 +3,7 @@
 import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-// Source failures (Sheet unreachable, credentials, session) land here instead of a blank page.
+// Source failures (Sheet unreachable, credentials) land here instead of a blank page.
 // Server error details are not shown: production only exposes a digest.
 export default function DashboardError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
@@ -12,9 +12,7 @@ export default function DashboardError({ reset }: { error: Error & { digest?: st
       <h1 className="mt-3 font-display text-xl font-bold text-foreground">
         Não foi possível ler os dados do job-search
       </h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        A fonte pode estar indisponível ou a sessão pode ter expirado. Nada foi alterado.
-      </p>
+      <p className="mt-1 text-sm text-muted-foreground">A fonte pode estar indisponível. Nada foi alterado.</p>
       <Button className="mt-4" onClick={reset}>
         Tentar novamente
       </Button>

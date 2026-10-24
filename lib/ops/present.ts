@@ -122,8 +122,9 @@ export function statusBadge(
 
 /** Refusal codes from the dispatcher or the server action, in plain Portuguese. */
 const REFUSAL_TEXT: Record<string, string> = {
-  UNAUTHENTICATED: "Sessão expirada. Entre de novo.",
-  READ_FAILED: "Não deu para atualizar os disparos. Se a sessão expirou, entre de novo e recarregue a página.",
+  REQUEST_FAILED: "O Candi não respondeu. Recarregue a página e tente de novo.",
+  READ_FAILED:
+    "Não deu para atualizar os disparos. Recarregue a página; se continuar, confira se o Candi está rodando.",
   DISPATCH_DISABLED: "Disparo de bots desligado neste servidor.",
   DISPATCHER_UNAVAILABLE: "Não foi possível falar com o dispatcher do job-search.",
   LETTER_JOB_BUSY: "A carta desta vaga já está sendo gerada ou editada.",

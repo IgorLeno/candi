@@ -160,7 +160,7 @@ const ACTION_ICON: Record<DispatchAction, LucideIcon> = {
 }
 
 const POLL_ACTIVE_MS = 5_000
-// After a failed read (expired session, server down) the list keeps the last state it read: retry slowly.
+// After a failed read (server down or restarting) the list keeps the last state it read: retry slowly.
 const POLL_RETRY_MS = 60_000
 
 /**
@@ -195,8 +195,7 @@ function useDispatches(filter: { jobId?: string; action?: DispatchAction }) {
         setError(result.code)
       }
     } catch {
-      // The server action throws without a session, and the proxy turns an expired one into a redirect: the client
-      // cannot tell that apart from a server that is down.
+      // The server action threw (server down or restarting): keep the last list and retry.
       if (alive.current) setError("READ_FAILED")
     }
   }, [jobId, action])
@@ -447,7 +446,7 @@ function WritesetRegistration({
                     setOpen(false)
                     onChanged()
                   } catch {
-                    toast.error(refusalText("UNAUTHENTICATED"))
+                    toast.error(refusalText("REQUEST_FAILED"))
                   }
                 })
               }
@@ -611,7 +610,7 @@ function IntakeRefine({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: 
         toast.success(`${result.value.bot} procurando de novo, com o complemento.`)
         onChanged()
       } catch {
-        toast.error(refusalText("UNAUTHENTICATED"))
+        toast.error(refusalText("REQUEST_FAILED"))
       }
     })
 
@@ -740,7 +739,7 @@ function CvResume({ dispatch, onChanged }: { dispatch: Dispatch; onChanged: () =
         )
         onChanged()
       } catch {
-        toast.error(refusalText("UNAUTHENTICATED"))
+        toast.error(refusalText("REQUEST_FAILED"))
       }
     })
 
@@ -941,7 +940,7 @@ function FillItemRow({
         setValue("")
         onChanged()
       } catch {
-        toast.error(refusalText("UNAUTHENTICATED"))
+        toast.error(refusalText("REQUEST_FAILED"))
       }
     })
   return (
@@ -1034,7 +1033,7 @@ function IntakeDecisions({
         setConfirm(null)
         onChanged()
       } catch {
-        toast.error(refusalText("UNAUTHENTICATED"))
+        toast.error(refusalText("REQUEST_FAILED"))
       }
     })
 
@@ -1113,7 +1112,7 @@ function DeleteIntakeButton({ dispatch, onChanged }: { dispatch: Dispatch; onCha
         setOpen(false)
         onChanged()
       } catch {
-        toast.error(refusalText("UNAUTHENTICATED"))
+        toast.error(refusalText("REQUEST_FAILED"))
       }
     })
   return (
@@ -1270,7 +1269,7 @@ function LeftOutJobs({
                           toast.success("Vaga mandada ao ChatGPT pelo job-search.")
                           onChanged()
                         } catch {
-                          toast.error(refusalText("UNAUTHENTICATED"))
+                          toast.error(refusalText("REQUEST_FAILED"))
                         } finally {
                           setSending(null)
                         }
@@ -1321,7 +1320,7 @@ function CvProposalApproval({ dispatch, onChanged }: { dispatch: Dispatch; onCha
           onChanged()
         } else toastRefusal(result.code)
       } catch {
-        toast.error(refusalText("UNAUTHENTICATED"))
+        toast.error(refusalText("REQUEST_FAILED"))
       }
     })
   const choose = (item: CvChange, value: boolean) =>
@@ -1852,7 +1851,7 @@ async function openBrowserToast(browser: BrowserName, restart = false): Promise<
       })
     } else toast.error(refusalText(result.code))
   } catch {
-    toast.error(refusalText("UNAUTHENTICATED"))
+    toast.error(refusalText("REQUEST_FAILED"))
   }
 }
 
@@ -1899,7 +1898,7 @@ function OpenBrowserButton({ browser }: { browser: BrowserName }) {
             : { ok: false, text: refusalText(result.code), code: result.code }
         )
       } catch {
-        setOutcome({ ok: false, text: refusalText("UNAUTHENTICATED") })
+        setOutcome({ ok: false, text: refusalText("REQUEST_FAILED") })
       }
     })
   return (
@@ -2094,7 +2093,7 @@ function DispatchButton({
                         setOpen(false)
                       }
                     } catch {
-                      toast.error(refusalText("UNAUTHENTICATED"))
+                      toast.error(refusalText("REQUEST_FAILED"))
                     }
                   })
                 }
@@ -2191,7 +2190,7 @@ function IntakeButton({ disabledReason, onStarted }: { disabledReason: string | 
                     setOpen(false)
                     onStarted()
                   } catch {
-                    toast.error(refusalText("UNAUTHENTICATED"))
+                    toast.error(refusalText("REQUEST_FAILED"))
                   }
                 })
               }
@@ -2280,7 +2279,7 @@ function AnalyzeButton({
                     setOpen(false)
                     onStarted()
                   } catch {
-                    toast.error(refusalText("UNAUTHENTICATED"))
+                    toast.error(refusalText("REQUEST_FAILED"))
                   }
                 })
               }
@@ -2699,7 +2698,7 @@ function CvLocalEditForm({
                     onStarted()
                   } else toastRefusal(result.code)
                 } catch {
-                  toast.error(refusalText("UNAUTHENTICATED"))
+                  toast.error(refusalText("REQUEST_FAILED"))
                 }
               })
             }
@@ -2748,7 +2747,7 @@ function CvLocalEditForm({
                       onStarted()
                     } else toastRefusal(result.code)
                   } catch {
-                    toast.error(refusalText("UNAUTHENTICATED"))
+                    toast.error(refusalText("REQUEST_FAILED"))
                   }
                 })
               }
@@ -2890,7 +2889,7 @@ function CvEditForm({
                 setReview(false)
                 onStarted()
               } catch {
-                toast.error(refusalText("UNAUTHENTICATED"))
+                toast.error(refusalText("REQUEST_FAILED"))
               }
             })
           }
@@ -2949,7 +2948,7 @@ export function PdfPreview({ jobId, kind = "cv" }: { jobId: string; kind?: keyof
             : { state: "none", text: config.text(result.code, result.detail) }
         )
       })
-      .catch(() => alive && setPreview({ state: "none", text: refusalText("UNAUTHENTICATED") }))
+      .catch(() => alive && setPreview({ state: "none", text: refusalText("REQUEST_FAILED") }))
     return () => {
       alive = false
     }
@@ -3111,7 +3110,7 @@ export function TodayListControls({ leading, trailing }: { leading?: React.React
                     toast.success("Atualizando a lista no job-search.")
                     void refresh()
                   } catch {
-                    toast.error(refusalText("UNAUTHENTICATED"))
+                    toast.error(refusalText("REQUEST_FAILED"))
                   }
                 })
               }

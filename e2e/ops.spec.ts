@@ -2,7 +2,6 @@ import { test, expect } from "@playwright/test"
 import { execFileSync } from "child_process"
 import { mkdirSync, rmSync, writeFileSync } from "fs"
 import path from "path"
-import { E2E_AUTH_ENV, signInAs } from "./auth"
 import { E2E_FAKE_DISPATCH_STATE, E2E_OPS_ENV, resetFakeDispatches } from "./ops-env"
 
 /** Drives the fake dispatcher directly, as job-search moving on while the panel shows another page. */
@@ -19,9 +18,8 @@ function useLocalCvRenderer() {
 
 // Bot dispatch against the fake job-search dispatcher (e2e/fixtures/job-search-fake): no bot, no gateway.
 test.describe("Central de operações (bots)", () => {
-  test.beforeEach(async ({ context, page }) => {
+  test.beforeEach(async ({ page }) => {
     resetFakeDispatches()
-    await signInAs(context, E2E_AUTH_ENV.ALLOWED_EMAIL)
     // Platform preference is per browser; start every test on Hermes (once per tab, so reloads keep choices).
     await page.addInitScript(() => {
       if (window.sessionStorage.getItem("e2e-platform-init")) return
@@ -129,7 +127,6 @@ test.describe("Central de operações (bots)", () => {
 
   test("cotar vagas: sem conseguir ler os disparos, o card mostra o último estado sem fingir que roda", async ({
     page,
-    context,
   }) => {
     await page.goto("/cotar")
     const ops = page.getByTestId("search-ops")
@@ -141,13 +138,13 @@ test.describe("Central de operações (bots)", () => {
     // A host search shows no bot platform in its header.
     await expect(card).toContainText(/\(host\) · \d{2}\//)
 
-    // The session ends (as after its 7 days): the next poll fails and the card keeps what it last read.
-    await context.clearCookies()
+    // The server stops answering (down or restarting): the next poll fails and the card keeps what it last read.
+    await page.route("**/cotar", (route) => (route.request().method() === "POST" ? route.abort() : route.continue()))
     await expect(card.getByTestId("dispatch-status")).toHaveText("Sem atualização", { timeout: 15_000 })
     await expect(card.getByTestId("dispatch-stale")).toContainText(/Último estado lido em \d{2}\/\d{2}\/\d{4}/)
     await expect(card.getByTestId("dispatch-stale")).toContainText("Pode já ter terminado.")
     await expect(card.locator(".animate-spin")).toHaveCount(0)
-    await expect(ops).toContainText("Não deu para atualizar os disparos. Se a sessão expirou, entre de novo")
+    await expect(ops).toContainText("Não deu para atualizar os disparos. Recarregue a página")
   })
 
   test("cotar vagas: as que ficaram de fora aparecem com o motivo e vão ao ChatGPT só a pedido", async ({ page }) => {

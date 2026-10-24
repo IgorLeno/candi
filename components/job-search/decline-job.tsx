@@ -48,7 +48,7 @@ export function DeclineJobButton({
         setOpen(false)
         router.refresh()
       } catch {
-        toast.error(refusalText("UNAUTHENTICATED"))
+        toast.error(refusalText("REQUEST_FAILED"))
       }
     })
 

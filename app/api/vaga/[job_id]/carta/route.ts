@@ -1,15 +1,15 @@
-import { getAllowedSession } from "@/lib/auth/session"
+import { isLocalRequest } from "@/lib/auth/local-request"
 import { readLetterPdf } from "@/lib/ops/cv-file"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
 
 // The cover letter PDF of one job, inline, for the preview in the job page ("Carta de apresentação"). Read-only and
 // guarded like `/curriculo`: job-search says which file (`dispatch.py letter-file`), the panel never takes a path from
-// the request, and the session is checked here too (route handlers are not covered by the layout guard).
+// the request, and the request is checked to be local here too (route handlers are not covered by the layout guard).
 
 export const dynamic = "force-dynamic"
 
 export async function GET(_request: Request, { params }: { params: Promise<{ job_id: string }> }): Promise<Response> {
-  if (!(await getAllowedSession())) return new Response(null, { status: 401 })
+  if (!(await isLocalRequest())) return new Response(null, { status: 403 })
   if (!isDispatchEnabled()) return new Response(null, { status: 404 })
   const { job_id: jobId } = await params
   const pdf = await readLetterPdf(jobId)

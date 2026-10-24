@@ -63,7 +63,7 @@ Esta parte é para quem quer ver como o painel foi construído.
    │ Candi (Next.js 16, local)                                        │
    │ parsing por cabeçalho → validação zod + sha256 → JobView         │
    │ → métricas puras → páginas (Server Components)                   │
-   │ Auth.js (Google, allowlist) em três portões                      │
+   │ sem login: só aceita pedidos da própria máquina (loopback)       │
    └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -77,9 +77,9 @@ Cada item aponta para onde está no código.
 - **Métricas e funil como funções puras.** KPIs, funil, séries semanais e distribuições são calculados sobre `JobView` e testados em Vitest; a camada de apresentação só define rótulos, cores e ordem (`lib/job-search/metrics.ts`, `lib/job-search/present.ts`).
 - **Orquestração de bots com superfície mínima.** O despacho roda `dispatch.py` do `job-search` com `execFile` (sem shell), argv fixo, env reduzido a uma lista explícita, timeout e saída JSON validada com zod; recusas viram mensagens claras na interface (`lib/ops/dispatcher.ts`, `lib/ops/schema.ts`, `lib/ops/present.ts`).
 - **Texto livre só por stdin, com guardas dos dois lados.** As três entradas de texto do usuário (vaga indicada, orientação para um currículo travado, pedido de edição do currículo) passam por normalização NFKC, remoção de caracteres de controle, limite de 10 a 1500 caracteres e bloqueio de padrões de comando no painel, e de novo no dispatcher; nunca vão para a linha de comando (`lib/ops/intake.ts`).
-- **Autenticação fail-closed em três portões.** Auth.js com Google e allowlist de um e-mail: o proxy barra páginas e `/api/*`, o layout do dashboard exige sessão, e a leitura da Sheet real recusa sem sessão permitida. Cada server action chama `getAllowedSession()` por conta própria (`auth.ts`, `proxy.ts`, `lib/auth/access.ts`, `app/actions/`).
+- **Acesso só local, sem login.** O servidor escuta apenas em `127.0.0.1` e responde só a pedidos endereçados a `localhost`, `127.0.0.1` ou `[::1]`, em qualquer porta (o que também barra DNS rebinding). A regra é conferida no proxy, no layout do dashboard, na leitura da Sheet real e em cada server action e rota, que chamam `isLocalRequest()` por conta própria (`proxy.ts`, `lib/auth/local.ts`, `app/actions/`).
 - **Local-first.** Roda na máquina do dono com `pnpm build && pnpm start`; sem deploy, sem banco de dados, sem dependência de provedor de hospedagem.
-- **Testes e CI.** Testes unitários em Vitest (parsing, schema, métricas, regras de apresentação, guardas de texto) e testes E2E em Playwright contra um **dispatcher falso** com a mesma CLI e o mesmo JSON do real, que avança uma etapa por consulta (`e2e/fixtures/job-search-fake`). O E2E não tem bypass de login: o servidor sobe com segredos descartáveis e os testes emitem o cookie de sessão. GitHub Actions roda lint, Prettier, testes com cobertura, E2E e build (`.github/workflows/ci.yml`).
+- **Testes e CI.** Testes unitários em Vitest (parsing, schema, métricas, regras de apresentação, guardas de texto) e testes E2E em Playwright contra um **dispatcher falso** com a mesma CLI e o mesmo JSON do real, que avança uma etapa por consulta (`e2e/fixtures/job-search-fake`). O E2E confere que pedidos endereçados a outro nome recebem 403. GitHub Actions roda lint, Prettier, testes com cobertura, E2E e build (`.github/workflows/ci.yml`).
 
 ## Como rodar
 
@@ -91,9 +91,9 @@ cp .env.example .env.local   # JOB_SEARCH_DATA_SOURCE=fixture já é o padrão
 pnpm dev                     # http://localhost:3000
 ```
 
-Sem configurar a Sheet, o painel lê a fixture local. O login continua obrigatório: preencha em `.env.local` `ALLOWED_EMAIL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` e `AUTH_TRUST_HOST=true` (client OAuth do Google com redirect `http://localhost:3000/api/auth/callback/google`). Nunca commite credenciais.
+Sem configurar a Sheet, o painel lê a fixture local. Não há login: abra `http://localhost:<porta>` na mesma máquina (qualquer porta). O painel não abre pelo IP da rede nem de outro aparelho. Nunca commite credenciais.
 
-Para ver tudo funcionando sem conta Google, rode a suíte E2E: ela sobe o servidor com a fixture, segredos descartáveis e o dispatcher falso.
+Para ver tudo funcionando com os bots simulados, rode a suíte E2E: ela sobe o servidor com a fixture e o dispatcher falso.
 
 ```bash
 pnpm exec playwright install chromium
@@ -115,7 +115,7 @@ pnpm build
 
 ## Stack
 
-Next.js 16 (App Router, Server Components, Server Actions), React 19, TypeScript, Tailwind CSS 4, Radix UI (shadcn/ui), Recharts, zod, Auth.js v5, Google Sheets API, Vitest, Testing Library, Playwright, GitHub Actions.
+Next.js 16 (App Router, Server Components, Server Actions), React 19, TypeScript, Tailwind CSS 4, Radix UI (shadcn/ui), Recharts, zod, Google Sheets API, Vitest, Testing Library, Playwright, GitHub Actions.
 
 ## Documentação
 

@@ -589,7 +589,7 @@ export function CvManualEditor({
                 )
               } else toast.error(refusalText(result.code))
             } catch {
-              toast.error(refusalText("UNAUTHENTICATED"))
+              toast.error(refusalText("REQUEST_FAILED"))
             }
           })
         }

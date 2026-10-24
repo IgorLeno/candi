@@ -1,15 +1,16 @@
-import { getAllowedSession } from "@/lib/auth/session"
+import { isLocalRequest } from "@/lib/auth/local-request"
 import { readCvPdf } from "@/lib/ops/cv-file"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
 
 // The résumé PDF of one job, inline, for the preview in the job page ("Currículo"). Read-only: job-search says which
-// file (`dispatch.py cv-file`), the panel never takes a path from the request. The proxy already answers 401 without
-// a session; this handler checks the session again (route handlers are not covered by the layout guard).
+// file (`dispatch.py cv-file`), the panel never takes a path from the request. The proxy already answers 403 to a
+// request not addressed to this machine; this handler checks again (route handlers are not covered by the layout
+// guard).
 
 export const dynamic = "force-dynamic"
 
 export async function GET(_request: Request, { params }: { params: Promise<{ job_id: string }> }): Promise<Response> {
-  if (!(await getAllowedSession())) return new Response(null, { status: 401 })
+  if (!(await isLocalRequest())) return new Response(null, { status: 403 })
   if (!isDispatchEnabled()) return new Response(null, { status: 404 })
   const { job_id: jobId } = await params
   const pdf = await readCvPdf(jobId)

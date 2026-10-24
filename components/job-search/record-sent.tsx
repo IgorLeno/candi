@@ -59,7 +59,7 @@ export function RecordSentButton({ jobId, label }: { jobId: string; /** Company 
         router.refresh()
         void refreshOps()
       } catch {
-        toast.error(recordSentRefusalText("UNAUTHENTICATED"))
+        toast.error(recordSentRefusalText("REQUEST_FAILED"))
       }
     })
 

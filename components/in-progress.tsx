@@ -177,7 +177,7 @@ function Empty({ error }: { error: boolean }) {
   return (
     <p className="px-3 py-1 text-xs text-sidebar-foreground/70" data-testid="in-progress-empty">
       {error
-        ? "Não deu para atualizar. Se a sessão expirou, entre de novo e recarregue a página."
+        ? "Não deu para atualizar. Recarregue a página; se continuar, confira se o Candi está rodando."
         : "Nada rodando nem esperando você."}
     </p>
   )
