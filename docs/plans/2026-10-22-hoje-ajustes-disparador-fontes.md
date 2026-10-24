@@ -314,3 +314,85 @@ prometeria algo que não roda. Entra na tela junto com o `today-tick`.
   lista (a de 16/10 existe).
 - Não verificado: rodada real (precisa do OK do usuário). Os e2e novos do P3 e do P4 foram escritos antes da
   implementação, mas só rodaram depois (verdes); o vermelho foi conferido no vitest (P1, P2, P4) e no e2e do P5.
+
+## Plano — frente B (cada item = um commit; teste vermelho antes da implementação)
+
+Base lida em 2026-10-24: job-search main 337469e (working tree com 5 arquivos alheios, fora dos commits); painel
+main 965c593 (login removido: actions com `requireLocalRequest()`). Já existe: `today-settings set --auto on|off
+--every N` grava `auto`, e `today-settings` devolve `next_run_at` = `updated_at` da lista + `every_hours` (sem olhar
+o último disparo). `_spawn_host` repassa `DISPLAY`/`WAYLAND_DISPLAY` só se estiverem no ambiente; `open_browser` usa
+`session_env()` (`graphical_session.py`) para ler a sessão do `systemd --user`.
+
+### job-search
+
+- [x] B1 `feat(dispatch): automatic Hoje refresh tick` — `today_tick(s, *, now, env, spawn)` e `dispatch.py
+      today-tick`: desligada, ATUALIZAR_LISTA ativo ou ainda não devido = sai sem efeito; devido = `start(…,
+      "ATUALIZAR_LISTA", "hermes", None, trigger="AUTO")` (registro ganha `trigger`, `view()` o devolve). "Devido" =
+      `max(updated_at da lista, created_at do último ATUALIZAR_LISTA)` + `every_hours` (sem nenhum dos dois = já).
+      A decisão e o `start` ficam sob o `_lock` dos registros (dois ticks juntos iniciam um só). Testes: desligada,
+      não devido pela lista, não devido pelo último disparo (sucesso ou falha), ativo, devido, duas chamadas seguidas.
+- [x] B2 `feat(dispatch): pause the automatic refresh while it waits for the user` — o ATUALIZAR_LISTA mais novo com
+      `trigger: AUTO` em PRECISA_HUMANO sem `acknowledged` pausa o tick (`last_skip` `AUTO_PAUSED`); resolver
+      (nova rodada) ou dispensar (`ack`) solta. Rodada manual parada não pausa. Testes dos três casos.
+- [x] B3 `feat(dispatch): skip the automatic refresh without a graphical session` — antes do `start`, `session_env()`
+      sem `DISPLAY`/`WAYLAND_DISPLAY` = não dispara e grava `last_skip: {"code": "NO_GRAPHICAL_SESSION", "at": …}`;
+      uma recusa do próprio `start` (ex.: `CHATGPT_BUSY`, navegador do portal fechado) também vira `last_skip` com o
+      código, sem erro. Com sessão, o ambiente lido segue para o filho (como o `open-browser`). Disparo bem-sucedido
+      limpa o `last_skip`. `last_skip` não mexe no `updated_at` dos ajustes. Testes com `show` falso.
+- [x] B4 `feat(dispatch): next run and last skip in the Hoje settings` — `today-settings`/`set` devolvem
+      `next_run_at` pela mesma conta do tick e `last_skip`; `today_settings()` aceita `last_skip` (fora do contrato =
+      null). As flags `--auto on|off --every 3|6|12|24` já existem (fixas, sem texto livre). Testes com o argv exato.
+- [x] B5 `feat(dispatch): systemd timer for the automatic refresh` — `hermes/browsers/job-search-today.service`
+      (oneshot, `python3 dispatch.py today-tick`, `WorkingDirectory` do repo, `PATH` como o gateway) e
+      `job-search-today.timer` (`OnCalendar=*:0/15`, `Persistent=true`); `browsers.sh install-today-timer` (copia
+      para `~/.config/systemd/user/`, `daemon-reload`, `enable --now` do timer) e `uninstall-today-timer`; nota no
+      `RUNTIME.md`. Teste: `systemd-analyze --user verify` das unidades. **Não instalo nem habilito sem OK na hora.**
+- [x] B6 `docs(dispatch): automatic Hoje refresh` — docstring do dispatch.py.
+
+### Painel
+
+- [x] Q1 `feat(ops): automatic refresh in the Hoje settings` — `lib/ops/schema.ts` (`last_skip`, `trigger` no
+      disparo), `saveTodaySettings` aceita `auto` (`enabled`, `every_hours` ∈ 3/6/12/24) → `--auto on|off --every N`
+      (argv fixo; `requireLocalRequest()` primeiro), fake do e2e com `last_skip`/`next_run_at` e `trigger`. Vitest:
+      argv exato, schema.
+- [x] Q2 `feat(today): automatic refresh block in the settings window` — bloco "Atualização automática" de volta à
+      `TodaySettingsDialog`: chave liga/desliga + frequência (3, 6, 12, 24 h), salvo com o resto; textos da janela
+      inteira revisados. E2E: ligar 6 h → salvar → reabrir mostra ligada em 6 h.
+- [x] Q3 `feat(today): automatic refresh state on the Hoje line and card` — a linha sob "Atualizar lista" ganha
+      "automática a cada 12 h (próxima ~20:30)", "automática desligada" ou o último pulo ("não rodou às 14:00:
+      sessão gráfica fechada"; `AUTO_PAUSED` = "pausada até você resolver a última rodada"); o card de uma rodada
+      `trigger: AUTO` diz "Atualização automática". Vitest do texto; e2e da linha.
+- [x] Q4 `docs: automatic Hoje refresh` — CLAUDE.md do painel e checklist/execução deste plano.
+
+### Verificação
+
+- [x] job-search: `validate_job_search.py`, unittest de `scripts`, `pytest hermes/browsers` (comparar as 12 falhas
+      antigas), `ruff check` nos tocados.
+- [x] Painel: `pnpm exec tsc --noEmit`, `pnpm lint`, prettier nos tocados, `pnpm test`, e2e ops.spec + dashboard.spec
+      (cópia na :3100).
+- [ ] Só com OK do usuário: instalar e habilitar o timer; ver um tick real.
+
+### Execução — frente B (2026-10-24)
+
+- job-search (main, sem push): 3e42024 B1, 62ecd40 B2, b55202f B3, 4e22dff B4, 36ce9d2 B5, 749e9f1 B6. Painel (main,
+  sem push): 95fa4f5 Q1, 643c440 Q2, 8f7deb4 Q3, Q4 (este).
+- Gates job-search: `validate_job_search.py` OK; unittest de `scripts` 683 OK; `pytest hermes/browsers` 508 passed +
+  as mesmas 12 falhas antigas (base 491 passed; lista idêntica); `ruff check` limpo em `dispatch.py` (o `hashlib` sem
+  uso em `test_dispatch.py` já existia); `systemd-analyze --user verify` das duas unidades OK.
+- Gates painel: `tsc --noEmit` limpo; `pnpm lint` só os 4 avisos antigos de `_geist` em `app/layout.tsx`; prettier
+  limpo nos tocados; `pnpm test` 307 passed; e2e ops.spec + dashboard.spec na cópia :3100: 41 passaram, 4 falharam,
+  todas conhecidas ("currículo local…", "carta travada com dúvida…", "preencher vaga: o Claude preenche…", que fica
+  em Rodando 81% como em 17/10; "hoje: fila, candidatura atual e meta", instável na primeira compilação: 2 de 2
+  isolado). Vermelho conferido antes de cada implementação (pytest B1–B5, vitest Q1/Q3, e2e Q2/Q3).
+- Desvios do desenho:
+  - Pulos gravados em `last_skip`: `NO_GRAPHICAL_SESSION`, `AUTO_PAUSED` e qualquer recusa do `start` (ex.:
+    `CHATGPT_BUSY`), exceto `DISPATCH_ACTIVE` (outro tick ou uma rodada INCERTO não reconhecida: sai calado).
+    Desligada, ainda não devida ou rodando não grava nada. `last_skip` fica dentro de `settings`, não ao lado.
+  - "Devido" sem lista e sem disparo = já; `next_run_at` passado vira "próxima em até 15 min" na linha. Sem o timer
+    instalado, essa frase fica até alguém clicar: o painel não sabe se o timer está instalado.
+  - Com sessão gráfica lida do `systemd --user`, o tick põe `DISPLAY`/`WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR` no próprio
+    ambiente para o `_spawn_host` repassar ao filho (o painel não repassa, porque o Chrome já está aberto).
+  - Código de pulo sem texto curto aparece como "recusa CÓDIGO" na linha.
+  - O fake do e2e não tem tick: o card "Atualização automática" só tem vitest (`dispatchTitle`), não e2e.
+- Não verificado: timer instalado e um tick real (precisa do OK do usuário: `browsers.sh install-today-timer`);
+  rodada automática real.
