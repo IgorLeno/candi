@@ -138,6 +138,7 @@ import {
   LEFT_OUT_ACTION,
   PLATFORMS,
   TODAY_ACTION,
+  TODAY_EVERY_HOURS,
   TODAY_REPLACE,
   type BotAction,
   type CvFileInfo,
@@ -150,6 +151,7 @@ import {
   type DispatchStage,
   type FillItem,
   type OpenBrowserResult,
+  type TodayEveryHours,
   type TodayReplace,
 } from "@/lib/ops/schema"
 import { cn } from "@/lib/utils"
@@ -3170,13 +3172,12 @@ export function TodayListControls({
   )
 }
 
-type TodayForm = { cargo: string; lugar: string; replace: TodayReplace }
+type TodayForm = { cargo: string; lugar: string; replace: TodayReplace; auto: boolean; every: TodayEveryHours }
 
 /**
- * The "Atualizar lista" window (plan 2026-10-22, front A): the focus (Cargo, Lugar) and how many jobs a refresh
- * replaces, read from and saved to job-search (`today-settings`); "Salvar e atualizar agora" saves and starts the
- * refresh. The automatic refresh joins this window with its trigger (front B): a switch here would promise a run that
- * does not exist yet.
+ * The "Atualizar lista" window (plan 2026-10-22): the automatic refresh (front B: on/off and how often job-search's
+ * timer runs it), the focus (Cargo, Lugar) and how many jobs a refresh replaces, read from and saved to job-search
+ * (`today-settings`); "Salvar e atualizar agora" saves and starts the refresh.
  */
 function TodaySettingsDialog({
   open,
@@ -3213,8 +3214,8 @@ function TodaySettingsDialog({
           setReadError(result.code)
           return
         }
-        const { focus, replace, pinned: pins } = result.value.settings
-        setForm({ cargo: focus.cargo, lugar: focus.lugar, replace })
+        const { focus, replace, pinned: pins, auto } = result.value.settings
+        setForm({ cargo: focus.cargo, lugar: focus.lugar, replace, auto: auto.enabled, every: auto.every_hours })
         setPinned(pins)
       } catch {
         if (alive) setReadError("REQUEST_FAILED")
@@ -3237,6 +3238,7 @@ function TodaySettingsDialog({
         const saved = await saveTodaySettings({
           replace: form.replace,
           focus: { cargo: form.cargo, lugar: form.lugar },
+          auto: { enabled: form.auto, every_hours: form.every },
         })
         if (!saved.ok) {
           toast.error(refusalText(saved.code))
@@ -3278,6 +3280,48 @@ function TodaySettingsDialog({
           </p>
         ) : (
           <div className="space-y-6 text-sm">
+            <fieldset className="space-y-3" data-testid="today-auto">
+              <legend className="font-semibold text-foreground">Atualização automática</legend>
+              <label className="inline-flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-checked={form.auto}
+                  className="h-4 w-4 accent-primary"
+                  checked={form.auto}
+                  data-testid="today-auto-switch"
+                  onChange={(event) => setForm({ ...form, auto: event.target.checked })}
+                />
+                {form.auto ? "Ligada" : "Desligada"}
+              </label>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Frequência">
+                {TODAY_EVERY_HOURS.map((hours) => (
+                  <label
+                    key={hours}
+                    className={cn(
+                      "inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-3 py-1.5",
+                      form.every === hours && "border-primary bg-primary/10 text-foreground",
+                      !form.auto && "opacity-60"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="today-every"
+                      className="accent-primary"
+                      checked={form.every === hours}
+                      data-testid={`today-every-${hours}`}
+                      onChange={() => setForm({ ...form, every: hours })}
+                    />
+                    A cada {hours} h
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground" data-testid="today-auto-hint">
+                Ligada, o job-search atualiza a lista sozinho com os ajustes desta janela, mesmo com o painel fechado, e
+                grava o resultado na planilha como no clique. Precisa do computador ligado com a sua sessão aberta; se
+                uma rodada parar esperando você, as próximas esperam até você resolver.
+              </p>
+            </fieldset>
             <fieldset className="space-y-3" data-testid="today-focus">
               <legend className="font-semibold text-foreground">Foco</legend>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -3355,9 +3399,9 @@ function TodaySettingsDialog({
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          &ldquo;Salvar&rdquo; só guarda os ajustes para a próxima atualização. &ldquo;Salvar e atualizar agora&rdquo;
-          roda no job-search e é o seu pedido para gravar na planilha; pode levar alguns minutos (até 2 lotes no
-          ChatGPT).
+          &ldquo;Salvar&rdquo; só guarda os ajustes para a próxima atualização (sua ou automática). &ldquo;Salvar e
+          atualizar agora&rdquo; roda no job-search e é o seu pedido para gravar na planilha; pode levar alguns minutos
+          (até 2 lotes no ChatGPT).
         </p>
         <DialogFooter>
           <Button

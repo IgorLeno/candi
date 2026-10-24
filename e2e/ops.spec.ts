@@ -296,8 +296,9 @@ test.describe("Central de operações (bots)", () => {
     await expect(dialog.getByTestId("today-focus-cargo")).toHaveValue("")
     await expect(dialog.getByTestId("today-focus-lugar")).toHaveValue("")
     await expect(dialog.getByTestId("today-replace-AVALIAR")).toBeChecked()
-    // No "Atualização automática" block before the trigger exists (front B).
-    await expect(dialog).not.toContainText("automática")
+    // Automatic refresh (front B): off by default, every 12 h.
+    await expect(dialog.getByTestId("today-auto-switch")).not.toBeChecked()
+    await expect(dialog.getByTestId("today-every-12")).toBeChecked()
 
     // The same guards as job-search explain a refusal before anything is sent.
     await dialog.getByTestId("today-focus-cargo").fill("analista ok 1a2b3c4d")
@@ -325,6 +326,32 @@ test.describe("Central de operações (bots)", () => {
     await expect(updated).toContainText("faltaram 4 no foco")
     await expect(page.getByTestId("next-move")).toHaveAttribute("data-job-id", "fake-1004")
     await expect(page.getByTestId("queue-list")).toHaveCount(0)
+  })
+
+  test("hoje: a janela liga a atualização automática e guarda a frequência", async ({ page }) => {
+    await page.goto("/")
+    await page.getByTestId("today-refresh-button").click()
+    const dialog = page.getByTestId("today-settings-dialog")
+    const block = dialog.getByTestId("today-auto")
+    await expect(block).toContainText("Atualização automática")
+    await expect(block).toContainText("mesmo com o painel fechado")
+    await dialog.getByTestId("today-auto-switch").check()
+    await dialog.getByTestId("today-every-6").check()
+    await dialog.getByTestId("today-settings-save").click()
+    await expect(page.getByText("Ajustes salvos.")).toBeVisible()
+    await expect(dialog).toHaveCount(0)
+    // Saving never starts a refresh: the timer in job-search does.
+    await expect(page.getByTestId("dispatch-ATUALIZAR_LISTA")).toHaveCount(0)
+
+    await page.getByTestId("today-refresh-button").click()
+    await expect(dialog.getByTestId("today-auto-switch")).toBeChecked()
+    await expect(dialog.getByTestId("today-every-6")).toBeChecked()
+    await dialog.getByTestId("today-auto-switch").uncheck()
+    await dialog.getByTestId("today-settings-save").click()
+    await expect(dialog).toHaveCount(0)
+    await page.getByTestId("today-refresh-button").click()
+    await expect(dialog.getByTestId("today-auto-switch")).not.toBeChecked()
+    await expect(dialog.getByTestId("today-every-6")).toBeChecked()
   })
 
   test("hoje: adicionar vaga específica põe na fila sem recarregar; sem resultado, busca fora da planilha", async ({
