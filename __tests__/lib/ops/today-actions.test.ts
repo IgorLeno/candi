@@ -53,12 +53,31 @@ describe("Hoje settings server actions (plan 2026-10-22)", () => {
     expect(JSON.parse(options.stdin)).toEqual({ cargo: "analista de processos", lugar: "--auto on" })
   })
 
+  it("saves the automatic refresh with fixed flags only (front B)", async () => {
+    await saveTodaySettings({
+      replace: "AVALIAR",
+      focus: { cargo: "", lugar: "" },
+      auto: { enabled: true, every_hours: 6 },
+    })
+    await saveTodaySettings({
+      replace: "1",
+      focus: { cargo: "", lugar: "" },
+      auto: { enabled: false, every_hours: 24 },
+    })
+    expect(runDispatcher.mock.calls.map((call) => call[0])).toEqual([
+      ["today-settings", "set", "--replace", "AVALIAR", "--auto", "on", "--every", "6", "--focus-stdin"],
+      ["today-settings", "set", "--replace", "1", "--auto", "off", "--every", "24", "--focus-stdin"],
+    ])
+  })
+
   it("refuses bad input here, without calling the dispatcher", async () => {
     for (const input of [
       null,
       { replace: "4", focus: { cargo: "", lugar: "" } },
       { replace: "AVALIAR" },
       { replace: "AVALIAR", focus: { cargo: "", lugar: "" }, auto: "on" },
+      { replace: "AVALIAR", focus: { cargo: "", lugar: "" }, auto: { enabled: true, every_hours: 5 } },
+      { replace: "AVALIAR", focus: { cargo: "", lugar: "" }, auto: { enabled: "true", every_hours: 6 } },
       { replace: "AVALIAR", focus: { cargo: 1, lugar: "" } },
     ]) {
       await expect(saveTodaySettings(input)).resolves.toEqual({ ok: false, code: "INPUT_INVALID" })

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 import { refusalText, todayOutReason } from "@/lib/ops/present"
-import { todayListSchema, todayPinResultSchema, todayResultSchema, todaySettingsResultSchema } from "@/lib/ops/schema"
+import {
+  dispatchSchema,
+  todayListSchema,
+  todayPinResultSchema,
+  todayResultSchema,
+  todaySettingsResultSchema,
+} from "@/lib/ops/schema"
 import { FOCUS_MAX, TODAY_REPLACE, normalizeFocus } from "@/lib/ops/today-settings"
 
 // Hoje settings (plan 2026-10-22, front A): job-search's `today-settings`, `today-pin`/`today-unpin` and `today-list/2`.
@@ -40,6 +46,44 @@ describe("today-settings/1 contract", () => {
       todaySettingsResultSchema.safeParse({ ok: true, settings: { ...settings, updated_at: null }, next_run_at: "x" })
         .success
     ).toBe(true)
+  })
+
+  it("reads the last skip of the automatic refresh (front B)", () => {
+    const skip = { code: "NO_GRAPHICAL_SESSION", at: "2026-10-24T17:00:00Z" }
+    const parsed = todaySettingsResultSchema.parse({
+      ok: true,
+      settings: { ...settings, last_skip: skip },
+      next_run_at: "2026-10-24T23:00:00Z",
+    })
+    expect(parsed.settings.last_skip).toEqual(skip)
+    for (const bad of [{ code: "x y", at: "2026" }, { code: "OK" }, "NO_GRAPHICAL_SESSION"]) {
+      expect(
+        todaySettingsResultSchema.safeParse({ ok: true, settings: { ...settings, last_skip: bad }, next_run_at: null })
+          .success
+      ).toBe(false)
+    }
+  })
+
+  it("reads which refresh the timer started (trigger AUTO)", () => {
+    const record = {
+      id: "d-20261024T120000Z-abcdef",
+      action: "ATUALIZAR_LISTA",
+      platform: "hermes",
+      job_id: null,
+      status: "RODANDO",
+      code: null,
+      marker: null,
+      bot: "Descoberta + ChatGPT (host)",
+      mode: "host",
+      active: true,
+      acknowledged: false,
+      created_at: "2026-10-24T12:00:00Z",
+      finished_at: null,
+      progress: { percent: 10, stages: [] },
+    }
+    expect(dispatchSchema.parse({ ...record, trigger: "AUTO" }).trigger).toBe("AUTO")
+    expect(dispatchSchema.parse(record).trigger).toBeUndefined()
+    expect(dispatchSchema.safeParse({ ...record, trigger: "CRON" }).success).toBe(false)
   })
 
   it("refuses values outside job-search's lists", () => {

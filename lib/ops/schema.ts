@@ -441,6 +441,8 @@ export const dispatchSchema = z.object({
   mode: z.enum(["host", "bot"]).optional(),
   renderer: z.enum(["claude_design", "local"]).optional(),
   edit_mode: z.enum(["reassess", "request", "manual"]).optional(),
+  /** ATUALIZAR_LISTA started by job-search's timer (front B) instead of a click. */
+  trigger: z.literal("AUTO").optional(),
   active: z.boolean(),
   acknowledged: z.boolean(),
   created_at: z.string(),
@@ -607,6 +609,9 @@ const todayLeftSchema = z
 
 /** "Atualizar lista" settings (plan 2026-10-22): how many jobs a refresh replaces; AVALIAR = re-rank all (default). */
 export const TODAY_REPLACE = ["AVALIAR", "1", "2", "3", "TODAS"] as const
+/** Automatic refresh (front B): how often job-search's timer starts "Atualizar lista". */
+export const TODAY_EVERY_HOURS = [3, 6, 12, 24] as const
+export type TodayEveryHours = (typeof TODAY_EVERY_HOURS)[number]
 export type TodayReplace = (typeof TODAY_REPLACE)[number]
 export const TODAY_PIN_MAX = 5
 // job-search keeps 80 code points per field; an astral character counts two here, so the bound is loose on purpose.
@@ -627,6 +632,15 @@ export const todaySettingsSchema = z.object({
   replace: z.enum(TODAY_REPLACE),
   pinned: z.array(z.string().regex(JOB_ID_RE)).max(TODAY_PIN_MAX),
   updated_at: z.string().max(40).nullable(),
+  /**
+   * Front B: why job-search's timer did not start the last due refresh (`NO_GRAPHICAL_SESSION`, `AUTO_PAUSED` or a
+   * refusal code of `start`) and when. A started round clears it.
+   */
+  last_skip: z
+    .object({ code: z.string().regex(/^[A-Z][A-Z0-9_]{0,59}$/), at: z.string().max(40) })
+    .strict()
+    .nullable()
+    .optional(),
 })
 export type TodaySettings = z.infer<typeof todaySettingsSchema>
 

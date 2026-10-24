@@ -33,7 +33,9 @@ render → letter (fake-1002 stops with one ChatGPT doubt and ready answers; `re
 finishes, `--request-stdin` stops in LETTER_PENDING with a before/after proposal until `apply-letter --decision
 approve|reject`; `list` shows `job.letter` and `job.letter_hint` (fake-1001). `open-browser clouddesign|application|portal` opens nothing and answers already_open false. ATUALIZAR_LISTA (Hermes,
 host) moves three stages per poll and, at the end, writes today-list.json, which `today` reads. `today-settings [set
---replace X --focus-stdin]` keeps the Hoje settings in today-settings.json (FOCUS_INVALID like job-search); `today-pin`/
+--replace X [--auto on|off --every N] --focus-stdin]` keeps the Hoje settings in today-settings.json (FOCUS_INVALID like
+job-search); with the automatic refresh on, next_run_at is a fixed 2026-10-24T23:30:00Z, and every 3 h answers the
+last skip NO_GRAPHICAL_SESSION at 2026-10-24T17:00:00Z (the fake has no timer); `today-pin`/
 `today-unpin <job_id>` rewrite the list at once as today-list/2 (fake-1006/fake-1009 → JOB_GONE, an id outside the
 fixture and fake-9002 → JOB_NOT_FOUND, a sixth pin → PIN_FULL). BUSCAR_VAGAS on Hermes
 runs on the host (it never holds the Lince). `attention` lists, read-only,
@@ -86,7 +88,8 @@ TODAY_SUMMARY = {"items": 3, "missing": 2, "analysed": 2, "failed": 0, "changes"
 # Hoje settings (plano 2026-10-22, frente A): job-search keeps them in its state; the panel never writes the list.
 TODAY_SETTINGS_FILE = STATE.parent / "today-settings.json"
 TODAY_SETTINGS = {"schema": "today-settings/1", "auto": {"enabled": False, "every_hours": 12},
-                  "focus": {"cargo": "", "lugar": ""}, "replace": "AVALIAR", "pinned": [], "updated_at": None}
+                  "focus": {"cargo": "", "lugar": ""}, "replace": "AVALIAR", "pinned": [], "updated_at": None,
+                  "last_skip": None}
 TODAY_REPLACE = ("AVALIAR", "1", "2", "3", "TODAS")
 # The Sheet the fake "reads" for a pin: status_candidatura and interesse of the fixture rows. fake-9002 (the specific
 # job) counts as registered once its writeset was registered, like on the real Sheet.
@@ -1216,11 +1219,21 @@ def main(argv):
                 settings["focus"] = {k: " ".join(v.split()) for k, v in focus.items()}
             if replace is not None:
                 settings["replace"] = replace
+            auto, every = flag(argv, "--auto"), flag(argv, "--every")
+            if auto not in (None, "on", "off") or every not in (None, "3", "6", "12", "24"):
+                return refuse("SETTINGS_INVALID")
+            if auto is not None:
+                settings["auto"]["enabled"] = auto == "on"
+            if every is not None:
+                settings["auto"]["every_hours"] = int(every)
+            settings["last_skip"] = ({"code": "NO_GRAPHICAL_SESSION", "at": "2026-10-24T17:00:00Z"}
+                                     if settings["auto"] == {"enabled": True, "every_hours": 3} else None)
             settings["updated_at"] = now()
             write_today_settings(settings)
         elif argv[1:]:
             return refuse("SETTINGS_INVALID")
-        print(json.dumps({"ok": True, "settings": settings, "next_run_at": None}))
+        next_run = "2026-10-24T23:30:00Z" if settings["auto"]["enabled"] else None
+        print(json.dumps({"ok": True, "settings": settings, "next_run_at": next_run}))
         return 0
     if cmd in ("today-pin", "today-unpin"):
         job_id = argv[1] if len(argv) > 1 else ""

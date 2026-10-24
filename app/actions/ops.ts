@@ -578,11 +578,18 @@ export async function getTodaySettings(): Promise<ActionResult<TodaySettingsView
     : { ok: false, code: result.code }
 }
 
-// Front A saves only the focus and how many to replace; the automatic refresh comes with front B.
 const todaySettingsInputSchema = z
   .object({
     replace: z.enum(TODAY_REPLACE),
     focus: z.object({ cargo: z.string().max(400), lugar: z.string().max(400) }).strict(),
+    // Front B: on/off and how often job-search's timer refreshes the list; fixed flags, no free text.
+    auto: z
+      .object({
+        enabled: z.boolean(),
+        every_hours: z.union([z.literal(3), z.literal(6), z.literal(12), z.literal(24)]),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 
@@ -597,7 +604,15 @@ export async function saveTodaySettings(input: unknown): Promise<ActionResult<To
   if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
   const focus = normalizeFocus(parsed.data.focus)
   if (!focus.ok) return { ok: false, code: focus.code }
-  const args = ["today-settings", "set", "--replace", parsed.data.replace, "--focus-stdin"]
+  const { auto } = parsed.data
+  const args = [
+    "today-settings",
+    "set",
+    "--replace",
+    parsed.data.replace,
+    ...(auto ? ["--auto", auto.enabled ? "on" : "off", "--every", String(auto.every_hours)] : []),
+    "--focus-stdin",
+  ]
   const result = await runDispatcher(args, todaySettingsResultSchema, undefined, { stdin: JSON.stringify(focus.focus) })
   return result.ok
     ? { ok: true, value: { settings: result.value.settings, next_run_at: result.value.next_run_at } }
