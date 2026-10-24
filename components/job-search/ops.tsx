@@ -126,6 +126,7 @@ import {
   persistSummary,
   refineRoom,
   refusalText,
+  dispatchTitle,
   resumeCvRefusalText,
   searchStopText,
   searchVerb,
@@ -1520,7 +1521,7 @@ export function DispatchCard({
     >
       <div className="flex flex-wrap items-center gap-2">
         <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-        <span className="text-sm font-semibold text-foreground">{ACTION_META[dispatch.action].label}</span>
+        <span className="text-sm font-semibold text-foreground">{dispatchTitle(dispatch)}</span>
         <span className="text-xs text-muted-foreground">
           {/* A host run (job-search's own pipeline, the local résumé renderer) has no bot platform: "hermes" is only the
               value the dispatcher needs. */}
@@ -1557,7 +1558,7 @@ export function DispatchCard({
               size="icon"
               variant="ghost"
               className="h-7 w-7"
-              aria-label={`Detalhes: ${ACTION_META[dispatch.action].label}`}
+              aria-label={`Detalhes: ${dispatchTitle(dispatch)}`}
               title={collapsed ? "Mostrar detalhes" : "Recolher detalhes"}
               data-testid="dispatch-collapse"
             >
@@ -1573,7 +1574,7 @@ export function DispatchCard({
             size="icon"
             variant="ghost"
             className="h-7 w-7"
-            aria-label={`Fechar: ${ACTION_META[dispatch.action].label}`}
+            aria-label={`Fechar: ${dispatchTitle(dispatch)}`}
             title="Fechar"
             data-testid="dispatch-close"
             onClick={onClose}
@@ -3161,6 +3162,7 @@ export function TodayListControls({
         onOpenChange={setOpen}
         running={running}
         onStarted={() => void refresh()}
+        onSaved={() => router.refresh()}
         picks={picks}
         queued={queued}
         onIntakeStarted={(id) => {
@@ -3184,6 +3186,7 @@ function TodaySettingsDialog({
   onOpenChange,
   running,
   onStarted,
+  onSaved,
   picks,
   queued,
   onIntakeStarted,
@@ -3192,6 +3195,8 @@ function TodaySettingsDialog({
   onOpenChange: (open: boolean) => void
   running: boolean
   onStarted: () => void
+  /** The Hoje line shows the automatic refresh job-search keeps: read it again after a save. */
+  onSaved: () => void
   picks: TodayPick[]
   queued: string[]
   onIntakeStarted: (id: string) => void
@@ -3244,6 +3249,7 @@ function TodaySettingsDialog({
           toast.error(refusalText(saved.code))
           return
         }
+        onSaved()
         if (!run) {
           onOpenChange(false)
           toast.success("Ajustes salvos.")

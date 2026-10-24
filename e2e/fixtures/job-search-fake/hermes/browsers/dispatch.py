@@ -34,7 +34,7 @@ finishes, `--request-stdin` stops in LETTER_PENDING with a before/after proposal
 approve|reject`; `list` shows `job.letter` and `job.letter_hint` (fake-1001). `open-browser clouddesign|application|portal` opens nothing and answers already_open false. ATUALIZAR_LISTA (Hermes,
 host) moves three stages per poll and, at the end, writes today-list.json, which `today` reads. `today-settings [set
 --replace X [--auto on|off --every N] --focus-stdin]` keeps the Hoje settings in today-settings.json (FOCUS_INVALID like
-job-search); with the automatic refresh on, next_run_at is a fixed 2026-10-24T23:30:00Z, and every 3 h answers the
+job-search); with the automatic refresh on, next_run_at is a fixed 2030-10-24T23:30:00Z, and every 3 h answers the
 last skip NO_GRAPHICAL_SESSION at 2026-10-24T17:00:00Z (the fake has no timer); `today-pin`/
 `today-unpin <job_id>` rewrite the list at once as today-list/2 (fake-1006/fake-1009 → JOB_GONE, an id outside the
 fixture and fake-9002 → JOB_NOT_FOUND, a sixth pin → PIN_FULL). BUSCAR_VAGAS on Hermes
@@ -1232,7 +1232,7 @@ def main(argv):
             write_today_settings(settings)
         elif argv[1:]:
             return refuse("SETTINGS_INVALID")
-        next_run = "2026-10-24T23:30:00Z" if settings["auto"]["enabled"] else None
+        next_run = "2030-10-24T23:30:00Z" if settings["auto"]["enabled"] else None
         print(json.dumps({"ok": True, "settings": settings, "next_run_at": next_run}))
         return 0
     if cmd in ("today-pin", "today-unpin"):

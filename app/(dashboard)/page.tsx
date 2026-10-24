@@ -20,8 +20,8 @@ import { isDispatchEnabled } from "@/lib/ops/dispatcher"
 import { UncertainSubmitAlert } from "@/components/job-search/overview"
 import { DeclineJobButton } from "@/components/job-search/decline-job"
 import { JobCard, NextMoveCard, ShelfTitle, StateLegend } from "@/components/job-search/visual"
-import { canDeclineJob, todayListLine, todayOutReason } from "@/lib/ops/present"
-import { readTodayList } from "@/lib/ops/today"
+import { canDeclineJob, todayAutoText, todayListLine, todayOutReason } from "@/lib/ops/present"
+import { readTodayList, readTodaySettings } from "@/lib/ops/today"
 import { TodayListControls } from "@/components/job-search/ops"
 import { UnpinTodayButton } from "@/components/job-search/today-pin"
 import { cn } from "@/lib/utils"
@@ -115,7 +115,9 @@ export default async function HojePage() {
   const data = await getJobSearchData()
   const items = data.views.map(toListItem)
   const dispatch = isDispatchEnabled()
-  const today = dispatch ? await readTodayList() : { list: null, failed: false }
+  const [today, todaySettings] = dispatch
+    ? await Promise.all([readTodayList(), readTodaySettings()])
+    : [{ list: null, failed: false }, null]
   const { queue, out, pinned } = todayView(items, today.list)
   const [next, ...rest] = queue
 
@@ -149,13 +151,15 @@ export default async function HojePage() {
     .filter((item) => jobState(item) === "enviada")
     .sort((a, b) => (b.dataCandidatura ?? "").localeCompare(a.dataCandidatura ?? ""))
   const declined = items.filter((item) => jobState(item) === "descartada")
-  const listLine = !dispatch
+  const baseLine = !dispatch
     ? null
     : today.list
       ? todayListLine(today.list, now)
       : today.failed
         ? "Não foi possível ler a lista do job-search: a Hoje mostra todas as selecionadas e abertas."
         : "Lista ainda não atualizada: a Hoje mostra todas as selecionadas e abertas."
+  // Front B: the automatic refresh (on/off, next run or last skip) follows the list line.
+  const listLine = baseLine && todaySettings ? `${baseLine} · ${todayAutoText(todaySettings, now)}` : baseLine
 
   const subline = [
     hot > 0 && `${hot} com interesse muito alto`,

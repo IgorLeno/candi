@@ -330,6 +330,8 @@ test.describe("Central de operações (bots)", () => {
 
   test("hoje: a janela liga a atualização automática e guarda a frequência", async ({ page }) => {
     await page.goto("/")
+    const line = page.getByTestId("today-list-updated")
+    await expect(line).toContainText("automática desligada")
     await page.getByTestId("today-refresh-button").click()
     const dialog = page.getByTestId("today-settings-dialog")
     const block = dialog.getByTestId("today-auto")
@@ -340,8 +342,9 @@ test.describe("Central de operações (bots)", () => {
     await dialog.getByTestId("today-settings-save").click()
     await expect(page.getByText("Ajustes salvos.")).toBeVisible()
     await expect(dialog).toHaveCount(0)
-    // Saving never starts a refresh: the timer in job-search does.
+    // Saving never starts a refresh: the timer in job-search does. The line shows the next run (fake: 2030, 23:30 UTC).
     await expect(page.getByTestId("dispatch-ATUALIZAR_LISTA")).toHaveCount(0)
+    await expect(line).toContainText("automática a cada 6 h (próxima ~20:30)")
 
     await page.getByTestId("today-refresh-button").click()
     await expect(dialog.getByTestId("today-auto-switch")).toBeChecked()
@@ -349,9 +352,16 @@ test.describe("Central de operações (bots)", () => {
     await dialog.getByTestId("today-auto-switch").uncheck()
     await dialog.getByTestId("today-settings-save").click()
     await expect(dialog).toHaveCount(0)
+    await expect(line).toContainText("automática desligada")
     await page.getByTestId("today-refresh-button").click()
     await expect(dialog.getByTestId("today-auto-switch")).not.toBeChecked()
     await expect(dialog.getByTestId("today-every-6")).toBeChecked()
+
+    // The last skip job-search recorded (fake: every 3 h answers a closed graphical session at 17:00 UTC).
+    await dialog.getByTestId("today-auto-switch").check()
+    await dialog.getByTestId("today-every-3").check()
+    await dialog.getByTestId("today-settings-save").click()
+    await expect(line).toContainText("automática a cada 3 h (não rodou às 14:00: sessão gráfica fechada)")
   })
 
   test("hoje: adicionar vaga específica põe na fila sem recarregar; sem resultado, busca fora da planilha", async ({

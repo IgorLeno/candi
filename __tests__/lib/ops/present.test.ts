@@ -3,6 +3,8 @@ import {
   ACTION_META,
   listUpdatedText,
   todayListLine,
+  todayAutoText,
+  dispatchTitle,
   todayReplaceText,
   TODAY_REPLACE_LABEL,
   searchStopText,
@@ -805,6 +807,50 @@ describe("Atualizar lista (2026-10-16)", () => {
     expect(listUpdatedText("2026-10-16T17:10:00Z", now)).toBe("Lista atualizada em 16/10 às 14:10 · há 30 min")
     expect(listUpdatedText("2026-10-13T17:40:00Z", now)).toBe("Lista atualizada em 13/10 às 14:40 · há 3 dias")
     expect(listUpdatedText("lixo", now)).toBe("Lista atualizada (horário ilegível)")
+  })
+
+  it("says how the automatic refresh stands (front B)", () => {
+    const now = new Date("2026-10-24T18:00:00Z")
+    const settings = {
+      schema: "today-settings/1" as const,
+      auto: { enabled: false, every_hours: 12 as const },
+      focus: { cargo: "", lugar: "" },
+      replace: "AVALIAR" as const,
+      pinned: [],
+      updated_at: null,
+      last_skip: null,
+    }
+    expect(todayAutoText({ settings, next_run_at: null }, now)).toBe("automática desligada")
+    const on = { ...settings, auto: { enabled: true, every_hours: 12 as const } }
+    expect(todayAutoText({ settings: on, next_run_at: "2026-10-24T23:30:00Z" }, now)).toBe(
+      "automática a cada 12 h (próxima ~20:30)"
+    )
+    // Already due: the timer passes every 15 min.
+    expect(todayAutoText({ settings: on, next_run_at: "2026-10-24T17:00:00Z" }, now)).toBe(
+      "automática a cada 12 h (próxima em até 15 min)"
+    )
+    const skipped = { ...on, last_skip: { code: "NO_GRAPHICAL_SESSION", at: "2026-10-24T17:00:00Z" } }
+    expect(todayAutoText({ settings: skipped, next_run_at: "2026-10-24T17:00:00Z" }, now)).toBe(
+      "automática a cada 12 h (não rodou às 14:00: sessão gráfica fechada)"
+    )
+    const paused = { ...on, last_skip: { code: "AUTO_PAUSED", at: "2026-10-24T17:00:00Z" } }
+    expect(todayAutoText({ settings: paused, next_run_at: null }, now)).toBe(
+      "automática pausada: a última rodada automática espera você"
+    )
+    const busy = { ...on, last_skip: { code: "CHATGPT_BUSY", at: "2026-10-24T17:15:00Z" } }
+    expect(todayAutoText({ settings: busy, next_run_at: null }, now)).toBe(
+      "automática a cada 12 h (não rodou às 14:15: ChatGPT ocupado)"
+    )
+    const other = { ...on, last_skip: { code: "PORTAL_CDP_DOWN", at: "2026-10-24T17:15:00Z" } }
+    expect(todayAutoText({ settings: other, next_run_at: null }, now)).toBe(
+      "automática a cada 12 h (não rodou às 14:15: recusa PORTAL_CDP_DOWN)"
+    )
+  })
+
+  it("names the refresh the timer started", () => {
+    expect(dispatchTitle({ action: "ATUALIZAR_LISTA", trigger: "AUTO" })).toBe("Atualização automática")
+    expect(dispatchTitle({ action: "ATUALIZAR_LISTA" })).toBe(ACTION_META.ATUALIZAR_LISTA.label)
+    expect(dispatchTitle({ action: "BUSCAR_VAGAS" })).toBe(ACTION_META.BUSCAR_VAGAS.label)
   })
 
   it("adds the focus and the gap to the list line (today-list/2)", () => {

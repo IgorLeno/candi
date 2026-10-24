@@ -13,6 +13,7 @@ import type {
   SentEvidence,
   TodayList,
   TodayReplace,
+  TodaySettingsView,
 } from "@/lib/ops/schema"
 
 // Labels and UX gating for bot dispatches. The dispatcher and the bots are the authority; nothing here
@@ -873,6 +874,50 @@ export function todayListLine(list: TodayList, now: Date = new Date()): string {
     parts.push(inFocus ? `faltaram ${list.missing} no foco` : `faltaram ${list.missing} para completar 5`)
   }
   return parts.join(" · ")
+}
+
+/** "14:00" in São Paulo time, from job-search's UTC stamp. */
+function clockText(iso: string): string | null {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: LIST_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(at)
+}
+
+// Why job-search's timer did not start a due refresh (front B), short enough for the Hoje line. Other codes are
+// refusals of `start` shown by code: the line is no place for a whole refusal sentence.
+const TODAY_SKIP_TEXT: Record<string, string> = {
+  NO_GRAPHICAL_SESSION: "sessão gráfica fechada",
+  CHATGPT_BUSY: "ChatGPT ocupado",
+}
+
+/**
+ * The automatic refresh on the Hoje line (front B): off, every N h with the next run (the timer passes every 15 min,
+ * so a run already due says so), the last skip, or paused while an automatic round waits for the user.
+ */
+export function todayAutoText(view: TodaySettingsView, now: Date = new Date()): string {
+  const { auto, last_skip: skip } = view.settings
+  if (!auto.enabled) return "automática desligada"
+  if (skip?.code === "AUTO_PAUSED") return "automática pausada: a última rodada automática espera você"
+  const every = `automática a cada ${auto.every_hours} h`
+  if (skip) {
+    const at = clockText(skip.at)
+    const why = TODAY_SKIP_TEXT[skip.code] ?? `recusa ${skip.code}`
+    return `${every} (não rodou${at ? ` às ${at}` : ""}: ${why})`
+  }
+  const next = view.next_run_at ? new Date(view.next_run_at) : null
+  if (!next || Number.isNaN(next.getTime())) return every
+  if (next.getTime() <= now.getTime()) return `${every} (próxima em até 15 min)`
+  return `${every} (próxima ~${clockText(view.next_run_at as string)})`
+}
+
+/** The card title: a refresh job-search's timer started reads "Atualização automática". */
+export function dispatchTitle(dispatch: { action: DispatchAction; trigger?: "AUTO" }): string {
+  return dispatch.trigger === "AUTO" ? "Atualização automática" : ACTION_META[dispatch.action].label
 }
 
 /** Why a host "Cotar vagas" or "Atualizar lista" stopped for the user, and what fixes it. */
