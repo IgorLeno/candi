@@ -6,11 +6,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { buildJobSearchData } from "@/lib/job-search/build"
 import { fixtureSnapshot } from "@/__tests__/lib/job-search/helpers"
 
-const session = vi.hoisted(() => ({ current: null as null | { user: { email: string } } }))
+const local = vi.hoisted(() => ({ current: false }))
 const runDispatcher = vi.hoisted(() => vi.fn())
 const views = vi.hoisted(() => ({ current: [] as unknown[] }))
 
-vi.mock("@/lib/auth/session", () => ({ getAllowedSession: vi.fn(async () => session.current) }))
+vi.mock("@/lib/auth/local-request", () => ({ isLocalRequest: vi.fn(async () => local.current) }))
 vi.mock("@/lib/ops/dispatcher", () => ({ runDispatcher, isDispatchEnabled: () => true }))
 vi.mock("@/lib/job-search/source", () => ({
   JOB_SEARCH_CACHE_TAG: "job-search",
@@ -73,18 +73,18 @@ function dispatch(over: Partial<Dispatch> = {}): Dispatch {
 
 describe("cover letter server actions", () => {
   beforeEach(() => {
-    session.current = { user: { email: "owner@e2e.test" } }
+    local.current = true
     runDispatcher.mockReset()
     runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, dispatch: { id: "d" } } })
     views.current = buildJobSearchData(fixtureSnapshot(), "fixture", "2026-09-29T12:00:00Z").views
   })
 
-  it("require a session", async () => {
-    session.current = null
-    await expect(startLetter(JOB)).rejects.toThrow("UNAUTHENTICATED")
-    await expect(saveLetterManual(JOB, {})).rejects.toThrow("UNAUTHENTICATED")
-    await expect(requestLetterEdit(JOB, "x")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(applyLetter("d-20261015T120000Z-abcdef", "approve")).rejects.toThrow("UNAUTHENTICATED")
+  it("require a local request", async () => {
+    local.current = false
+    await expect(startLetter(JOB)).rejects.toThrow("NOT_LOCAL")
+    await expect(saveLetterManual(JOB, {})).rejects.toThrow("NOT_LOCAL")
+    await expect(requestLetterEdit(JOB, "x")).rejects.toThrow("NOT_LOCAL")
+    await expect(applyLetter("d-20261015T120000Z-abcdef", "approve")).rejects.toThrow("NOT_LOCAL")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
@@ -168,7 +168,7 @@ describe("cover letter PDF", () => {
   }
 
   beforeEach(() => {
-    session.current = { user: { email: "owner@e2e.test" } }
+    local.current = true
     runDispatcher.mockReset()
   })
 
@@ -180,10 +180,10 @@ describe("cover letter PDF", () => {
     expect(await readLetterPdf(JOB)).toEqual({ ok: false, code: "LETTER_NOT_VALID", detail: "PDF_HASH_MISMATCH" })
   })
 
-  it("route: 401 without session, inline PDF with session, 404 refusal otherwise", async () => {
-    session.current = null
-    expect((await GET(new Request("http://x"), params(JOB))).status).toBe(401)
-    session.current = { user: { email: "owner@e2e.test" } }
+  it("route: 403 when not local, inline PDF when local, 404 refusal otherwise", async () => {
+    local.current = false
+    expect((await GET(new Request("http://x"), params(JOB))).status).toBe(403)
+    local.current = true
     runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, letter_file: pdfOnDisk() } })
     const ok = await GET(new Request("http://x"), params(JOB))
     expect(ok.headers.get("Content-Type")).toBe("application/pdf")

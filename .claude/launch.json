@@ -6,14 +6,14 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
       "port": 3000,
-      "autoPort": false
+      "autoPort": true
     },
     {
       "name": "Next.js Prod",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["start"],
       "port": 3000,
-      "autoPort": false
+      "autoPort": true
     }
   ]
 }

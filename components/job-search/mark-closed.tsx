@@ -50,7 +50,7 @@ export function MarkClosedButton({
         setOpen(false)
         router.refresh()
       } catch {
-        toast.error(markClosedRefusalText("UNAUTHENTICATED"))
+        toast.error(markClosedRefusalText("REQUEST_FAILED"))
       }
     })
 

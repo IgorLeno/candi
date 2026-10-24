@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { buildJobSearchData } from "@/lib/job-search/build"
 import { fixtureSnapshot } from "@/__tests__/lib/job-search/helpers"
 
-const session = vi.hoisted(() => ({ current: null as null | { user: { email: string } } }))
+const local = vi.hoisted(() => ({ current: false }))
 const runDispatcher = vi.hoisted(() => vi.fn())
 const views = vi.hoisted(() => ({ current: [] as unknown[] }))
 const updateTag = vi.hoisted(() => vi.fn())
 
-vi.mock("@/lib/auth/session", () => ({ getAllowedSession: vi.fn(async () => session.current) }))
+vi.mock("@/lib/auth/local-request", () => ({ isLocalRequest: vi.fn(async () => local.current) }))
 vi.mock("@/lib/ops/dispatcher", () => ({ runDispatcher }))
 vi.mock("@/lib/job-search/source", () => ({
   JOB_SEARCH_CACHE_TAG: "job-search",
@@ -50,43 +50,43 @@ import {
 
 describe("ops server actions", () => {
   beforeEach(() => {
-    session.current = { user: { email: "owner@e2e.test" } }
+    local.current = true
     runDispatcher.mockReset()
     updateTag.mockReset()
     runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, dispatch: { id: "d" } } })
     views.current = buildJobSearchData(fixtureSnapshot(), "fixture", "2026-09-29T12:00:00Z").views
   })
 
-  it("require a session before anything else (the proxy does not cover Server Functions)", async () => {
-    session.current = null
-    await expect(startDispatch({ action: "BUSCAR_VAGAS", platform: "hermes" })).rejects.toThrow("UNAUTHENTICATED")
-    await expect(listDispatches({})).rejects.toThrow("UNAUTHENTICATED")
-    await expect(ackDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(registerWriteset("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(startIntake("Estágio na Braskem, Camaçari")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(analyzeIntake("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(refineIntake("d-20260929T120000Z-abcdef", { candidate: 1 })).rejects.toThrow("UNAUTHENTICATED")
-    await expect(discardDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(cancelDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(deleteDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(declineJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(confirmJobOpen("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(recordSent("fake-1001", "SUCCESS_PAGE")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(markJobClosed("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(openCvBrowser()).rejects.toThrow("UNAUTHENTICATED")
-    await expect(openApplicationBrowser()).rejects.toThrow("UNAUTHENTICATED")
-    await expect(restartCvBrowser()).rejects.toThrow("UNAUTHENTICATED")
-    await expect(restartApplicationBrowser()).rejects.toThrow("UNAUTHENTICATED")
-    await expect(restartPortalBrowser()).rejects.toThrow("UNAUTHENTICATED")
-    await expect(deleteJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(analyzeJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(resumeCv("d-20260929T120000Z-abcdef", { option: "claude" })).rejects.toThrow("UNAUTHENTICATED")
-    await expect(reassessCv("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(applyCvChanges("d-20260929T120000Z-abcdef", [1])).rejects.toThrow("UNAUTHENTICATED")
-    await expect(getCvDoc("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(saveCvManual("fake-1001", {})).rejects.toThrow("UNAUTHENTICATED")
-    await expect(listAttention()).rejects.toThrow("UNAUTHENTICATED")
-    await expect(answerFill("d-20260929T120000Z-abcdef", { item: 1 })).rejects.toThrow("UNAUTHENTICATED")
+  it("require a local request before anything else (the proxy does not cover Server Functions)", async () => {
+    local.current = false
+    await expect(startDispatch({ action: "BUSCAR_VAGAS", platform: "hermes" })).rejects.toThrow("NOT_LOCAL")
+    await expect(listDispatches({})).rejects.toThrow("NOT_LOCAL")
+    await expect(ackDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("NOT_LOCAL")
+    await expect(registerWriteset("d-20260929T120000Z-abcdef")).rejects.toThrow("NOT_LOCAL")
+    await expect(startIntake("Estágio na Braskem, Camaçari")).rejects.toThrow("NOT_LOCAL")
+    await expect(analyzeIntake("d-20260929T120000Z-abcdef")).rejects.toThrow("NOT_LOCAL")
+    await expect(refineIntake("d-20260929T120000Z-abcdef", { candidate: 1 })).rejects.toThrow("NOT_LOCAL")
+    await expect(discardDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("NOT_LOCAL")
+    await expect(cancelDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("NOT_LOCAL")
+    await expect(deleteDispatch("d-20260929T120000Z-abcdef")).rejects.toThrow("NOT_LOCAL")
+    await expect(declineJob("fake-1001")).rejects.toThrow("NOT_LOCAL")
+    await expect(confirmJobOpen("fake-1001")).rejects.toThrow("NOT_LOCAL")
+    await expect(recordSent("fake-1001", "SUCCESS_PAGE")).rejects.toThrow("NOT_LOCAL")
+    await expect(markJobClosed("fake-1001")).rejects.toThrow("NOT_LOCAL")
+    await expect(openCvBrowser()).rejects.toThrow("NOT_LOCAL")
+    await expect(openApplicationBrowser()).rejects.toThrow("NOT_LOCAL")
+    await expect(restartCvBrowser()).rejects.toThrow("NOT_LOCAL")
+    await expect(restartApplicationBrowser()).rejects.toThrow("NOT_LOCAL")
+    await expect(restartPortalBrowser()).rejects.toThrow("NOT_LOCAL")
+    await expect(deleteJob("fake-1001")).rejects.toThrow("NOT_LOCAL")
+    await expect(analyzeJob("fake-1001")).rejects.toThrow("NOT_LOCAL")
+    await expect(resumeCv("d-20260929T120000Z-abcdef", { option: "claude" })).rejects.toThrow("NOT_LOCAL")
+    await expect(reassessCv("fake-1001")).rejects.toThrow("NOT_LOCAL")
+    await expect(applyCvChanges("d-20260929T120000Z-abcdef", [1])).rejects.toThrow("NOT_LOCAL")
+    await expect(getCvDoc("fake-1001")).rejects.toThrow("NOT_LOCAL")
+    await expect(saveCvManual("fake-1001", {})).rejects.toThrow("NOT_LOCAL")
+    await expect(listAttention()).rejects.toThrow("NOT_LOCAL")
+    await expect(answerFill("d-20260929T120000Z-abcdef", { item: 1 })).rejects.toThrow("NOT_LOCAL")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 
@@ -406,11 +406,11 @@ describe("ops server actions", () => {
   })
 
   it("pedir edição do currículo: texto guardado e pelo stdin, só para vaga da planilha", async () => {
-    session.current = null
+    local.current = false
     await expect(editCv("fake-1001", { platform: "hermes", text: "troque o headline do currículo" })).rejects.toThrow(
-      "UNAUTHENTICATED"
+      "NOT_LOCAL"
     )
-    session.current = { user: { email: "owner@e2e.test" } }
+    local.current = true
     for (const [id, input] of [
       ["../x", { platform: "hermes", text: "troque o headline do currículo" }],
       ["fake-1001", { platform: "outra", text: "troque o headline do currículo" }],
@@ -449,7 +449,7 @@ describe("ops server actions", () => {
   })
 
   it("pedir edição com revisão no ChatGPT: flag fixa no argv, só Hermes, texto continua no stdin", async () => {
-    session.current = { user: { email: "owner@e2e.test" } }
+    local.current = true
     await expect(
       editCv("fake-1001", { platform: "grok", text: "troque o headline do currículo", chatgptReview: true })
     ).resolves.toEqual({ ok: false, code: "CHATGPT_REVIEW_HERMES_ONLY" })
@@ -476,9 +476,9 @@ describe("ops server actions", () => {
 
   it("mandar ao ChatGPT uma vaga de fora: só o id da cotação e o job_id validados, nada mais", async () => {
     const search = "d-20261003T120000Z-abcdef"
-    session.current = null
-    await expect(analyzeLeftOut(search, "4470000020")).rejects.toThrow("UNAUTHENTICATED")
-    session.current = { user: { email: "owner@e2e.test" } }
+    local.current = false
+    await expect(analyzeLeftOut(search, "4470000020")).rejects.toThrow("NOT_LOCAL")
+    local.current = true
     for (const [id, job] of [
       ["x", "4470000020"],
       [search, "../x"],

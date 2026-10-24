@@ -34,7 +34,7 @@ export function UnpinTodayButton({ jobId }: { jobId: string }) {
             toast.success("Vaga tirada da fila.")
             router.refresh()
           } catch {
-            toast.error(refusalText("UNAUTHENTICATED"))
+            toast.error(refusalText("REQUEST_FAILED"))
           }
         })
       }
@@ -96,7 +96,7 @@ export function PinTodayButton({
             toast.success("Vaga posta na fila.")
             router.refresh()
           } catch {
-            toast.error(refusalText("UNAUTHENTICATED"))
+            toast.error(refusalText("REQUEST_FAILED"))
           }
         })
       }

@@ -74,8 +74,8 @@ direto na main, uma preocupação por commit, sem push até o OK do usuário.
      (timeout e backoff do `_persist`). Falhou: PRECISA_HUMANO com o writeset no op_dir e "Registrar na planilha"
      como retomada; a lista não é trocada.
   7. `lista`: elegíveis ordenadas por D3, as 5 primeiras. Grava `$STATE/today-list.json` (0600, atômico):
-     `{schema: "today-list/1", updated_at, dispatch_id, items: [{job_id, interesse, motivo}], left: [{job_id,
-     motivo}]}`. Motivos de saída: `ENCERRADA`, `REANALISADA_<status>`, `INTERESSE_MENOR`, `A_CONFIRMAR`
+     `{schema: "today-list/1", updated_at, dispatch_id, items: [{job_id, interesse, motivo}],`
+     `left: [{job_id, motivo}]}`. Motivos de saída: `ENCERRADA`, `REANALISADA_<status>`, `INTERESSE_MENOR`, `A_CONFIRMAR`
      (disponibilidade), `SEM_ANALISE` (passou do teto). Menos de 5 elegíveis: a lista fica menor e o registro diz
      quantas faltaram.
 - `dispatch.py today`: devolve o arquivo (ou `{"list": null}`), sem ler a planilha.

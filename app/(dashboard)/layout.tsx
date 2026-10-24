@@ -1,12 +1,13 @@
 import type React from "react"
-import { requireAllowedSession } from "@/lib/auth/session"
+import { notFound } from "next/navigation"
+import { isLocalRequest } from "@/lib/auth/local-request"
 import { Sidebar } from "@/components/sidebar"
 import { isDispatchEnabled } from "@/lib/ops/dispatcher"
 
-// Every dashboard page lives in this group, so the session is checked server-side even if
-// a request ever bypassed `proxy.ts`.
+// Every dashboard page lives in this group, so the request is checked server-side even if it ever bypassed
+// `proxy.ts`. There is no login: only requests addressed to this machine get the panel.
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  await requireAllowedSession()
+  if (!(await isLocalRequest())) notFound()
   return (
     <div className="min-h-screen bg-background mesh-bg">
       <Sidebar opsEnabled={isDispatchEnabled()} />

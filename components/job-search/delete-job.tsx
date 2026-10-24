@@ -62,7 +62,7 @@ export function DeleteJobButton({
         setOpen(false)
         router.push("/vagas")
       } catch {
-        toast.error(deleteJobRefusalText("UNAUTHENTICATED"))
+        toast.error(deleteJobRefusalText("REQUEST_FAILED"))
       }
     })
 

@@ -122,7 +122,7 @@ function LetterGenerate({
                     } else toastRefusal(result.code)
                   } catch {
                     setOpen(false)
-                    toast.error(refusalText("UNAUTHENTICATED"))
+                    toast.error(refusalText("REQUEST_FAILED"))
                   }
                 })
               }
@@ -230,7 +230,7 @@ export function LetterManualEditor({
           setText(textOf(result.value.doc))
         } else setLoaded({ state: "none", code: result.code })
       })
-      .catch(() => alive && setLoaded({ state: "none", code: "UNAUTHENTICATED" }))
+      .catch(() => alive && setLoaded({ state: "none", code: "REQUEST_FAILED" }))
     return () => {
       alive = false
     }
@@ -265,7 +265,7 @@ export function LetterManualEditor({
           onStarted()
         } else toastRefusal(result.code)
       } catch {
-        toast.error(refusalText("UNAUTHENTICATED"))
+        toast.error(refusalText("REQUEST_FAILED"))
       }
     })
   return (
@@ -386,7 +386,7 @@ function LetterRequest({
                 onStarted()
               } else toastRefusal(result.code)
             } catch {
-              toast.error(refusalText("UNAUTHENTICATED"))
+              toast.error(refusalText("REQUEST_FAILED"))
             }
           })
         }

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-const session = vi.hoisted(() => ({ current: null as null | { user: { email: string } } }))
+const local = vi.hoisted(() => ({ current: true }))
 const runDispatcher = vi.hoisted(() => vi.fn())
 
-vi.mock("@/lib/auth/session", () => ({ getAllowedSession: vi.fn(async () => session.current) }))
+vi.mock("@/lib/auth/local-request", () => ({ isLocalRequest: vi.fn(async () => local.current) }))
 vi.mock("@/lib/ops/dispatcher", () => ({ runDispatcher }))
 vi.mock("@/lib/job-search/source", () => ({
   JOB_SEARCH_CACHE_TAG: "job-search",
@@ -24,19 +24,19 @@ const settings = {
 
 describe("Hoje settings server actions (plan 2026-10-22)", () => {
   beforeEach(() => {
-    session.current = { user: { email: "owner@e2e.test" } }
+    local.current = true
     runDispatcher.mockReset()
     runDispatcher.mockResolvedValue({ ok: true, value: { ok: true, settings, next_run_at: null, today: null } })
   })
 
-  it("require a session before anything else (the proxy does not cover Server Functions)", async () => {
-    session.current = null
-    await expect(getTodaySettings()).rejects.toThrow("UNAUTHENTICATED")
+  it("require a local request before anything else (the proxy does not cover Server Functions)", async () => {
+    local.current = false
+    await expect(getTodaySettings()).rejects.toThrow("NOT_LOCAL")
     await expect(saveTodaySettings({ replace: "AVALIAR", focus: { cargo: "", lugar: "" } })).rejects.toThrow(
-      "UNAUTHENTICATED"
+      "NOT_LOCAL"
     )
-    await expect(pinTodayJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
-    await expect(unpinTodayJob("fake-1001")).rejects.toThrow("UNAUTHENTICATED")
+    await expect(pinTodayJob("fake-1001")).rejects.toThrow("NOT_LOCAL")
+    await expect(unpinTodayJob("fake-1001")).rejects.toThrow("NOT_LOCAL")
     expect(runDispatcher).not.toHaveBeenCalled()
   })
 

@@ -2,7 +2,7 @@
 
 import { updateTag } from "next/cache"
 import { z } from "zod"
-import { getAllowedSession } from "@/lib/auth/session"
+import { isLocalRequest } from "@/lib/auth/local-request"
 import { JOB_SEARCH_CACHE_TAG, getJobSearchData } from "@/lib/job-search/source"
 import { attentionEntries, type AttentionEntry } from "@/lib/ops/attention"
 import { cvFileInfo, letterFileInfo } from "@/lib/ops/cv-file"
@@ -57,14 +57,14 @@ import {
   type TodaySettingsView,
 } from "@/lib/ops/schema"
 
-// Bot dispatch from the panel. Server Functions are not covered by `proxy.ts`: every action checks the
-// session itself, before touching input or the dispatcher. Nothing typed by the client becomes bot text:
-// the dispatcher sends fixed commands and only receives an action, a platform and a validated job_id. The two
+// Bot dispatch from the panel. Server Functions are not covered by `proxy.ts`: every action checks itself that the
+// request is local (no login), before touching input or the dispatcher. Nothing typed by the client becomes bot
+// text: the dispatcher sends fixed commands and only receives an action, a platform and a validated job_id. The two
 // exceptions are the "vaga indicada" text and the note that resumes a stuck résumé ("Outro"): guarded here, sent
 // over stdin, stored by job-search as untrusted data.
 
-async function requireSession(): Promise<void> {
-  if (!(await getAllowedSession())) throw new Error("UNAUTHENTICATED")
+async function requireLocalRequest(): Promise<void> {
+  if (!(await isLocalRequest())) throw new Error("NOT_LOCAL")
 }
 
 type ActionResult<T> = { ok: true; value: T } | { ok: false; code: string }
@@ -77,7 +77,7 @@ function strip<T>(result: RunResult<T>): ActionResult<T> {
 export type StartResult = ActionResult<Dispatch> | { ok: false; code: string; blocker: string }
 
 export async function startDispatch(input: unknown): Promise<StartResult> {
-  await requireSession()
+  await requireLocalRequest()
   const parsed = startInputSchema.safeParse(input)
   if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
   const { action, platform, jobId } = parsed.data
@@ -105,7 +105,7 @@ const listInputSchema = z
   .strict()
 
 export async function listDispatches(input: unknown): Promise<ActionResult<DispatchList>> {
-  await requireSession()
+  await requireLocalRequest()
   const parsed = listInputSchema.safeParse(input ?? {})
   if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
   const { jobId, action } = parsed.data
@@ -139,7 +139,7 @@ async function withQueueLabels(list: DispatchList): Promise<DispatchList> {
  * Sheet snapshot. Only fixed fields reach the client; the bots' text stays on the job page.
  */
 export async function listAttention(): Promise<ActionResult<AttentionEntry[]>> {
-  await requireSession()
+  await requireLocalRequest()
   const result = await runDispatcher(["attention"], attentionResultSchema)
   if (!result.ok) return { ok: false, code: result.code }
   // Without the Sheet the list still works: lines fall back to the job_id.
@@ -157,14 +157,14 @@ export async function listAttention(): Promise<ActionResult<AttentionEntry[]>> {
  * own write credential; the panel sends only the search id and never writes to the Sheet.
  */
 export async function registerWriteset(searchId: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof searchId !== "string" || !DISPATCH_ID_RE.test(searchId)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["persist", searchId], oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }
 
 export async function ackDispatch(id: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["ack", id], oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
@@ -176,7 +176,7 @@ export async function ackDispatch(id: unknown): Promise<ActionResult<Dispatch>> 
  * private file marked as untrusted data. The bot command stays fixed and only points to that file.
  */
 export async function startIntake(text: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof text !== "string" || text.length > INTAKE_MAX * 4) return { ok: false, code: "INPUT_INVALID" }
   const intake = normalizeIntake(text)
   if (!intake.ok) return { ok: false, code: intake.code }
@@ -197,7 +197,7 @@ const refineChoiceSchema = z.union([
  * (job-search reads the candidate from its own file); the "Outro" text goes over stdin, never argv.
  */
 export async function refineIntake(intakeId: unknown, choice: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   const parsed = refineChoiceSchema.safeParse(choice)
   if (typeof intakeId !== "string" || !DISPATCH_ID_RE.test(intakeId) || !parsed.success) {
     return { ok: false, code: "INPUT_INVALID" }
@@ -239,7 +239,7 @@ const resumeCvChoiceSchema = z.union([
  * its own handoff and checks that every doubt has one unless there is a note.
  */
 export async function resumeCv(dispatchId: unknown, choice: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   const parsed = resumeCvChoiceSchema.safeParse(choice)
   if (typeof dispatchId !== "string" || !DISPATCH_ID_RE.test(dispatchId) || !parsed.success) {
     return { ok: false, code: "INPUT_INVALID" }
@@ -285,7 +285,7 @@ const fillAnswerSchema = z
  * when nothing is left open, starts the next Claude round.
  */
 export async function answerFill(dispatchId: unknown, input: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   const parsed = fillAnswerSchema.safeParse(input)
   if (typeof dispatchId !== "string" || !DISPATCH_ID_RE.test(dispatchId) || !parsed.success) {
     return { ok: false, code: "INPUT_INVALID" }
@@ -314,7 +314,7 @@ const cvLocalEditInputSchema = z.object({ text: z.string().max(12_000) }).strict
  * turn the request into a checked patch before Claude, and stops with its doubts.
  */
 export async function editCv(jobId: unknown, input: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   const local = cvLocalEditInputSchema.safeParse(input)
   if (local.success) {
     if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
@@ -347,7 +347,7 @@ export async function editCv(jobId: unknown, input: unknown): Promise<ActionResu
 
 /** Second ChatGPT assessment of this job's current local résumé, without a user comment. */
 export async function reassessCv(jobId: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const data = await getJobSearchData()
   if (!data.views.some((item) => item.job.job_id === jobId)) return { ok: false, code: "JOB_NOT_FOUND" }
@@ -360,7 +360,7 @@ export async function reassessCv(jobId: unknown): Promise<ActionResult<Dispatch>
 
 /** The selected change numbers go in argv; all patch text remains in job-search's private proposal. */
 export async function applyCvChanges(dispatchId: unknown, approved: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (
     typeof dispatchId !== "string" ||
     !DISPATCH_ID_RE.test(dispatchId) ||
@@ -376,7 +376,7 @@ export async function applyCvChanges(dispatchId: unknown, approved: unknown): Pr
 }
 
 export async function getCvDoc(jobId: unknown): Promise<ActionResult<CvDoc>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["cv-doc", jobId], cvDocResultSchema)
   return result.ok ? { ok: true, value: result.value.cv_doc } : { ok: false, code: result.code }
@@ -386,7 +386,7 @@ const manualInputSchema = z.object({ docSha256: z.string().regex(/^[0-9a-f]{64}$
 
 /** Manual edit (cv-manual/2): the whole edited document, over stdin only. job-search validates everything again. */
 export async function saveCvManual(jobId: unknown, input: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const parsed = manualInputSchema.safeParse(input)
   if (!parsed.success) return { ok: false, code: "MANUAL_INVALID" }
@@ -409,7 +409,7 @@ export async function saveCvManual(jobId: unknown, input: unknown): Promise<Acti
 
 /** "Mandar para o ChatGPT": the Lince takes the located job to the Threadgist (Hermes only). Only the id. */
 export async function analyzeIntake(intakeId: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof intakeId !== "string" || !DISPATCH_ID_RE.test(intakeId)) return { ok: false, code: "INPUT_INVALID" }
   const args = ["start", "ANALISAR_INDICADA", "--platform", "hermes", "--from", intakeId]
   const result = await runDispatcher(args, oneResultSchema)
@@ -422,7 +422,7 @@ export async function analyzeIntake(intakeId: unknown): Promise<ActionResult<Dis
  * user registers later ("Registrar na planilha"). Allowed for sent jobs too (the goal is the dossier).
  */
 export async function analyzeJob(jobId: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const data = await getJobSearchData()
   if (!data.views.some((item) => item.job.job_id === jobId)) return { ok: false, code: "JOB_NOT_FOUND" }
@@ -437,7 +437,7 @@ export async function analyzeJob(jobId: unknown): Promise<ActionResult<Dispatch>
  * search's left-out jobs, fetches the full text itself and leaves a writeset to register ("Registrar na planilha").
  */
 export async function analyzeLeftOut(searchId: unknown, jobId: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof searchId !== "string" || !DISPATCH_ID_RE.test(searchId)) return { ok: false, code: "INPUT_INVALID" }
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const args = ["start", LEFT_OUT_ACTION, "--platform", "hermes", "--from", searchId, "--job-id", jobId]
@@ -451,14 +451,14 @@ export async function analyzeLeftOut(searchId: unknown, jobId: unknown): Promise
  * anything else with NOT_QUEUED). Only the dispatch id is sent.
  */
 export async function cancelDispatch(id: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["cancel", id], oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }
 
 export async function discardDispatch(id: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["discard", id], oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
@@ -469,7 +469,7 @@ export async function discardDispatch(id: unknown): Promise<ActionResult<Dispatc
  * records only; nothing goes to the Sheet. The panel has no undo.
  */
 export async function deleteDispatch(id: unknown): Promise<ActionResult<DeleteResult>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof id !== "string" || !DISPATCH_ID_RE.test(id)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["delete", id], deleteResultSchema)
   return result.ok ? { ok: true, value: result.value.delete } : { ok: false, code: result.code }
@@ -481,7 +481,7 @@ export async function deleteDispatch(id: unknown): Promise<ActionResult<DeleteRe
  * Sheet snapshot is dropped afterwards so the card shows the discarded state. There is no undo.
  */
 export async function declineJob(jobId: unknown): Promise<ActionResult<DeclineResult>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["decline", jobId], declineResultSchema)
   // Uncertain or failed writes may still have landed: re-read the Sheet either way.
@@ -496,7 +496,7 @@ export async function declineJob(jobId: unknown): Promise<ActionResult<DeclineRe
  * by itself on LinkedIn only, so a careers-site job would never reach the résumé or the application otherwise.
  */
 export async function confirmJobOpen(jobId: unknown): Promise<ActionResult<ConfirmOpenResult>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["confirm-open", jobId], confirmOpenResultSchema)
   // Uncertain or failed writes may still have landed: re-read the Sheet either way.
@@ -511,7 +511,7 @@ export async function confirmJobOpen(jobId: unknown): Promise<ActionResult<Confi
  * sends only the job_id. "Confirmei que está aberta" undoes it.
  */
 export async function markJobClosed(jobId: unknown): Promise<ActionResult<MarkClosedResult>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["mark-closed", jobId], markClosedResultSchema)
   // Uncertain or failed writes may still have landed: re-read the Sheet either way.
@@ -526,7 +526,7 @@ export async function markJobClosed(jobId: unknown): Promise<ActionResult<MarkCl
  * list, never free text. There is no undo.
  */
 export async function recordSent(jobId: unknown, evidence: unknown): Promise<ActionResult<RecordSentResult>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const parsed = z.enum(SENT_EVIDENCE).safeParse(evidence)
   if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
@@ -542,7 +542,7 @@ export async function recordSent(jobId: unknown, evidence: unknown): Promise<Act
  * in to Claude and opening its panel on the PT/EN tabs stay with the user.
  */
 export async function openCvBrowser(): Promise<ActionResult<OpenBrowserResult>> {
-  await requireSession()
+  await requireLocalRequest()
   const result = await runDispatcher(["open-browser", "clouddesign"], openBrowserResultSchema)
   return result.ok ? { ok: true, value: result.value.open_browser } : { ok: false, code: result.code }
 }
@@ -553,7 +553,7 @@ export async function openCvBrowser(): Promise<ActionResult<OpenBrowserResult>> 
  * client. Signing in to LinkedIn stays with the user.
  */
 export async function openPortalBrowser(): Promise<ActionResult<OpenBrowserResult>> {
-  await requireSession()
+  await requireLocalRequest()
   const result = await runDispatcher(["open-browser", "portal"], openBrowserResultSchema)
   return result.ok ? { ok: true, value: result.value.open_browser } : { ok: false, code: result.code }
 }
@@ -564,14 +564,14 @@ export async function openPortalBrowser(): Promise<ActionResult<OpenBrowserResul
  * its own state; the page reads it with `dispatch.py today`.
  */
 export async function refreshTodayList(): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   const result = await runDispatcher(["start", TODAY_ACTION, "--platform", "hermes"], oneResultSchema)
   return result.ok ? { ok: true, value: result.value.dispatch } : { ok: false, code: result.code }
 }
 
 /** "Atualizar lista" settings (plan 2026-10-22): job-search keeps them in its own state (`dispatch.py today-settings`). */
 export async function getTodaySettings(): Promise<ActionResult<TodaySettingsView>> {
-  await requireSession()
+  await requireLocalRequest()
   const result = await runDispatcher(["today-settings"], todaySettingsResultSchema)
   return result.ok
     ? { ok: true, value: { settings: result.value.settings, next_run_at: result.value.next_run_at } }
@@ -592,7 +592,7 @@ const todaySettingsInputSchema = z
  * with it; it never reaches the ChatGPT as an instruction.
  */
 export async function saveTodaySettings(input: unknown): Promise<ActionResult<TodaySettingsView>> {
-  await requireSession()
+  await requireLocalRequest()
   const parsed = todaySettingsInputSchema.safeParse(input)
   if (!parsed.success) return { ok: false, code: "INPUT_INVALID" }
   const focus = normalizeFocus(parsed.data.focus)
@@ -610,7 +610,7 @@ export async function saveTodaySettings(input: unknown): Promise<ActionResult<To
  * Sheet itself (the snapshot here may not have a job registered a moment ago).
  */
 export async function pinTodayJob(jobId: unknown): Promise<ActionResult<TodayPinResult>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["today-pin", jobId], todayPinResultSchema)
   return result.ok
@@ -620,7 +620,7 @@ export async function pinTodayJob(jobId: unknown): Promise<ActionResult<TodayPin
 
 /** "Tirar da fila": job-search unpins the job; it goes to "Fora da lista" as DESFIXADA. Nothing changes in the Sheet. */
 export async function unpinTodayJob(jobId: unknown): Promise<ActionResult<TodayPinResult>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["today-unpin", jobId], todayPinResultSchema)
   return result.ok
@@ -634,7 +634,7 @@ export async function unpinTodayJob(jobId: unknown): Promise<ActionResult<TodayP
  * client: the browser name is fixed here. Signing in to Claude and to the job portals stays with the user.
  */
 export async function openApplicationBrowser(): Promise<ActionResult<OpenBrowserResult>> {
-  await requireSession()
+  await requireLocalRequest()
   const result = await runDispatcher(["open-browser", "application"], openBrowserResultSchema)
   return result.ok ? { ok: true, value: result.value.open_browser } : { ok: false, code: result.code }
 }
@@ -646,7 +646,7 @@ export async function openApplicationBrowser(): Promise<ActionResult<OpenBrowser
  * refuses `{BROWSER}_BROWSER_BUSY` while a running dispatch uses it. The browser name is fixed here, never the client's.
  */
 async function restartBrowser(browser: OpenBrowserResult["browser"]): Promise<ActionResult<OpenBrowserResult>> {
-  await requireSession()
+  await requireLocalRequest()
   const result = await runDispatcher(["open-browser", browser, "--restart"], openBrowserResultSchema)
   return result.ok ? { ok: true, value: result.value.open_browser } : { ok: false, code: result.code }
 }
@@ -669,7 +669,7 @@ export async function restartPortalBrowser(): Promise<ActionResult<OpenBrowserRe
  * sends only the job_id. The Sheet snapshot is dropped afterwards whatever the answer. There is no undo.
  */
 export async function deleteJob(jobId: unknown): Promise<ActionResult<DeleteJobResult>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["delete-job", jobId], deleteJobResultSchema)
   // A partial or uncertain delete may have removed rows: re-read the Sheet either way.
@@ -682,7 +682,7 @@ export async function deleteJob(jobId: unknown): Promise<ActionResult<DeleteJobR
  * file path stays on the server; the PDF itself is served by `/api/vaga/[job_id]/curriculo`.
  */
 export async function getCvFile(jobId: unknown): Promise<ActionResult<CvFileInfo> & { detail?: string }> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const info = await cvFileInfo(jobId)
   if (!info.ok) return { ok: false, code: info.code, detail: info.detail }
@@ -700,7 +700,7 @@ async function jobInSheet(jobId: unknown): Promise<string | null> {
 
 /** "Gerar carta": only the job_id goes to job-search (Hermes/host only); the job must be in the Sheet snapshot. */
 export async function startLetter(jobId: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   const job = await jobInSheet(jobId)
   if (job === null) return { ok: false, code: "INPUT_INVALID" }
   if (job === "JOB_NOT_FOUND") return { ok: false, code: job }
@@ -710,7 +710,7 @@ export async function startLetter(jobId: unknown): Promise<ActionResult<Dispatch
 
 /** "Carta de apresentação" preview: which PDF job-search registered (the path stays on the server). */
 export async function getLetterFile(jobId: unknown): Promise<ActionResult<CvFileInfo> & { detail?: string }> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const info = await letterFileInfo(jobId)
   if (!info.ok) return { ok: false, code: info.code, detail: info.detail }
@@ -719,7 +719,7 @@ export async function getLetterFile(jobId: unknown): Promise<ActionResult<CvFile
 }
 
 export async function getLetterDoc(jobId: unknown): Promise<ActionResult<LetterDoc>> {
-  await requireSession()
+  await requireLocalRequest()
   if (typeof jobId !== "string" || !JOB_ID_RE.test(jobId)) return { ok: false, code: "INPUT_INVALID" }
   const result = await runDispatcher(["letter-doc", jobId], letterDocResultSchema)
   return result.ok ? { ok: true, value: result.value.letter_doc } : { ok: false, code: result.code }
@@ -734,7 +734,7 @@ const letterManualInputSchema = z
  * of the letter the editor opened. Header, date and signature stay with job-search, which checks everything again.
  */
 export async function saveLetterManual(jobId: unknown, input: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   const job = await jobInSheet(jobId)
   if (job === null) return { ok: false, code: "INPUT_INVALID" }
   if (job === "JOB_NOT_FOUND") return { ok: false, code: job }
@@ -761,7 +761,7 @@ export async function saveLetterManual(jobId: unknown, input: unknown): Promise<
 
 /** "Editar carta" by request: the user's text (guards of the "vaga indicada") over stdin; ChatGPT rewrites the letter. */
 export async function requestLetterEdit(jobId: unknown, text: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   const job = await jobInSheet(jobId)
   if (job === null || typeof text !== "string" || text.length > 12_000) return { ok: false, code: "INPUT_INVALID" }
   if (job === "JOB_NOT_FOUND") return { ok: false, code: job }
@@ -778,7 +778,7 @@ export async function requestLetterEdit(jobId: unknown, text: unknown): Promise<
 
 /** "Aprovar carta"/"Descartar": a fixed word in argv; the letter text stays in job-search's proposal. */
 export async function applyLetter(dispatchId: unknown, decision: unknown): Promise<ActionResult<Dispatch>> {
-  await requireSession()
+  await requireLocalRequest()
   if (
     typeof dispatchId !== "string" ||
     !DISPATCH_ID_RE.test(dispatchId) ||
