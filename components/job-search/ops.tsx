@@ -3112,7 +3112,9 @@ export function TodayListControls({
             )}
             {running && !staleSince ? "Atualizando a lista…" : meta.verb}
           </Button>
-          {trailing}
+          {/* A Server Component's element can arrive as a lazy reference; next to a sibling React then checks it for a
+              key once resolved. Its own Fragment keeps it a single child. */}
+          <>{trailing}</>
         </div>
       </div>
       {error && <p className="text-xs text-muted-foreground">{refusalText(error)}</p>}
